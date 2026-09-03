@@ -48,153 +48,59 @@ that don't exist yet, no database migration required.
 
 ## Coach
 
-The **Coach** tab is a chat with Claude that reads your training log and tells
-you what to do next. Ask it to plan a session, take a lift forward, or explain
-why something has stalled, and it answers with actual numbers — load, sets and
-reps, sized from the increments *you* have been making — rather than training
-theory. It cites the dates and loads behind each call, says when the log is too
-thin to support one, and is told plainly that it can only read the log: it can't
-log a session for you.
+A chat with Claude that reads your training log and tells you what to do next.
+Ask it to plan a session, push a lift forward, or explain why something has
+stalled, and it answers with numbers — load, sets and reps, sized from the
+increments *you* have been making — citing the dates behind each call, and
+saying so when the log is too thin to support one. Answers stream in, and a
+**Sonnet 5 / Opus 5** picker sits above the input.
 
-The system prompt carries that brief, a key to the `training.md` format, and the
-log itself. **The whole file goes over**, up to a 120,000-character budget —
-about 3,500 exercise lines, or roughly five years at three sessions a week. Past
-that it sends the newest sessions that fit (whole days, never half a day) and
-tells the model how many older ones it couldn't see. Both models take a million
-tokens of context, so the budget is generous on purpose; a full send is a few
-cents a question at most, and less once the prompt cache warms.
+Your whole `training.md` goes with every question (up to about five years of it),
+so there's nothing to export. It calls the
+[Messages API](https://platform.claude.com/docs/en/api/messages/create) directly
+over HTTPS — no SDK, no extra packages, nothing to install.
 
-Answers stream in token by token. A **Sonnet 5 / Opus 5** picker sits above the
-input: Sonnet is the default because it's fast and cheap; Opus is there when you
-want it to chew on a few years of history.
+### Teach it who you are
 
-It talks to the [Claude Messages API](https://platform.claude.com/docs/en/api/messages/create)
-directly over HTTPS — `ClaudeService` is a plain `URLSession` client sitting next
-to `GitHubService`, no SDK and no extra packages. So Coach runs on the same iOS
-version as the rest of the app, with nothing to install.
-
-The whole conversation is sent each turn, so follow-up questions keep the thread,
-and the log is rebuilt per question — log a set mid-chat and the next answer sees
-it. The system prompt is marked for prompt caching, which makes follow-ups
-cheaper once the log is long enough to clear the model's minimum cacheable prefix.
-
-### `coaching.md` and `goals.md` — teach it who you are
-
-Drop a **`coaching.md`** next to your `training.md`, in the same repo and branch,
-and Coach reads it as a standing brief: how you like to train, what your week
-looks like, injuries to work around, how big your jumps are, whatever reading
-you want its advice to reflect. It's plain Markdown with no schema — write
-prose, write bullets, write whatever you'd tell a coach on day one.
+Two optional files beside your log, both plain Markdown with no schema:
+**`coaching.md`** for how you like to train, **`goals.md`** for what you're
+working toward.
 
 ```markdown
 - Four days a week, upper/lower. Squat and deadlift once each.
 - I add 2.5 kg upper / 5 kg lower when the top set moves cleanly.
-- Left shoulder doesn't like flat barbell benching at volume. Incline is fine.
-- Lead with the prescription. I'll ask if I want the reasoning.
+- Left shoulder doesn't like flat barbell benching at volume.
+- 140 kg squat by June. Currently 120. First meet in the autumn.
 ```
 
-A second file, **`goals.md`**, says what you're working toward — target lifts,
-a meet date, whether you're cutting or building. The coach programmes backwards
-from it, tells you when the log shows a goal slipping out of reach, and tells
-you when it's met rather than letting it stand forever.
+**Changing how you're coached is a commit** — edit, push, and the next answer
+reflects it. Versioned and revertable like the log, with no model to fine-tune.
 
-```markdown
-- 140 kg squat by June. Currently 120.
-- First meet in the autumn — start thinking about a peak around August.
-- Cutting until spring, so hold strength rather than chasing PRs.
-```
-
-The point is that **changing how you're coached is a commit.** Read something
-that changes your mind about programming, hit a goal, pick a meet — edit the
-file, push, and the next question reflects it. Versioned, diffable and
-revertable, exactly like the log, with nothing to retrain and no model to
-fine-tune. The Coach screen names the files it's reading so you can tell the
-brief actually landed.
-
-**Your brief**, from the person icon in the Coach tab's toolbar (or *Settings ▸
-Coach*), is where both files live: it shows what the coach currently knows about
-you, lets you edit either one right there, and commits your changes straight to
-your repo. No round trip to GitHub to change a line.
-
-**Or let it interview you.** *Set up your goals* — on an empty Coach screen, or
-from the brief screen — starts an interview instead of opening a form. Because the coach can already see your log, the
-questions are specific ("you've squatted 120 for a triple twice since July, is
-140 by June the target or is that too soft?"). After a few exchanges it writes
-the file, shows it to you, and **Save to `goals.md`** commits it to your repo.
-
-It's setup, not a one-shot: once goals exist the same button reads **Update your
-goals** and the interview opens by reflecting back what's on file and asking
-what's changed — met, missed, or a date that moved — rather than starting over.
-Saving replaces `goals.md` and nothing else; git history means a bad one is a
-revert away. Prefer to write it by hand? Ignore the button entirely — a
-hand-written file works identically.
-
-**Why two files rather than one?** Only so the app can own one of them: a future
-interview can rewrite `goals.md` without ever touching prose you hand-wrote. The model is shown both as a single brief, so nothing depends on you
-having filed a thought under the "right" heading — put it in either and it works.
-
-Both are optional: with neither, Coach runs on its own defaults. Rename them in
-*Settings ▸ Coach*, or blank a field to switch one off. They're fetched with the
-log, cached for offline the same way, capped at 20,000 characters each, and a
-failed fetch can never cost you your training history — it keeps the last copy.
-Your notes are a lifter writing about *training*, so the prompt tells the model
-to ignore anything in them that tries to rewrite its own rules, and to speak up
-rather than follow a brief into an injury.
+Edit both in the app from **Your brief** (the person icon in the Coach toolbar),
+or let it interview you: *Set up your goals* asks a few questions — specific
+ones, since it can already see your log — then writes `goals.md` and offers to
+commit it. Once goals exist, the same button becomes *Update your goals* and
+opens by asking what's changed. Both files are optional; rename or disable them
+in *Settings ▸ Coach*.
 
 ### The API key
 
-**The key is never in source and never committed** — this repo is public. It's
-read from the first of these that has one:
+Create one in the [Claude Console](https://platform.claude.com/) and paste it
+into *Settings ▸ Coach*, where it goes in the Keychain. **It is never in source
+and never committed** — this repo is public. For Simulator work you can use an
+`ANTHROPIC_API_KEY` scheme variable or an untracked `LiftLog/Secrets.plist`
+instead; `.gitignore` covers both. Usage bills to your Anthropic account.
 
-1. **Keychain** — paste it into *Settings ▸ Coach*. The normal path, and the
-   only one that works on a device from the home screen.
-2. **`ANTHROPIC_API_KEY`** environment variable — set it in the scheme
-   (*Product ▸ Scheme ▸ Edit Scheme ▸ Run ▸ Arguments*), which lives in
-   `xcuserdata/` and is already gitignored. Convenient in the Simulator.
-3. **`LiftLog/Secrets.plist`** — untracked, one `ANTHROPIC_API_KEY` string.
-   Gitignored, but it *is* copied into the app bundle, so it's dev-only: a key
-   in a bundle is extractable from the binary just like a hardcoded one.
+If your key isn't scoped to one workspace, the API also needs a workspace ID —
+the `wrkspc_…` from [Settings ▸ Workspaces](https://platform.claude.com/settings/workspaces),
+pasted into the same screen. A workspace-scoped key needs nothing extra.
 
-`.gitignore` covers `Secrets.plist`, `LiftLog/Secrets.plist`, `.env` and
-`*.local.xcconfig`. Usage bills to your Anthropic account at standard API
-pricing; create a key in the [Claude Console](https://platform.claude.com/).
+Your question and log go straight to `api.anthropic.com` over TLS, and are never
+logged or stored anywhere else.
 
-### Workspace ID (only for some keys)
-
-A key scoped to one workspace needs nothing else — leave the field blank. A
-**personal or service account key that spans several workspaces** has to say
-which one each request acts in, or the API answers `400 anthropic-workspace-id
-is required when authenticating with an identity-linked API key`. Paste the
-`wrkspc_…` value into *Settings ▸ Coach*; it's the **ID** column of
-[Settings ▸ Workspaces](https://platform.claude.com/settings/workspaces) in the
-Console. It's an identifier rather than a secret, so it lives in `UserDefaults`
-beside the repo config, not the Keychain. Creating a workspace-scoped key
-instead works just as well and needs no ID.
-
-> **Before distributing this to anyone else**, a key that ships inside the app is
-> the wrong model — anyone with the binary can pull it out and bill you. Put a
-> small backend in front that holds the key server-side and forwards requests,
-> and point `ClaudeService.endpoint` at it.
-
-### What leaves the phone
-
-The question and the log excerpt go straight from the app to `api.anthropic.com`
-over TLS. The log text is built in exactly one place (`CoachContext.systemPrompt`)
-and handed to the request; it is never printed, never logged to the console, and
-never written anywhere but the existing offline cache. Errors surface the API's
-status and reason, never the prompt.
-
-### If you'd rather use Apple's Foundation Models
-
-Anthropic also ships [`ClaudeForFoundationModels`](https://github.com/anthropics/ClaudeForFoundationModels),
-which plugs Claude into Apple's `FoundationModels` framework so it's driven by
-the same `LanguageModelSession` API as the on-device model. That's the nicer
-long-term integration — Apple handles tool calling and structured output, and
-you can switch to the on-device model for cheap tasks by swapping one argument.
-It needs **iOS 27 and Xcode 27**, both in beta as of this writing, which is why
-this app doesn't use it: the direct HTTPS client above runs on iOS 26 today.
-Swapping back later means replacing `ClaudeService` and nothing else —
-`CoachContext`, `CoachService`, the view and the key handling all stay as they are.
+> **Before giving this app to anyone else**: a key inside the binary can be
+> extracted from it. Put a small backend in front that holds the key server-side
+> and point `ClaudeService` at that instead.
 
 ## Open & run
 - Open **`LiftLog.xcodeproj`** in Xcode.
@@ -237,10 +143,8 @@ The same files compile into the iOS target via Xcode's synchronized folder, so
 `swift test` exercises the exact production code. Coverage: `training.md`
 parse/serialize round-trips, the `bw` / `bw+5` bodyweight tokens, malformed-line
 handling, the Trends analytics (top-set, Est. 1RM, added-load series, change
-tiles), and the Coach context builder (that a four-year log is sent whole, the
-newest-first trimming and truncation notes beyond that, and that what we send the
-model still round-trips through the parser, and that the coaching notes and goals
-become one standing brief that stays separate from the log data).
+tiles), and the Coach context builder — how much log gets sent, how the brief is
+assembled, and that what reaches the model still round-trips through the parser.
 
 ## GitHub token
 Create a **fine-grained personal access token** scoped to only this repo with

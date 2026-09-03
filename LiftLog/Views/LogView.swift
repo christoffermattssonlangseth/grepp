@@ -286,7 +286,7 @@ struct LogView: View {
                     HStack(spacing: 12) {
                         Text("\(idx + 1)")
                             .font(.subheadline.weight(.heavy))
-                            .foregroundStyle(.white)
+                            .foregroundStyle(Theme.onAccent)
                             .frame(width: 28, height: 28)
                             .background(Theme.accent, in: Circle())
                         Text(loadLabel(set))
@@ -324,7 +324,7 @@ struct LogView: View {
             Task { await finishExercise() }
         } label: {
             HStack {
-                if store.isBusy { ProgressView().tint(.white) }
+                if store.isBusy { ProgressView().tint(Theme.onAccent) }
                 Text(finishTitle)
                     .font(.headline.weight(.heavy)).tracking(0.5)
             }

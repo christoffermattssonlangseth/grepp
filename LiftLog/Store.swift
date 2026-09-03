@@ -16,6 +16,13 @@ final class Store: ObservableObject {
     @AppStorage("gh_path") var path = "training.md"
     @AppStorage("gh_branch") var branch = "main"
 
+    /// Optional companion files to `training.md`, in the same repo and branch: how
+    /// you want to be coached, and what you're working toward. Together they are the
+    /// Coach tab's standing brief. Blank a path, or never create the file, and Coach
+    /// just runs on its own defaults.
+    @AppStorage("gh_coaching_path") var coachingPath = "coaching.md"
+    @AppStorage("gh_goals_path") var goalsPath = "goals.md"
+
     /// Claude workspace for the Coach tab. An identifier, not a secret, so it sits
     /// in UserDefaults beside the repo config. Only needed when the API key spans
     /// more than one workspace.
@@ -35,6 +42,10 @@ final class Store: ObservableObject {
     /// Writes that haven't reached GitHub yet, oldest first. Persisted across launches.
     @Published private(set) var pending: [PendingWrite] = []
 
+    /// Contents of `coachingPath` and `goalsPath`, empty when there's no such file.
+    /// Cached like the log so they survive a cold start with no signal.
+    @Published private(set) var brief = CoachContext.Brief.none
+
     /// Drives the selected tab so views can jump between them (0 = Log … 4 = Settings).
     @Published var selectedTab = 0
 
@@ -49,8 +60,55 @@ final class Store: ObservableObject {
         selectedTab = 0
     }
 
+    /// An "open Your brief" request handed from Settings to the Coach tab, which
+    /// consumes it and clears it. Same shape as `editRequest`: the brief is
+    /// configured from Settings, but it belongs to Coach, which is where it's used.
+    @Published var briefRequest = false
+
+    func requestBrief() {
+        briefRequest = true
+        selectedTab = 3
+    }
+
     /// The outcome of a `commit`, so callers don't have to sniff `status` text.
     enum CommitResult { case pushed, queued, failed }
+
+    /// The two files that make up the coach's standing brief. One identity for
+    /// each, so a screen can read, edit and save either without special-casing.
+    enum BriefFile: String, CaseIterable, Identifiable {
+        case coaching, goals
+        var id: String { rawValue }
+
+        var title: String {
+            switch self {
+            case .coaching: return "How I train"
+            case .goals: return "What I'm working toward"
+            }
+        }
+
+        var hint: String {
+            switch self {
+            case .coaching:
+                return "Philosophy, preferences, the shape of your week, injuries to work around."
+            case .goals:
+                return "Targets and dates. The coach programmes backwards from these."
+            }
+        }
+    }
+
+    func path(for file: BriefFile) -> String {
+        switch file {
+        case .coaching: return coachingPath
+        case .goals: return goalsPath
+        }
+    }
+
+    func text(for file: BriefFile) -> String {
+        switch file {
+        case .coaching: return brief.coaching
+        case .goals: return brief.goals
+        }
+    }
 
     private enum StoreError: LocalizedError {
         case unsafeMerge
@@ -61,11 +119,15 @@ final class Store: ObservableObject {
 
     // UserDefaults keys for the offline cache + queue.
     private let cacheKey = "gh_cache"
+    private let coachingCacheKey = "gh_coaching_cache"
+    private let goalsCacheKey = "gh_goals_cache"
     private let pendingKey = "gh_pending"
     private var defaults: UserDefaults { .standard }
 
     init() {
         pending = loadPending()
+        brief = CoachContext.Brief(coaching: defaults.string(forKey: coachingCacheKey) ?? "",
+                                   goals: defaults.string(forKey: goalsCacheKey) ?? "")
         // Show cached content + any queued writes immediately, before the network load.
         sessions = WorkoutParser.applying(pending, to: cachedSessions())
     }
@@ -86,6 +148,84 @@ final class Store: ObservableObject {
 
     private var service: GitHubService {
         GitHubService(owner: owner, repo: repo, path: path, branch: branch, token: token)
+    }
+
+    /// Overwrite one of the brief files — hand-edited, or written by the coach in
+    /// an interview.
+    ///
+    /// A whole-file replace of that one path and nothing else: it never touches the
+    /// log or the other brief file, and git history means a bad write is a revert
+    /// away. Unlike a workout it isn't queued when offline — you're sitting there
+    /// looking at it, so a plain failure you can retry beats a silent queue.
+    @discardableResult
+    func save(_ text: String, to file: BriefFile) async -> CommitResult {
+        guard !isBusy else { return .failed }
+        let path = self.path(for: file).trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !path.isEmpty else {
+            status = "No \(file.rawValue) file set — add a path in Settings."
+            return .failed
+        }
+
+        isBusy = true; status = "Saving \(path)…"
+        defer { isBusy = false }
+
+        let remote = GitHubService(owner: owner, repo: repo, path: path, branch: branch, token: token)
+        let content = text.hasSuffix("\n") ? text : text + "\n"
+        do {
+            // Fetch first for the sha: a nil sha creates the file, a stale one is a 409.
+            let existing = try await remote.fetch()
+            _ = try await remote.put(content: content, sha: existing?.sha, message: "Update \(path) from LiftLog")
+            switch file {
+            case .coaching: brief.coaching = content
+            case .goals: brief.goals = content
+            }
+            defaults.set(content, forKey: cacheKey(for: file))
+            status = "Saved \(path) ✓"
+            return .pushed
+        } catch is URLError {
+            status = "Offline — couldn't save \(path). Try again when you have signal."
+            return .failed
+        } catch {
+            status = error.localizedDescription
+            return .failed
+        }
+    }
+
+    private func cacheKey(for file: BriefFile) -> String {
+        switch file {
+        case .coaching: return coachingCacheKey
+        case .goals: return goalsCacheKey
+        }
+    }
+
+    /// Refresh the two companion files. Deliberately cannot fail the load: they're
+    /// optional, a 404 just means the file isn't there, and anything else leaves the
+    /// cached copy in place — a hiccup fetching your notes must never cost you the
+    /// training history.
+    private func loadBrief() async {
+        brief = CoachContext.Brief(
+            coaching: await companion(at: coachingPath, cacheKey: coachingCacheKey) ?? brief.coaching,
+            goals: await companion(at: goalsPath, cacheKey: goalsCacheKey) ?? brief.goals
+        )
+    }
+
+    /// One companion file from the same repo and branch as the log. Returns nil for
+    /// "couldn't reach it, keep what you had"; an empty string means "there is no such
+    /// file", which is a real answer and clears any stale cache.
+    private func companion(at path: String, cacheKey: String) async -> String? {
+        guard !path.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return "" }
+        let file = GitHubService(owner: owner, repo: repo, path: path, branch: branch, token: token)
+        do {
+            // fetch() answers nil for a 404 — the file simply isn't there, which is a
+            // real answer and clears any stale cache. `try?` can't express that: it
+            // flattens, so a dead connection would read as "no such file" and quietly
+            // blank the brief.
+            let content = try await file.fetch()?.content ?? ""
+            defaults.set(content, forKey: cacheKey)
+            return content
+        } catch {
+            return nil   // couldn't reach it — keep whatever we had
+        }
     }
 
     /// Unique exercise names seen in history, for the picker (most recent first).
@@ -120,6 +260,7 @@ final class Store: ObservableObject {
                 sessions = WorkoutParser.applying(pending, to: [])
                 status = "No file yet — first save will create it.\(pendingSuffix)"
             }
+            await loadBrief()
             await flushPending()
         } catch is URLError {
             // Offline: fall back to the cache so the app still shows history.

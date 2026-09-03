@@ -58,9 +58,14 @@ struct HistoryView: View {
             }
             .overlay {
                 if store.sessions.isEmpty {
-                    ContentUnavailableView("No sessions yet",
-                                           systemImage: "dumbbell",
-                                           description: Text("Log a workout, or pull to refresh."))
+                    ContentUnavailableView {
+                        VStack(spacing: 12) {
+                            Barbell(height: 38)
+                            Text("No sessions yet")
+                        }
+                    } description: {
+                        Text("Log a workout, or pull to refresh.")
+                    }
                 }
             }
             .scrollContentBackground(.hidden)

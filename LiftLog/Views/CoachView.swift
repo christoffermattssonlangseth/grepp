@@ -8,6 +8,12 @@ struct CoachView: View {
 
     @AppStorage("coach_model") private var model: CoachModelChoice = .sonnet
     @State private var draft = ""
+    @State private var savingGoals = false
+    /// The exact text last committed, so a revised file offers Save again rather
+    /// than staying stuck on "Saved".
+    @State private var savedGoalsText: String?
+    @State private var saveError: String?
+    @State private var showingBrief = false
     @FocusState private var inputFocused: Bool
 
     /// The only thing that can stop Coach working now is a missing key.
@@ -20,11 +26,29 @@ struct CoachView: View {
             }
             .background(Theme.backgroundView)
             .navigationTitle("Coach")
+            // Both, deliberately: onChange catches a request while Coach is already
+            // on screen, onAppear catches one that arrives before the tab has ever
+            // been built — TabView makes its pages lazily.
+            .onChange(of: store.briefRequest) { _, _ in consumeBriefRequest() }
+            .onAppear(perform: consumeBriefRequest)
+            .sheet(isPresented: $showingBrief) {
+                BriefView {
+                    // The sheet is already dismissing; start the interview behind it.
+                    beginGoalsInterview()
+                }
+            }
             .toolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    Button { showingBrief = true } label: {
+                        Label("Your brief", systemImage: "person.text.rectangle")
+                    }
+                }
                 ToolbarItem(placement: .topBarTrailing) {
                     Button {
                         coach.reset()
                         draft = ""
+                        savedGoalsText = nil
+                        saveError = nil
                     } label: {
                         Label("New chat", systemImage: "square.and.pencil")
                     }
@@ -74,15 +98,7 @@ struct CoachView: View {
                     .foregroundStyle(.white)
                     .frame(maxWidth: .infinity, alignment: .trailing)
             case .coach:
-                VStack(alignment: .leading, spacing: 6) {
-                    Text(message.text)
-                        .font(.body)
-                        .textSelection(.enabled)
-                    if message.isStreaming {
-                        ProgressView().controlSize(.small)
-                    }
-                }
-                .glassCard(cornerRadius: 16)
+                coachBubble(message)
             }
         }
     }
@@ -95,8 +111,29 @@ struct CoachView: View {
                 Text("Your \(store.path) goes with every question, so answers cite your own dates and loads.")
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
+                Label(coachingHint, systemImage: hasBrief ? "checkmark.seal" : "doc.badge.plus")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             }
             .glassCard(cornerRadius: 16)
+
+            Button(action: beginGoalsInterview) {
+                HStack {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(goalsActionTitle)
+                            .font(.subheadline.weight(.bold))
+                        Text(goalsActionSubtitle)
+                            .font(.caption).foregroundStyle(.secondary)
+                    }
+                    Spacer()
+                    Image(systemName: hasGoals ? "target" : "plus.circle.fill")
+                        .font(.headline)
+                        .foregroundStyle(hasGoals ? Color.secondary : Theme.accent)
+                }
+                .foregroundStyle(.primary)
+                .glassCard(cornerRadius: 14)
+            }
+            .buttonStyle(.plain)
 
             ForEach(CoachContext.suggestedQuestions, id: \.self) { question in
                 Button {
@@ -112,6 +149,133 @@ struct CoachView: View {
                 }
                 .buttonStyle(.plain)
             }
+        }
+    }
+
+    /// SwiftUI renders markdown in a string *literal*, but shows a runtime String
+    /// verbatim — so the model's **bold** arrives as asterisks unless it's parsed.
+    /// Inline-only preserves the line breaks that `.full` would collapse.
+    private func rendered(_ text: String) -> AttributedString {
+        let markdown = CoachContext.chatMarkdown(text)
+        return (try? AttributedString(
+            markdown: markdown,
+            options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace)
+        )) ?? AttributedString(text)
+    }
+
+    private func consumeBriefRequest() {
+        guard store.briefRequest else { return }
+        store.briefRequest = false
+        showingBrief = true
+    }
+
+    private func beginGoalsInterview() {
+        savedGoalsText = nil
+        saveError = nil
+        draft = ""
+        inputFocused = false
+        coach.startGoalsInterview(model: model,
+                                  sessions: store.sessions,
+                                  brief: store.brief,
+                                  workspace: store.anthropicWorkspace)
+    }
+
+    @ViewBuilder
+    private func coachBubble(_ message: CoachMessage) -> some View {
+        let reply = CoachContext.parseReply(message.text)
+
+        VStack(alignment: .leading, spacing: 6) {
+            if !reply.prose.isEmpty {
+                Text(rendered(reply.prose))
+                    .font(.body)
+                    .textSelection(.enabled)
+            }
+            if reply.isWritingGoals {
+                Label("writing your goals…", systemImage: "square.and.pencil")
+                    .font(.caption).foregroundStyle(.secondary)
+            } else if message.isStreaming {
+                ProgressView().controlSize(.small)
+            }
+        }
+        .glassCard(cornerRadius: 16)
+
+        // The file gets its own card: it's a thing you save, not a paragraph, and a
+        // raw fenced block in a chat bubble reads as noise.
+        if let goals = reply.goals {
+            goalsCard(goals)
+        }
+    }
+
+    /// A goals file the coach has written, with the one button that commits it.
+    private func goalsCard(_ goals: String) -> some View {
+        let saved = savedGoalsText == goals
+
+        return VStack(alignment: .leading, spacing: 12) {
+            Label(store.goalsPath, systemImage: "doc.text")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.secondary)
+
+            Text(goals)
+                .font(.system(.footnote, design: .monospaced))
+                .textSelection(.enabled)
+                .frame(maxWidth: .infinity, alignment: .leading)
+
+            Button {
+                Task {
+                    savingGoals = true
+                    saveError = nil
+                    if await store.save(goals, to: .goals) == .pushed {
+                        savedGoalsText = goals
+                    } else {
+                        saveError = store.status
+                    }
+                    savingGoals = false
+                }
+            } label: {
+                HStack(spacing: 8) {
+                    if savingGoals { ProgressView().controlSize(.small) }
+                    Text(saved ? "Saved to \(store.goalsPath)" : "Save to \(store.goalsPath)")
+                        .font(.subheadline.weight(.bold))
+                }
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 10)
+            }
+            .buttonStyle(.borderedProminent)
+            .tint(saved ? .green : Theme.accent)
+            .disabled(savingGoals || saved)
+
+            // Only this save's own failure — never whatever the last load happened
+            // to leave in store.status.
+            if let saveError {
+                Text(saveError).font(.caption2).foregroundStyle(.orange)
+            }
+        }
+        .glassCard(cornerRadius: 16)
+    }
+
+    private var hasBrief: Bool { store.brief.hasContent }
+    private var hasGoals: Bool { !store.brief.goals.isEmpty }
+
+    /// Typed explicitly — a ternary of two literals is ambiguous between Text's
+    /// LocalizedStringKey and StringProtocol overloads.
+    private var goalsActionTitle: LocalizedStringKey {
+        hasGoals ? "Update your goals" : "Set up your goals"
+    }
+
+    private var goalsActionSubtitle: LocalizedStringKey {
+        hasGoals
+            ? "Review what's in \(store.goalsPath) and say what's changed."
+            : "A few questions, then it writes your \(store.goalsPath)."
+    }
+
+    /// Typed explicitly — a ternary of two literals is ambiguous between Label's
+    /// LocalizedStringKey and StringProtocol overloads.
+    private var coachingHint: LocalizedStringKey {
+        switch (!store.brief.coaching.isEmpty, !store.brief.goals.isEmpty) {
+        case (true, true): return "Coaching to your \(store.coachingPath) and \(store.goalsPath)."
+        case (true, false): return "Coaching by your \(store.coachingPath). Add a \(store.goalsPath) for what you're working toward."
+        case (false, true): return "Working toward your \(store.goalsPath). Add a \(store.coachingPath) for how you like to train."
+        case (false, false): return "Add a \(store.coachingPath) and \(store.goalsPath) beside your log and it coaches to your rules."
         }
     }
 
@@ -173,7 +337,11 @@ struct CoachView: View {
         guard !trimmed.isEmpty else { return }
         draft = ""
         inputFocused = false
-        coach.send(trimmed, model: model, workspace: store.anthropicWorkspace, sessions: store.sessions)
+        coach.send(trimmed,
+                   model: model,
+                   sessions: store.sessions,
+                   brief: store.brief,
+                   workspace: store.anthropicWorkspace)
     }
 
     // MARK: - No key

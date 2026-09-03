@@ -78,7 +78,7 @@ struct LogView: View {
             }
             .refreshable { await store.load() }
             .onAppear { applyEditRequest() }
-            .onChange(of: store.editRequest) { _ in applyEditRequest() }
+            .onChange(of: store.editRequest) { _, _ in applyEditRequest() }
         }
     }
 

@@ -19,7 +19,7 @@ struct SettingsView: View {
                     SecureField("ghp_… (fine-grained PAT)", text: $store.token)
                         .textInputAutocapitalization(.never)
                         .autocorrectionDisabled()
-                        .onChange(of: store.token) { _ in store.saveToken() }
+                        .onChange(of: store.token) { _, _ in store.saveToken() }
                     Text("Create a fine-grained token scoped to just this repo with **Contents: Read and write**.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
@@ -30,7 +30,7 @@ struct SettingsView: View {
                     SecureField("sk-ant-… (Claude API key)", text: $store.anthropicKey)
                         .textInputAutocapitalization(.never)
                         .autocorrectionDisabled()
-                        .onChange(of: store.anthropicKey) { _ in store.saveAnthropicKey() }
+                        .onChange(of: store.anthropicKey) { _, _ in store.saveAnthropicKey() }
                     Text("""
                     Stored in the Keychain — never in source or UserDefaults. \
                     Create one in the [Claude Console](https://platform.claude.com/). \
@@ -38,6 +38,18 @@ struct SettingsView: View {
                     """)
                         .font(.caption)
                         .foregroundStyle(.secondary)
+
+                    labeled("coaching file", text: $store.coachingPath, placeholder: "coaching.md")
+                    labeled("goals file", text: $store.goalsPath, placeholder: "goals.md")
+                    Text(coachingHint)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+
+                    Button {
+                        store.requestBrief()
+                    } label: {
+                        Label("Your brief — goals & how you train", systemImage: "person.text.rectangle")
+                    }
 
                     labeled("workspace id", text: $store.anthropicWorkspace, placeholder: "wrkspc_… (optional)")
                     Text("""
@@ -79,11 +91,34 @@ struct SettingsView: View {
                     }
                 }
                 .listRowBackground(Rectangle().fill(.regularMaterial))
+
+                Section {
+                    VStack(spacing: 8) {
+                        Barbell(height: 26)
+                        Text("LiftLog")
+                            .font(.caption.weight(.heavy))
+                            .tracking(3)
+                            .foregroundStyle(.secondary)
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 10)
+                }
+                .listRowBackground(Color.clear)
             }
             .scrollContentBackground(.hidden)
             .background(Theme.backgroundView)
             .navigationTitle("Settings")
         }
+    }
+
+    /// Whether the coaching notes were found, and what to do about it.
+    private var coachingHint: LocalizedStringKey {
+        let found = [store.brief.coaching.isEmpty ? nil : store.coachingPath,
+                     store.brief.goals.isEmpty ? nil : store.goalsPath].compactMap { $0 }
+        if found.isEmpty {
+            return "Neither file found. Commit them beside your log — **\(store.coachingPath)** for how you like to train and what to work around, **\(store.goalsPath)** for what you're aiming at — and they become the coach's standing brief."
+        }
+        return "Loaded \(found.joined(separator: " and ")). Edit them in your repo, then reload below."
     }
 
     private func labeled(_ label: String, text: Binding<String>, placeholder: String) -> some View {

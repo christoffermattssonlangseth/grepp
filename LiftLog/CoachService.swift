@@ -57,9 +57,30 @@ final class CoachService: ObservableObject {
     /// What the model was actually shown, for the header ("42 sessions 2026-01-04 → 2026-09-01").
     @Published private(set) var contextNote: String?
 
+    /// What this conversation is doing. Set when an interview starts and kept for
+    /// the rest of the chat, so follow-up turns still know the protocol.
+    @Published private(set) var mode: CoachContext.Mode = .coaching
+
     private var task: Task<Void, Never>?
 
     var isEmpty: Bool { messages.isEmpty }
+
+    /// A finished goals file the coach has offered, once it has stopped streaming.
+    var proposedGoals: String? {
+        guard !isResponding, let last = messages.last, last.role == .coach else { return nil }
+        return CoachContext.parseReply(last.text).goals
+    }
+
+    /// Begin the goals interview: the coach leads from here.
+    func startGoalsInterview(model: CoachModelChoice,
+                             sessions: [Session],
+                             brief: CoachContext.Brief,
+                             workspace: String) {
+        reset()
+        mode = .goalsInterview
+        send(CoachContext.goalsInterviewRequest,
+             model: model, sessions: sessions, brief: brief, workspace: workspace)
+    }
 
     /// Start over. The next question rebuilds the log context from scratch.
     func reset() {
@@ -69,6 +90,7 @@ final class CoachService: ObservableObject {
         errorText = nil
         contextNote = nil
         isResponding = false
+        mode = .coaching
     }
 
     /// Stop the answer in flight, keeping whatever streamed in so far.
@@ -79,7 +101,11 @@ final class CoachService: ObservableObject {
         isResponding = false
     }
 
-    func send(_ question: String, model: CoachModelChoice, workspace: String, sessions: [Session]) {
+    func send(_ question: String,
+              model: CoachModelChoice,
+              sessions: [Session],
+              brief: CoachContext.Brief,
+              workspace: String) {
         let trimmed = question.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty, !isResponding else { return }
 
@@ -100,8 +126,10 @@ final class CoachService: ObservableObject {
         // Rebuilt per question rather than pinned at the start of the chat, so a
         // workout logged mid-conversation is picked up on the next answer.
         let excerpt = CoachContext.excerpt(from: sessions)
-        let system = CoachContext.systemPrompt(for: excerpt)
-        contextNote = excerpt.note
+        let system = CoachContext.systemPrompt(for: excerpt, brief: brief, mode: mode)
+        // Say when the standing brief is in play — otherwise there's no way to
+        // tell from the answers whether the coaching notes were picked up.
+        contextNote = brief.hasContent ? excerpt.note + " + your brief" : excerpt.note
 
         messages.append(CoachMessage(role: .you, text: trimmed))
         let reply = CoachMessage(role: .coach, text: "", isStreaming: true)

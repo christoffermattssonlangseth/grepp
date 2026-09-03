@@ -48,37 +48,22 @@ that don't exist yet, no database migration required.
 
 ## Coach
 
-The **Coach** tab is a chat with Claude that reads your training log. The
-session's instructions carry the coach's brief, a key to the `training.md`
-format, and as much of the log as fits a character budget (newest sessions
-first — whole days, never half a day). Answers stream in as they're generated.
-A **Sonnet 5 / Opus 5** picker sits above the input: Sonnet is the default
-because it's fast and cheap; Opus is there when you want it to chew on a few
-months of history.
+The **Coach** tab is a chat with Claude that reads your training log. The system
+prompt carries the coach's brief, a key to the `training.md` format, and as much
+of the log as fits a character budget (newest sessions first — whole days, never
+half a day). Answers stream in token by token. A **Sonnet 5 / Opus 5** picker
+sits above the input: Sonnet is the default because it's fast and cheap; Opus is
+there when you want it to chew on a few months of history.
 
-Claude is reached through Apple's **Foundation Models** framework via
-Anthropic's [`ClaudeForFoundationModels`](https://github.com/anthropics/ClaudeForFoundationModels)
-package, so it's the same `LanguageModelSession` API as the on-device model —
-just with `ClaudeLanguageModel` passed as the `model:`.
+It talks to the [Claude Messages API](https://platform.claude.com/docs/en/api/messages/create)
+directly over HTTPS — `ClaudeService` is a plain `URLSession` client sitting next
+to `GitHubService`, no SDK and no extra packages. So Coach runs on the same iOS
+version as the rest of the app, with nothing to install.
 
-### The package is not linked by default
-
-`ClaudeForFoundationModels` is **beta** and requires **iOS 27 / Xcode 27
-(beta)**. This project's deployment target is **iOS 26.5**, so adding the
-package outright would stop the app building on the current stable toolchain.
-Instead the Coach code is gated two ways and ships inert:
-
-- **Compile time** — everything touching `FoundationModels` sits behind
-  `#if canImport(ClaudeForFoundationModels)`. Without the package the app builds
-  exactly as before and the Coach tab explains that it isn't linked.
-- **Run time** — `@available(iOS 27.0, *)` / `#available`, so an iOS 26 device
-  running an Xcode 27 build gets an explanation instead of a crash.
-
-To turn it on, in **Xcode 27**: *File ▸ Add Package Dependencies…* →
-`https://github.com/anthropics/ClaudeForFoundationModels.git` (from `0.1.0`),
-add the `ClaudeForFoundationModels` product to the **LiftLog** target, and raise
-`IPHONEOS_DEPLOYMENT_TARGET` to `27.0`. Nothing else changes — `canImport` picks
-it up. Drop the package to go back to a stable-toolchain build.
+The whole conversation is sent each turn, so follow-up questions keep the thread,
+and the log is rebuilt per question — log a set mid-chat and the next answer sees
+it. The system prompt is marked for prompt caching, which makes follow-ups
+cheaper once the log is long enough to clear the model's minimum cacheable prefix.
 
 ### The API key
 
@@ -96,23 +81,32 @@ read from the first of these that has one:
 
 `.gitignore` covers `Secrets.plist`, `LiftLog/Secrets.plist`, `.env` and
 `*.local.xcconfig`. Usage bills to your Anthropic account at standard API
-pricing.
+pricing; create a key in the [Claude Console](https://platform.claude.com/).
 
-> **Before distributing this to anyone else**, `.apiKey` is the wrong auth mode —
-> any key that reaches the app can be pulled back out of it. Switch
-> `ClaudeCoachBackend` to `.appAttest(clientID: "clid_…")`, Anthropic's
-> recommended path, which ships no key at all (register the app in the Claude
-> Console and add the App Attest capability), or `.proxied(...)` through a
-> backend that holds the key server-side.
+> **Before distributing this to anyone else**, a key that ships inside the app is
+> the wrong model — anyone with the binary can pull it out and bill you. Put a
+> small backend in front that holds the key server-side and forwards requests,
+> and point `ClaudeService.endpoint` at it.
 
 ### What leaves the phone
 
 The question and the log excerpt go straight from the app to `api.anthropic.com`
-— Apple is not in the request path. The log text is assembled in exactly one
-place (`CoachContext.instructions`) and handed to the session; it is never
-printed, never logged to the console, and never written anywhere but the
-existing offline cache. Errors surface the API's status and reason, never the
-prompt.
+over TLS. The log text is built in exactly one place (`CoachContext.systemPrompt`)
+and handed to the request; it is never printed, never logged to the console, and
+never written anywhere but the existing offline cache. Errors surface the API's
+status and reason, never the prompt.
+
+### If you'd rather use Apple's Foundation Models
+
+Anthropic also ships [`ClaudeForFoundationModels`](https://github.com/anthropics/ClaudeForFoundationModels),
+which plugs Claude into Apple's `FoundationModels` framework so it's driven by
+the same `LanguageModelSession` API as the on-device model. That's the nicer
+long-term integration — Apple handles tool calling and structured output, and
+you can switch to the on-device model for cheap tasks by swapping one argument.
+It needs **iOS 27 and Xcode 27**, both in beta as of this writing, which is why
+this app doesn't use it: the direct HTTPS client above runs on iOS 26 today.
+Swapping back later means replacing `ClaudeService` and nothing else —
+`CoachContext`, `CoachService`, the view and the key handling all stay as they are.
 
 ## Open & run
 - Open **`LiftLog.xcodeproj`** in Xcode.

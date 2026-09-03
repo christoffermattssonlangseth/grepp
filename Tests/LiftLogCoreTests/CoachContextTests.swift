@@ -90,11 +90,11 @@ final class CoachContextTests: XCTestCase {
         XCTAssertEqual(CoachContext.excerpt(from: []).note, "No training logged yet.")
     }
 
-    // MARK: - instructions
+    // MARK: - system prompt
 
-    func testInstructionsCarryTheLogAndTheFormatKey() {
+    func testSystemPromptCarriesTheLogAndTheFormatKey() {
         let excerpt = CoachContext.excerpt(from: [session("2026-08-01", "squat", 100)])
-        let text = CoachContext.instructions(for: excerpt, today: date("2026-08-03"))
+        let text = CoachContext.systemPrompt(for: excerpt, today: date("2026-08-03"))
 
         XCTAssertTrue(text.contains("2026-08-01 squat 100x5"))
         XCTAssertTrue(text.contains("<training-log>"))
@@ -104,15 +104,15 @@ final class CoachContextTests: XCTestCase {
         XCTAssertTrue(text.contains("the single recorded session, on 2026-08-01"))
     }
 
-    func testInstructionsSayWhenHistoryWasTruncated() {
+    func testSystemPromptSaysWhenHistoryWasTruncated() {
         let excerpt = CoachContext.excerpt(from: (1...9).map { session(String(format: "2026-08-%02d", $0)) },
                                            budget: 50)
-        let text = CoachContext.instructions(for: excerpt, today: date("2026-08-10"))
+        let text = CoachContext.systemPrompt(for: excerpt, today: date("2026-08-10"))
         XCTAssertTrue(text.contains("7 older sessions exist but were left out"), text)
     }
 
-    func testInstructionsHandleAnEmptyLog() {
-        let text = CoachContext.instructions(for: CoachContext.excerpt(from: []), today: date("2026-08-10"))
+    func testSystemPromptHandlesAnEmptyLog() {
+        let text = CoachContext.systemPrompt(for: CoachContext.excerpt(from: []), today: date("2026-08-10"))
         XCTAssertTrue(text.contains("The log is empty"))
         XCTAssertFalse(text.contains("<training-log>\n2"), "no session lines to include")
     }

@@ -10,16 +10,13 @@ struct CoachView: View {
     @State private var draft = ""
     @FocusState private var inputFocused: Bool
 
-    private var availability: CoachAvailability { CoachAvailability.current }
+    /// The only thing that can stop Coach working now is a missing key.
+    private var hasKey: Bool { CoachCredentials.hasKey }
 
     var body: some View {
         NavigationStack {
             Group {
-                if availability == .ready {
-                    chat
-                } else {
-                    unavailable
-                }
+                if hasKey { chat } else { needsKey }
             }
             .background(Theme.backgroundView)
             .navigationTitle("Coach")
@@ -179,36 +176,17 @@ struct CoachView: View {
         coach.send(trimmed, model: model, sessions: store.sessions)
     }
 
-    // MARK: - Not available
+    // MARK: - No key
 
-    /// Coach needs three things this build might not have: the package, iOS 27,
-    /// and a key. Say which one is missing rather than failing on send.
-    private var unavailable: some View {
-        VStack(spacing: 16) {
-            ContentUnavailableView {
-                Label("Coach isn't set up", systemImage: "bubble.left.and.bubble.right")
-            } description: {
-                Text(reason)
-            } actions: {
-                if availability == .needsKey {
-                    Button("Open Settings") { store.selectedTab = 4 }
-                        .buttonStyle(.borderedProminent)
-                        .tint(Theme.accent)
-                }
-            }
-        }
-    }
-
-    private var reason: String {
-        switch availability {
-        case .ready:
-            return ""
-        case .needsKey:
-            return CoachError.missingKey.errorDescription ?? ""
-        case .needsOS:
-            return CoachError.unsupportedOS.errorDescription ?? ""
-        case .needsPackage:
-            return CoachError.packageMissing.errorDescription ?? ""
+    private var needsKey: some View {
+        ContentUnavailableView {
+            Label("Coach needs an API key", systemImage: "key")
+        } description: {
+            Text("Coach asks Claude about your training log. Add a Claude API key to get started — it's stored in the Keychain, never in the repo.")
+        } actions: {
+            Button("Open Settings") { store.selectedTab = 4 }
+                .buttonStyle(.borderedProminent)
+                .tint(Theme.accent)
         }
     }
 }

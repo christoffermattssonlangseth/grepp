@@ -38,12 +38,6 @@ struct SettingsView: View {
                     """)
                         .font(.caption)
                         .foregroundStyle(.secondary)
-                    if CoachAvailability.current == .needsPackage {
-                        Label("This build doesn't link ClaudeForFoundationModels — see README ▸ Coach.",
-                              systemImage: "info.circle")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
                 }
                 .listRowBackground(Rectangle().fill(.regularMaterial))
 

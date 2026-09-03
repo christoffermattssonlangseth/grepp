@@ -16,10 +16,10 @@ import Foundation
 ///    app bundle, so treat it as dev-only convenience: a key in a bundle is
 ///    extractable from the binary exactly like a hardcoded one.
 ///
-/// All three are development-grade. Before this app goes to anyone else, switch
-/// `CoachService` to `.appAttest(clientID:)` (ships no key at all, needs a
-/// device with a Secure Enclave) or `.proxied(...)` through a backend that holds
-/// the key server-side. See the note in `CoachService.makeBackend`.
+/// All three are development-grade: a key that reaches the app can be pulled back
+/// out of the binary. Before this app goes to anyone else, put a backend in front
+/// that holds the key server-side and forwards requests, and point
+/// `ClaudeService` at it instead of `api.anthropic.com`.
 enum CoachCredentials {
     static let account = "anthropic_api_key"
 

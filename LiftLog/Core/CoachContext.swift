@@ -65,11 +65,11 @@ enum CoachContext {
         )
     }
 
-    /// The session instructions: the coach's brief, the format key, and the log.
+    /// The system prompt: the coach's brief, the format key, and the log.
     ///
-    /// This goes in the session's instructions rather than each question, so the
-    /// history is sent once per conversation and every follow-up can lean on it.
-    static func instructions(for excerpt: LogExcerpt, today: Date = Date()) -> String {
+    /// It goes in `system` rather than in the question, so it stays byte-identical
+    /// across a conversation's turns and can be prompt-cached.
+    static func systemPrompt(for excerpt: LogExcerpt, today: Date = Date()) -> String {
         let todayString = Session.dateFormatter.string(from: today)
 
         let coverage: String

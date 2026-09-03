@@ -15,12 +15,36 @@ struct SettingsView: View {
                 }
                 .listRowBackground(Rectangle().fill(.regularMaterial))
 
-                Section("Token") {
+                Section("GitHub token") {
                     SecureField("ghp_… (fine-grained PAT)", text: $store.token)
                         .textInputAutocapitalization(.never)
                         .autocorrectionDisabled()
                         .onChange(of: store.token) { _ in store.saveToken() }
                     Text("Create a fine-grained token scoped to just this repo with **Contents: Read and write**.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                .listRowBackground(Rectangle().fill(.regularMaterial))
+
+                Section("Coach") {
+                    SecureField("sk-ant-… (Claude API key)", text: $store.anthropicKey)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+                        .onChange(of: store.anthropicKey) { _ in store.saveAnthropicKey() }
+                    Text("""
+                    Stored in the Keychain — never in source or UserDefaults. \
+                    Create one in the [Claude Console](https://platform.claude.com/). \
+                    Usage bills to your Anthropic account.
+                    """)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+
+                    labeled("workspace id", text: $store.anthropicWorkspace, placeholder: "wrkspc_… (optional)")
+                    Text("""
+                    Only needed if the key isn't scoped to a single workspace. \
+                    Find it in the **ID** column of Settings ▸ Workspaces in the Console — \
+                    or leave this blank and create a workspace-scoped key instead.
+                    """)
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }

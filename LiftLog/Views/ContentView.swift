@@ -14,9 +14,12 @@ struct ContentView: View {
             TrendsView()
                 .tabItem { Label("Trends", systemImage: "chart.line.uptrend.xyaxis") }
                 .tag(2)
+            CoachView()
+                .tabItem { Label("Coach", systemImage: "bubble.left.and.bubble.right.fill") }
+                .tag(3)
             SettingsView()
                 .tabItem { Label("Settings", systemImage: "gearshape") }
-                .tag(3)
+                .tag(4)
         }
         .tint(Theme.accent)
     }

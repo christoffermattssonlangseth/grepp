@@ -16,7 +16,16 @@ final class Store: ObservableObject {
     @AppStorage("gh_path") var path = "training.md"
     @AppStorage("gh_branch") var branch = "main"
 
+    /// Claude workspace for the Coach tab. An identifier, not a secret, so it sits
+    /// in UserDefaults beside the repo config. Only needed when the API key spans
+    /// more than one workspace.
+    @AppStorage("anthropic_workspace") var anthropicWorkspace = ""
+
     @Published var token: String = Keychain.get(account: "token") ?? ""
+
+    /// Claude API key for the Coach tab. Also lives in the Keychain, under its own
+    /// service — never in UserDefaults, and never in source (this repo is public).
+    @Published var anthropicKey: String = CoachCredentials.stored ?? ""
 
     @Published private(set) var sessions: [Session] = []
     @Published private(set) var fileSHA: String?
@@ -26,7 +35,7 @@ final class Store: ObservableObject {
     /// Writes that haven't reached GitHub yet, oldest first. Persisted across launches.
     @Published private(set) var pending: [PendingWrite] = []
 
-    /// Drives the selected tab so views can jump between them (0 = Log … 3 = Settings).
+    /// Drives the selected tab so views can jump between them (0 = Log … 4 = Settings).
     @Published var selectedTab = 0
 
     /// A "edit this past entry" request handed from History to the Log tab. The Log
@@ -66,6 +75,13 @@ final class Store: ObservableObject {
         token = trimmed
         if trimmed.isEmpty { Keychain.delete(account: "token") }
         else { Keychain.set(trimmed, account: "token") }
+    }
+
+    /// Store (or clear) the Claude API key. Mirrors `saveToken`.
+    func saveAnthropicKey() {
+        let trimmed = anthropicKey.trimmingCharacters(in: .whitespacesAndNewlines)
+        anthropicKey = trimmed
+        CoachCredentials.store(trimmed)
     }
 
     private var service: GitHubService {

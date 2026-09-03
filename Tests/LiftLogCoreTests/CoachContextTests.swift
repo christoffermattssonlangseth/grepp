@@ -110,6 +110,32 @@ final class CoachContextTests: XCTestCase {
         XCTAssertEqual(CoachContext.excerpt(from: []).note, "No training logged yet.")
     }
 
+    // MARK: - chat rendering
+
+    func testHeadingsBecomeBoldForTheChatBubble() {
+        // SwiftUI parses a runtime string inline-only, so "## Today" would show its
+        // hashes. Bold is the closest thing a bubble can actually render.
+        let out = CoachContext.chatMarkdown("## Thursday\n\n- Squat 87.5x5\n### Why\nYou hit 85x5.")
+        XCTAssertEqual(out, "**Thursday**\n\n- Squat 87.5x5\n**Why**\nYou hit 85x5.")
+    }
+
+    func testOrdinaryTextIsUntouched() {
+        let text = "Squat **87.5** for 3x5.\n\n- Up from 85x5\n- Hold if reps slow"
+        XCTAssertEqual(CoachContext.chatMarkdown(text), text)
+    }
+
+    func testHashesThatArentHeadingsSurvive() {
+        // A lone "#" or a mid-line hash isn't a heading and must not be eaten.
+        XCTAssertEqual(CoachContext.chatMarkdown("#"), "#")
+        XCTAssertEqual(CoachContext.chatMarkdown("set #3 was the grinder"),
+                       "set #3 was the grinder")
+    }
+
+    func testPromptTellsTheModelWhatTheBubbleRenders() {
+        let text = CoachContext.systemPrompt(for: CoachContext.excerpt(from: []))
+        XCTAssertTrue(text.contains("No headings, no"), "must rule out what can't render")
+    }
+
     // MARK: - goals interview
 
     private let fence = CoachContext.goalsFence

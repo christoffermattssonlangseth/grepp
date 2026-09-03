@@ -91,6 +91,19 @@ struct SettingsView: View {
                     }
                 }
                 .listRowBackground(Rectangle().fill(.regularMaterial))
+
+                Section {
+                    VStack(spacing: 8) {
+                        Barbell(height: 26)
+                        Text("LiftLog")
+                            .font(.caption.weight(.heavy))
+                            .tracking(3)
+                            .foregroundStyle(.secondary)
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 10)
+                }
+                .listRowBackground(Color.clear)
             }
             .scrollContentBackground(.hidden)
             .background(Theme.backgroundView)

@@ -180,6 +180,10 @@ enum CoachContext {
         recommendation. You are not a doctor; suggest medical advice for pain, never \
         diagnose it.
 
+        FORMATTING. Your answer renders in a chat bubble, which shows **bold**, \
+        *italics*, `code` and dash-led lists — and nothing else. No headings, no \
+        tables, no numbered lists. Prose and the occasional short list.
+
         \(standingBrief(brief))
         <training-log>
         \(excerpt.text)</training-log>
@@ -343,6 +347,21 @@ enum CoachContext {
         let goals = String(rest[rest.startIndex..<close.lowerBound])
             .trimmingCharacters(in: .whitespacesAndNewlines)
         return Reply(prose: prose, goals: goals.isEmpty ? nil : goals)
+    }
+
+    /// Reshape a reply into markdown a chat bubble can actually render.
+    ///
+    /// SwiftUI parses a runtime string inline-only, which covers bold, italics,
+    /// code and links but not block elements — a `## Heading` would show its
+    /// hashes. Models reach for headings anyway, so fold them into bold.
+    static func chatMarkdown(_ raw: String) -> String {
+        raw.split(separator: "\n", omittingEmptySubsequences: false).map { line in
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+            guard trimmed.hasPrefix("#") else { return String(line) }
+            let title = trimmed.drop { $0 == "#" }.trimmingCharacters(in: .whitespaces)
+            return title.isEmpty ? String(line) : "**\(title)**"
+        }
+        .joined(separator: "\n")
     }
 
     /// Starter questions offered on an empty Coach screen. Weighted towards "what

@@ -28,6 +28,39 @@ enum Theme {
     }
 }
 
+/// The app's mark: a barbell, drawn rather than shipped as an image so it takes
+/// the accent colour, stays crisp at any size, and needs no asset per scale.
+///
+/// Sized by `height`; the width follows at 2.3:1. Two plates a side, with the bar
+/// running past them so it reads as a bar and not a dumbbell.
+struct Barbell: View {
+    var height: CGFloat = 24
+    var color: Color = Theme.accent
+
+    var body: some View {
+        ZStack {
+            Capsule()
+                .frame(height: height * 0.13)
+            HStack(spacing: height * 0.09) {
+                plate(0.52)
+                plate(1.0)
+                Spacer(minLength: height * 0.4)
+                plate(1.0)
+                plate(0.52)
+            }
+            .padding(.horizontal, height * 0.09)
+        }
+        .foregroundStyle(color)
+        .frame(width: height * 2.3, height: height)
+        .accessibilityHidden(true)
+    }
+
+    private func plate(_ scale: CGFloat) -> some View {
+        RoundedRectangle(cornerRadius: height * 0.07, style: .continuous)
+            .frame(width: height * 0.15, height: height * scale)
+    }
+}
+
 extension View {
     /// Frosted-glass card: a translucent material panel with a hairline highlight
     /// edge and a soft drop shadow. The one place the app's card look is defined.

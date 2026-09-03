@@ -152,6 +152,17 @@ struct CoachView: View {
         }
     }
 
+    /// SwiftUI renders markdown in a string *literal*, but shows a runtime String
+    /// verbatim — so the model's **bold** arrives as asterisks unless it's parsed.
+    /// Inline-only preserves the line breaks that `.full` would collapse.
+    private func rendered(_ text: String) -> AttributedString {
+        let markdown = CoachContext.chatMarkdown(text)
+        return (try? AttributedString(
+            markdown: markdown,
+            options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace)
+        )) ?? AttributedString(text)
+    }
+
     private func consumeBriefRequest() {
         guard store.briefRequest else { return }
         store.briefRequest = false
@@ -175,7 +186,7 @@ struct CoachView: View {
 
         VStack(alignment: .leading, spacing: 6) {
             if !reply.prose.isEmpty {
-                Text(reply.prose)
+                Text(rendered(reply.prose))
                     .font(.body)
                     .textSelection(.enabled)
             }

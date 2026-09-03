@@ -9,6 +9,11 @@ pushes each entry straight to a GitHub repo via the Contents API. No server, no
 database — the text file stays the single source of truth, human-readable and
 diff-friendly.
 
+Because the log is plain text, it doubles as a **coach**. The Coach tab puts the
+whole file in front of Claude and answers "what should I squat on Thursday?" with
+numbers from your own history — coached to rules you write yourself, in Markdown,
+in the same repo.
+
 Point the app at any repo you control from the **Settings** tab (GitHub owner /
 repo / path / branch + a fine-grained token). It reads and writes one file, so
 your training history is portable, greppable, and outlives the app itself.
@@ -31,20 +36,24 @@ One line per exercise per day; a blank line separates dates:
 - **Sets** — space-separated `weightxreps` tokens: `82.5x8` (kg × reps),
   `bwx6` (bodyweight × reps), `bw+5x8` (bodyweight **+ 5 kg** × reps).
 
-## Why plain text? (great for LLMs)
+## Ask your log
 
-Because the log is just a small Markdown file, there's nothing to export and no
-schema to reverse-engineer — you can hand the whole thing to an LLM and ask real
-questions about your training:
+There's nothing to export and no schema to reverse-engineer, so the whole file
+goes straight to the model. Which means these are questions you type into the
+app, not things you'd have to build something to answer:
 
-> _"Am I actually progressing on squat over the last two months, or just adding
-> volume?"_
-> _"Plan next week's lower-body session at ~RPE 8 based on my recent top sets."_
-> _"Which lifts have stalled the longest?"_
+> _"Am I progressing on squat over the last two months, or just adding volume?"_
+> _"Plan next week's lower body from my recent top sets."_
+> _"Which lifts have stalled the longest, and what do I do about it?"_
 
-The format **is** the data: greppable, diffable, and directly readable by any
-model. Your training history stays portable and future-proof — usable by tools
-that don't exist yet, no database migration required.
+You get numbers back — load, sets and reps, sized from the increments *you've*
+been making — with the dates each call rests on. Write down how you train and
+what you're aiming at in two more Markdown files beside the log, and it coaches
+to your rules instead of a textbook's. Changing its mind is a commit.
+
+The format **is** the data: greppable, diffable, and readable by any model. Your
+history stays portable and outlives the app — usable by tools that don't exist
+yet, no migration required.
 
 ## Coach
 

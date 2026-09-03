@@ -21,7 +21,11 @@ repo / path / branch + a fine-grained token). It reads and writes one file, so
 your training history is portable, greppable, and outlives the app itself.
 
 <p align="center">
-  <img src="docs/session.png" width="300" alt="LiftLog Session screen — bold, gym-friendly logging UI">
+  <img src="docs/session.png" width="280" alt="LiftLog Session screen — logging a workout on the big number pads">
+  <img src="docs/coach.png" width="280" alt="LiftLog Coach screen — Claude answering a question about the training log">
+</p>
+<p align="center">
+  <em><b>Session</b> — log it. &nbsp; <b>Coach</b> — ask about it.</em>
 </p>
 
 ## Ask your log
@@ -34,9 +38,18 @@ have to build something to answer:
 > _"Plan next week's lower body from my recent top sets."_
 > _"Which lifts have stalled the longest, and what do I do about it?"_
 
-You get numbers back — load, sets and reps, sized from the increments *you've*
-been making — with the dates each call rests on, and a straight "the log doesn't
-show that" when it can't support one.
+You get numbers back. An actual answer, from the screenshot above:
+
+> **Progressing well — and the last two sessions say you're leaving reps on the
+> table.** Next heavy squat: **90 kg for 3x8**, and if set three moves like the
+> last two, stop it at 10 rather than chasing another 14.
+>
+> The heavy line: 70x8 (08-02) → 72.5 (08-06) → 75 (08-12) → 77.5 (08-18) → 80
+> (08-25) → 85 (09-01). […] The tell is the third set: 80x12 on 08-25 and 85x14
+> on 09-01. Eight-rep work isn't supposed to end in a 14.
+
+The prescription first, then the numbers it rests on — and a straight "the log
+doesn't show that" when it can't support one.
 
 The format **is** the data: greppable, diffable, readable by any model. Your
 history stays portable and outlives the app — usable by tools that don't exist

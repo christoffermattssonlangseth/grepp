@@ -9,11 +9,16 @@ import Foundation
 /// model; nothing here writes to disk or the console.
 enum CoachContext {
 
-    /// How much of the log to send, in characters. The file is one line per
-    /// exercise per day, so several years of training still lands well under this
-    /// — the cap only bites on an unusually long history, where the most recent
-    /// sessions are the ones worth spending context on anyway.
-    static let defaultBudget = 24_000
+    /// How much of the log to send, in characters.
+    ///
+    /// An exercise line runs about 34 characters, so this carries roughly 3,500
+    /// of them — around five years at three sessions a week. The point is that a
+    /// real personal log goes over in full: both models take a million tokens, so
+    /// there is no reason to be stingy, and this is ~34k tokens, a few cents a
+    /// question at most and less once the prompt cache warms. The cap only bites
+    /// on a genuinely long history, where the newest sessions are the ones worth
+    /// spending context on anyway.
+    static let defaultBudget = 120_000
 
     /// The slice of history that fits the budget, newest-biased.
     struct LogExcerpt: Equatable {
@@ -111,12 +116,32 @@ enum CoachContext {
 
         HOW TO ANSWER. Today is \(todayString). \(coverage)
 
-        Reason from the numbers in front of you and name them: cite the dates and \
-        loads a conclusion rests on. Never invent a session, a lift or a number that \
-        isn't in the log. When the log is too thin to support an answer, say so plainly \
-        and say what would settle it. Prefer a specific, actionable recommendation over \
-        general training theory — and keep it short: this is read on a phone, often \
-        between sets. You are not a doctor; suggest medical advice for pain, never \
+        Ground every answer in the numbers and name them: cite the dates and loads a \
+        conclusion rests on. Never invent a session, a lift or a number that isn't in \
+        the log.
+
+        PRESCRIBE, DON'T LECTURE. When asked what to do next — a single session, a \
+        week, how to take a lift forward — answer with concrete numbers: the exercise, \
+        the load in kg, and the sets and reps, chosen from what the log shows has \
+        actually been working. "Squat 3x5 at 87.5 kg, up from 85x5 last Thursday" is an \
+        answer; "focus on progressive overload" is not. Give the reasoning in a line or \
+        two after the prescription, not before it. Size each jump from the increments \
+        this lifter has been making, not a textbook default.
+
+        CALL STALLS. When a lift's top set hasn't moved in three or more sessions, say \
+        so and prescribe a specific way out — hold the load and add a rep, cut ~10% and \
+        build back, or swap the movement — rather than repeating the same jump that \
+        already failed to land.
+
+        SAY WHAT YOU CAN'T SEE. When the log won't support an answer, say so plainly and \
+        say what would settle it. You cannot see RPE, bodyweight, sleep, illness, or why \
+        a gap happened, so ask before reading a gap as lost progress.
+
+        You can only read this log — you cannot add to it, change it, or schedule \
+        anything. If the user wants a session recorded, tell them to log it in the Log tab.
+
+        Keep it short: this is read on a phone, often between sets. Lead with the \
+        recommendation. You are not a doctor; suggest medical advice for pain, never \
         diagnose it.
 
         <training-log>
@@ -124,11 +149,12 @@ enum CoachContext {
         """
     }
 
-    /// Starter questions offered on an empty Coach screen.
+    /// Starter questions offered on an empty Coach screen. Weighted towards "what
+    /// should I do next", since that's what a coach is for.
     static let suggestedQuestions = [
+        "What should my next squat session be?",
+        "Plan next week from my recent sessions.",
+        "Which lifts have stalled, and what do I do about it?",
         "How is my squat progressing?",
-        "Which lifts have stalled the longest?",
-        "Should today be heavy or light, given last week?",
-        "What am I under-training?",
     ]
 }

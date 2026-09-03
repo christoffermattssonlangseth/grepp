@@ -48,12 +48,25 @@ that don't exist yet, no database migration required.
 
 ## Coach
 
-The **Coach** tab is a chat with Claude that reads your training log. The system
-prompt carries the coach's brief, a key to the `training.md` format, and as much
-of the log as fits a character budget (newest sessions first — whole days, never
-half a day). Answers stream in token by token. A **Sonnet 5 / Opus 5** picker
-sits above the input: Sonnet is the default because it's fast and cheap; Opus is
-there when you want it to chew on a few months of history.
+The **Coach** tab is a chat with Claude that reads your training log and tells
+you what to do next. Ask it to plan a session, take a lift forward, or explain
+why something has stalled, and it answers with actual numbers — load, sets and
+reps, sized from the increments *you* have been making — rather than training
+theory. It cites the dates and loads behind each call, says when the log is too
+thin to support one, and is told plainly that it can only read the log: it can't
+log a session for you.
+
+The system prompt carries that brief, a key to the `training.md` format, and the
+log itself. **The whole file goes over**, up to a 120,000-character budget —
+about 3,500 exercise lines, or roughly five years at three sessions a week. Past
+that it sends the newest sessions that fit (whole days, never half a day) and
+tells the model how many older ones it couldn't see. Both models take a million
+tokens of context, so the budget is generous on purpose; a full send is a few
+cents a question at most, and less once the prompt cache warms.
+
+Answers stream in token by token. A **Sonnet 5 / Opus 5** picker sits above the
+input: Sonnet is the default because it's fast and cheap; Opus is there when you
+want it to chew on a few years of history.
 
 It talks to the [Claude Messages API](https://platform.claude.com/docs/en/api/messages/create)
 directly over HTTPS — `ClaudeService` is a plain `URLSession` client sitting next
@@ -129,8 +142,9 @@ Swapping back later means replacing `ClaudeService` and nothing else —
   secondary metric; added-load or max-reps for bodyweight lifts) with short-term
   (3-week) and long-term (all-time) change tiles.
 - **Coach** — a chat with Claude that has your `training.md` in front of it. Ask
-  "how's my squat progressing" or "heavy or light today, given last week" and get
-  an answer that cites your own dates and loads. See [Coach](#coach) below.
+  "what should my next squat session be" or "which lifts have stalled" and get
+  concrete loads and rep schemes, cited from your own dates and numbers. See
+  [Coach](#coach) below.
 - **Settings** — GitHub owner / repo / path / branch + a fine-grained token, and
   the Claude API key for Coach.
 
@@ -147,8 +161,9 @@ The same files compile into the iOS target via Xcode's synchronized folder, so
 `swift test` exercises the exact production code. Coverage: `training.md`
 parse/serialize round-trips, the `bw` / `bw+5` bodyweight tokens, malformed-line
 handling, the Trends analytics (top-set, Est. 1RM, added-load series, change
-tiles), and the Coach context builder (budgeting, truncation notes, and that what
-we send the model still round-trips through the parser).
+tiles), and the Coach context builder (that a four-year log is sent whole, the
+newest-first trimming and truncation notes beyond that, and that what we send the
+model still round-trips through the parser).
 
 ## GitHub token
 Create a **fine-grained personal access token** scoped to only this repo with

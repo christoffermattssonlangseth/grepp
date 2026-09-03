@@ -50,6 +50,26 @@ final class CoachContextTests: XCTestCase {
                           excerpt.text.range(of: "2026-08-15")!.lowerBound)
     }
 
+    func testDefaultBudgetHoldsYearsOfTraining() {
+        // Four years at three sessions a week, four exercises each — the shape of a
+        // real personal log. The whole thing should go to the model, not a slice.
+        var sessions: [Session] = []
+        var day = date("2022-01-03")
+        for _ in 0..<(52 * 4 * 3) {
+            sessions.append(Session(date: day, exercises: (1...4).map { i in
+                ExerciseEntry(name: "lift-\(i)",
+                              sets: Array(repeating: WorkSet(weight: 100, added: nil, reps: 5), count: 3))
+            }))
+            // Plain seconds, not Calendar: the dates are UTC and day arithmetic in a
+            // local calendar can shift one across a DST boundary.
+            day = day.addingTimeInterval(2 * 24 * 60 * 60)
+        }
+
+        let excerpt = CoachContext.excerpt(from: sessions)
+        XCTAssertEqual(excerpt.omittedCount, 0, "a four-year log should be sent whole")
+        XCTAssertEqual(excerpt.sessionCount, sessions.count)
+    }
+
     func testOneOversizedSessionIsStillIncluded() {
         // Never hand the model an empty log just because a single day is long.
         let big = Session(date: date("2026-08-01"),
@@ -109,6 +129,15 @@ final class CoachContextTests: XCTestCase {
                                            budget: 50)
         let text = CoachContext.systemPrompt(for: excerpt, today: date("2026-08-10"))
         XCTAssertTrue(text.contains("7 older sessions exist but were left out"), text)
+    }
+
+    func testSystemPromptAsksForConcreteProgression() {
+        // The coach exists to say what to do next, so the brief has to demand
+        // numbers, name stalls, and be honest that it can't write to the log.
+        let text = CoachContext.systemPrompt(for: CoachContext.excerpt(from: [session("2026-08-01")]))
+        XCTAssertTrue(text.contains("PRESCRIBE, DON'T LECTURE"), "must ask for a prescription")
+        XCTAssertTrue(text.contains("CALL STALLS"), "must handle a stalled lift")
+        XCTAssertTrue(text.contains("cannot add to it"), "must not claim it can write the log")
     }
 
     func testSystemPromptHandlesAnEmptyLog() {

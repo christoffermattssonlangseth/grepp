@@ -145,7 +145,7 @@ final class CoachContextTests: XCTestCase {
     func testCoachingNotesBecomeAStandingBrief() {
         let text = CoachContext.systemPrompt(
             for: CoachContext.excerpt(from: [session("2026-08-01")]),
-            guide: "Squat twice a week. Left shoulder: no overhead pressing.")
+            brief: .init(coaching: "Squat twice a week. Left shoulder: no overhead pressing."))
 
         XCTAssertTrue(text.contains("<coaching-notes>"))
         XCTAssertTrue(text.contains("no overhead pressing"))
@@ -156,9 +156,10 @@ final class CoachContextTests: XCTestCase {
 
     func testNoBriefWithoutNotes() {
         let excerpt = CoachContext.excerpt(from: [session("2026-08-01")])
-        for guide in ["", "   \n  \n "] {
-            let text = CoachContext.systemPrompt(for: excerpt, guide: guide)
+        for blank in ["", "   \n  \n "] {
+            let text = CoachContext.systemPrompt(for: excerpt, brief: .init(coaching: blank, goals: blank))
             XCTAssertFalse(text.contains("<coaching-notes>"), "blank notes should add nothing")
+            XCTAssertFalse(text.contains("<goals>"))
             XCTAssertFalse(text.contains("YOUR STANDING BRIEF"))
         }
     }
@@ -167,17 +168,17 @@ final class CoachContextTests: XCTestCase {
         let head = "KEEP: squat twice a week.\n"
         let guide = head + String(repeating: "x", count: CoachContext.guideBudget)
 
-        let trimmed = CoachContext.trimmedGuide(guide)
+        let trimmed = CoachContext.trimmed(guide)
         XCTAssertTrue(trimmed.truncated)
         XCTAssertEqual(trimmed.text.count, CoachContext.guideBudget)
         XCTAssertTrue(trimmed.text.hasPrefix(head), "the top of the file is what survives")
 
-        let text = CoachContext.systemPrompt(for: CoachContext.excerpt(from: []), guide: guide)
+        let text = CoachContext.systemPrompt(for: CoachContext.excerpt(from: []), brief: .init(coaching: guide))
         XCTAssertTrue(text.contains("cut off part-way"), "must admit the notes were trimmed")
     }
 
     func testShortNotesAreNotReportedAsTrimmed() {
-        let trimmed = CoachContext.trimmedGuide("  Squat twice a week.  ")
+        let trimmed = CoachContext.trimmed("  Squat twice a week.  ")
         XCTAssertFalse(trimmed.truncated)
         XCTAssertEqual(trimmed.text, "Squat twice a week.")
     }
@@ -186,10 +187,42 @@ final class CoachContextTests: XCTestCase {
         // The model has to be able to tell instructions from data.
         let text = CoachContext.systemPrompt(
             for: CoachContext.excerpt(from: [session("2026-08-01")]),
-            guide: "Squat twice a week.")
+            brief: .init(coaching: "Squat twice a week."))
         let notes = text.range(of: "</coaching-notes>")!
         let log = text.range(of: "<training-log>")!
         XCTAssertLessThan(notes.upperBound, log.lowerBound, "brief first, then the data")
+    }
+
+    func testGoalsBecomePartOfTheBrief() {
+        let text = CoachContext.systemPrompt(
+            for: CoachContext.excerpt(from: [session("2026-08-01")]),
+            brief: .init(goals: "140 kg squat by June. First meet in the autumn."))
+
+        XCTAssertTrue(text.contains("<goals>"))
+        XCTAssertTrue(text.contains("140 kg squat by June"))
+        XCTAssertTrue(text.contains("Programme backwards from this"))
+        XCTAssertFalse(text.contains("<coaching-notes>"), "an absent file contributes nothing")
+    }
+
+    func testBothFilesAppearUnderOneBrief() {
+        let brief = CoachContext.Brief(coaching: "No overhead pressing.", goals: "140 kg squat.")
+        let text = CoachContext.systemPrompt(for: CoachContext.excerpt(from: [session("2026-08-01")]),
+                                             brief: brief)
+
+        XCTAssertEqual(text.components(separatedBy: "YOUR STANDING BRIEF").count - 1, 1,
+                       "one brief, not one per file")
+        let coaching = text.range(of: "</coaching-notes>")!
+        let goals = text.range(of: "<goals>")!
+        let log = text.range(of: "<training-log>")!
+        XCTAssertLessThan(coaching.upperBound, goals.lowerBound)
+        XCTAssertLessThan(goals.upperBound, log.lowerBound, "brief first, then the data")
+    }
+
+    func testBriefEmptiness() {
+        XCTAssertTrue(CoachContext.Brief.none.isEmpty)
+        XCTAssertTrue(CoachContext.Brief(coaching: "  \n ", goals: "").isEmpty)
+        XCTAssertTrue(CoachContext.Brief(goals: "140 kg squat.").hasContent)
+        XCTAssertTrue(CoachContext.Brief(coaching: "No overhead pressing.").hasContent)
     }
 
     func testSystemPromptHandlesAnEmptyLog() {

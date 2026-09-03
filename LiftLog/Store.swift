@@ -16,10 +16,12 @@ final class Store: ObservableObject {
     @AppStorage("gh_path") var path = "training.md"
     @AppStorage("gh_branch") var branch = "main"
 
-    /// Optional companion file to `training.md`, in the same repo and branch: the
-    /// lifter's own coaching notes, handed to the Coach tab as a standing brief.
-    /// Blank, or a file that isn't there, and Coach just runs on its own defaults.
+    /// Optional companion files to `training.md`, in the same repo and branch: how
+    /// you want to be coached, and what you're working toward. Together they are the
+    /// Coach tab's standing brief. Blank a path, or never create the file, and Coach
+    /// just runs on its own defaults.
     @AppStorage("gh_coaching_path") var coachingPath = "coaching.md"
+    @AppStorage("gh_goals_path") var goalsPath = "goals.md"
 
     /// Claude workspace for the Coach tab. An identifier, not a secret, so it sits
     /// in UserDefaults beside the repo config. Only needed when the API key spans
@@ -40,9 +42,9 @@ final class Store: ObservableObject {
     /// Writes that haven't reached GitHub yet, oldest first. Persisted across launches.
     @Published private(set) var pending: [PendingWrite] = []
 
-    /// Contents of `coachingPath`, or empty when there's no such file. Cached like
-    /// the log so it survives a cold start with no signal.
-    @Published private(set) var coachingGuide = ""
+    /// Contents of `coachingPath` and `goalsPath`, empty when there's no such file.
+    /// Cached like the log so they survive a cold start with no signal.
+    @Published private(set) var brief = CoachContext.Brief.none
 
     /// Drives the selected tab so views can jump between them (0 = Log … 4 = Settings).
     @Published var selectedTab = 0
@@ -71,12 +73,14 @@ final class Store: ObservableObject {
     // UserDefaults keys for the offline cache + queue.
     private let cacheKey = "gh_cache"
     private let coachingCacheKey = "gh_coaching_cache"
+    private let goalsCacheKey = "gh_goals_cache"
     private let pendingKey = "gh_pending"
     private var defaults: UserDefaults { .standard }
 
     init() {
         pending = loadPending()
-        coachingGuide = defaults.string(forKey: coachingCacheKey) ?? ""
+        brief = CoachContext.Brief(coaching: defaults.string(forKey: coachingCacheKey) ?? "",
+                                   goals: defaults.string(forKey: goalsCacheKey) ?? "")
         // Show cached content + any queued writes immediately, before the network load.
         sessions = WorkoutParser.applying(pending, to: cachedSessions())
     }
@@ -99,23 +103,27 @@ final class Store: ObservableObject {
         GitHubService(owner: owner, repo: repo, path: path, branch: branch, token: token)
     }
 
-    /// Same repo and branch as the log, different file.
-    private var coachingService: GitHubService {
-        GitHubService(owner: owner, repo: repo, path: coachingPath, branch: branch, token: token)
+    /// Refresh the two companion files. Deliberately cannot fail the load: they're
+    /// optional, a 404 just means the file isn't there, and anything else leaves the
+    /// cached copy in place — a hiccup fetching your notes must never cost you the
+    /// training history.
+    private func loadBrief() async {
+        brief = CoachContext.Brief(
+            coaching: await companion(at: coachingPath, cacheKey: coachingCacheKey) ?? brief.coaching,
+            goals: await companion(at: goalsPath, cacheKey: goalsCacheKey) ?? brief.goals
+        )
     }
 
-    /// Refresh the coaching notes. Deliberately cannot fail the load: the file is
-    /// optional, a 404 just means there isn't one, and anything else falls back to
-    /// the cached copy so a hiccup here never costs you the training history.
-    private func loadCoachingGuide() async {
-        guard !coachingPath.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-            coachingGuide = ""
-            return
-        }
-        if let state = try? await coachingService.fetch() {
-            coachingGuide = state?.content ?? ""
-            defaults.set(coachingGuide, forKey: coachingCacheKey)
-        }
+    /// One companion file from the same repo and branch as the log. Returns nil for
+    /// "couldn't reach it, keep what you had"; an empty string means "there is no such
+    /// file", which is a real answer and clears any stale cache.
+    private func companion(at path: String, cacheKey: String) async -> String? {
+        guard !path.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return "" }
+        let file = GitHubService(owner: owner, repo: repo, path: path, branch: branch, token: token)
+        guard let state = try? await file.fetch() else { return nil }
+        let content = state?.content ?? ""
+        defaults.set(content, forKey: cacheKey)
+        return content
     }
 
     /// Unique exercise names seen in history, for the picker (most recent first).
@@ -150,7 +158,7 @@ final class Store: ObservableObject {
                 sessions = WorkoutParser.applying(pending, to: [])
                 status = "No file yet — first save will create it.\(pendingSuffix)"
             }
-            await loadCoachingGuide()
+            await loadBrief()
             await flushPending()
         } catch is URLError {
             // Offline: fall back to the cache so the app still shows history.

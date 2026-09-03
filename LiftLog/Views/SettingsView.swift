@@ -40,6 +40,7 @@ struct SettingsView: View {
                         .foregroundStyle(.secondary)
 
                     labeled("coaching file", text: $store.coachingPath, placeholder: "coaching.md")
+                    labeled("goals file", text: $store.goalsPath, placeholder: "goals.md")
                     Text(coachingHint)
                         .font(.caption)
                         .foregroundStyle(.secondary)
@@ -93,10 +94,12 @@ struct SettingsView: View {
 
     /// Whether the coaching notes were found, and what to do about it.
     private var coachingHint: LocalizedStringKey {
-        if store.coachingGuide.isEmpty {
-            return "No coaching notes found. Commit a **\(store.coachingPath)** beside your log — how you like to train, injuries to work around, anything you want the coach to follow — and it becomes its standing brief."
+        let found = [store.brief.coaching.isEmpty ? nil : store.coachingPath,
+                     store.brief.goals.isEmpty ? nil : store.goalsPath].compactMap { $0 }
+        if found.isEmpty {
+            return "Neither file found. Commit them beside your log — **\(store.coachingPath)** for how you like to train and what to work around, **\(store.goalsPath)** for what you're aiming at — and they become the coach's standing brief."
         }
-        return "^[\(store.coachingGuide.count) character](inflect: true) of coaching notes loaded. Edit the file in your repo, then reload below."
+        return "Loaded \(found.joined(separator: " and ")). Edit them in your repo, then reload below."
     }
 
     private func labeled(_ label: String, text: Binding<String>, placeholder: String) -> some View {

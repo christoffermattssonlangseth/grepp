@@ -78,7 +78,7 @@ and the log is rebuilt per question — log a set mid-chat and the next answer s
 it. The system prompt is marked for prompt caching, which makes follow-ups
 cheaper once the log is long enough to clear the model's minimum cacheable prefix.
 
-### `coaching.md` — teach it how *you* want to be coached
+### `coaching.md` and `goals.md` — teach it who you are
 
 Drop a **`coaching.md`** next to your `training.md`, in the same repo and branch,
 and Coach reads it as a standing brief: how you like to train, what your week
@@ -93,19 +93,36 @@ prose, write bullets, write whatever you'd tell a coach on day one.
 - Lead with the prescription. I'll ask if I want the reasoning.
 ```
 
-The point is that **changing how you're coached is a commit.** Read something
-that changes your mind about programming, edit the file, push — the next
-question reflects it. Versioned, diffable and revertable, exactly like the log,
-with nothing to retrain and no model to fine-tune. The Coach screen says which
-file it's reading so you can tell the brief actually landed.
+A second file, **`goals.md`**, says what you're working toward — target lifts,
+a meet date, whether you're cutting or building. The coach programmes backwards
+from it, tells you when the log shows a goal slipping out of reach, and tells
+you when it's met rather than letting it stand forever.
 
-The file is optional: no `coaching.md` and Coach just runs on its own defaults.
-Set a different name in *Settings ▸ Coach*, or blank the field to switch it off.
-It's fetched with the log, cached for offline like the log, capped at 20,000
-characters, and a fetch failure can never cost you your training history. Your
-notes are instructions about *training* — the prompt tells the model to ignore
-anything in them that tries to rewrite its own rules, and to speak up rather
-than follow a brief into an injury.
+```markdown
+- 140 kg squat by June. Currently 120.
+- First meet in the autumn — start thinking about a peak around August.
+- Cutting until spring, so hold strength rather than chasing PRs.
+```
+
+The point is that **changing how you're coached is a commit.** Read something
+that changes your mind about programming, hit a goal, pick a meet — edit the
+file, push, and the next question reflects it. Versioned, diffable and
+revertable, exactly like the log, with nothing to retrain and no model to
+fine-tune. The Coach screen names the files it's reading so you can tell the
+brief actually landed.
+
+**Why two files rather than one?** Only so the app can own one of them: a future
+in-app interview can rewrite `goals.md` without ever touching prose you
+hand-wrote. The model is shown both as a single brief, so nothing depends on you
+having filed a thought under the "right" heading — put it in either and it works.
+
+Both are optional: with neither, Coach runs on its own defaults. Rename them in
+*Settings ▸ Coach*, or blank a field to switch one off. They're fetched with the
+log, cached for offline the same way, capped at 20,000 characters each, and a
+failed fetch can never cost you your training history — it keeps the last copy.
+Your notes are a lifter writing about *training*, so the prompt tells the model
+to ignore anything in them that tries to rewrite its own rules, and to speak up
+rather than follow a brief into an injury.
 
 ### The API key
 
@@ -185,8 +202,8 @@ Swapping back later means replacing `ClaudeService` and nothing else —
 - **Coach** — a chat with Claude that has your `training.md` in front of it. Ask
   "what should my next squat session be" or "which lifts have stalled" and get
   concrete loads and rep schemes, cited from your own dates and numbers. Add a
-  `coaching.md` beside your log and it coaches to *your* rules. See
-  [Coach](#coach) below.
+  `coaching.md` and `goals.md` beside your log and it coaches to *your* rules,
+  toward *your* targets. See [Coach](#coach) below.
 - **Settings** — GitHub owner / repo / path / branch + a fine-grained token, and
   the Claude API key for Coach.
 
@@ -205,8 +222,8 @@ parse/serialize round-trips, the `bw` / `bw+5` bodyweight tokens, malformed-line
 handling, the Trends analytics (top-set, Est. 1RM, added-load series, change
 tiles), and the Coach context builder (that a four-year log is sent whole, the
 newest-first trimming and truncation notes beyond that, and that what we send the
-model still round-trips through the parser, and that coaching notes become a
-standing brief that stays separate from the log data).
+model still round-trips through the parser, and that the coaching notes and goals
+become one standing brief that stays separate from the log data).
 
 ## GitHub token
 Create a **fine-grained personal access token** scoped to only this repo with

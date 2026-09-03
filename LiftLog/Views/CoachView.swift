@@ -95,7 +95,7 @@ struct CoachView: View {
                 Text("Your \(store.path) goes with every question, so answers cite your own dates and loads.")
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
-                Label(coachingHint, systemImage: hasCoachingNotes ? "checkmark.seal" : "doc.badge.plus")
+                Label(coachingHint, systemImage: hasBrief ? "checkmark.seal" : "doc.badge.plus")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -118,14 +118,17 @@ struct CoachView: View {
         }
     }
 
-    private var hasCoachingNotes: Bool { !store.coachingGuide.isEmpty }
+    private var hasBrief: Bool { store.brief.hasContent }
 
     /// Typed explicitly — a ternary of two literals is ambiguous between Label's
     /// LocalizedStringKey and StringProtocol overloads.
     private var coachingHint: LocalizedStringKey {
-        hasCoachingNotes
-            ? "Coaching by your \(store.coachingPath)."
-            : "Add a \(store.coachingPath) beside your log to say how you want to be coached."
+        switch (!store.brief.coaching.isEmpty, !store.brief.goals.isEmpty) {
+        case (true, true): return "Coaching to your \(store.coachingPath) and \(store.goalsPath)."
+        case (true, false): return "Coaching by your \(store.coachingPath). Add a \(store.goalsPath) for what you're working toward."
+        case (false, true): return "Working toward your \(store.goalsPath). Add a \(store.coachingPath) for how you like to train."
+        case (false, false): return "Add a \(store.coachingPath) and \(store.goalsPath) beside your log and it coaches to your rules."
+        }
     }
 
     private func errorCard(_ text: String) -> some View {
@@ -189,7 +192,7 @@ struct CoachView: View {
         coach.send(trimmed,
                    model: model,
                    sessions: store.sessions,
-                   guide: store.coachingGuide,
+                   brief: store.brief,
                    workspace: store.anthropicWorkspace)
     }
 

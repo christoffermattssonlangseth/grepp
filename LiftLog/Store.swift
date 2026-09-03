@@ -60,6 +60,17 @@ final class Store: ObservableObject {
         selectedTab = 0
     }
 
+    /// A "run the goals interview" request handed from Settings to the Coach tab,
+    /// which consumes it and clears it. Same shape as `editRequest` — setting up
+    /// your goals belongs with the other settings, but the interview itself only
+    /// makes sense in the chat.
+    @Published var goalsInterviewRequest = false
+
+    func requestGoalsInterview() {
+        goalsInterviewRequest = true
+        selectedTab = 3
+    }
+
     /// The outcome of a `commit`, so callers don't have to sniff `status` text.
     enum CommitResult { case pushed, queued, failed }
 

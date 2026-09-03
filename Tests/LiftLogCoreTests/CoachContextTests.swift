@@ -172,6 +172,24 @@ final class CoachContextTests: XCTestCase {
         XCTAssertTrue(interview.contains("<training-log>"))
     }
 
+    func testFirstInterviewStartsFromScratch() {
+        let text = CoachContext.systemPrompt(for: CoachContext.excerpt(from: []),
+                                             mode: .goalsInterview)
+        XCTAssertTrue(text.contains("no goals on file yet"))
+        XCTAssertFalse(text.contains("what has changed"))
+    }
+
+    func testRepeatInterviewAsksWhatChanged() {
+        // Setting goals and revisiting them are the same conversation with a
+        // different opening — it must not re-interview from scratch.
+        let text = CoachContext.systemPrompt(for: CoachContext.excerpt(from: []),
+                                             brief: .init(goals: "140 kg squat by June."),
+                                             mode: .goalsInterview)
+        XCTAssertTrue(text.contains("what has changed"))
+        XCTAssertTrue(text.contains("re-interview them from scratch"))
+        XCTAssertFalse(text.contains("no goals on file yet"))
+    }
+
     func testInterviewReplacesRatherThanAppendsExistingGoals() {
         let text = CoachContext.systemPrompt(for: CoachContext.excerpt(from: []),
                                              brief: .init(goals: "140 kg squat."),

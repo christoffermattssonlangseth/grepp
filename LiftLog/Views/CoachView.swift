@@ -25,6 +25,11 @@ struct CoachView: View {
             }
             .background(Theme.backgroundView)
             .navigationTitle("Coach")
+            // Both, deliberately: onChange catches a request while Coach is already
+            // on screen, onAppear catches one that arrives before the tab has ever
+            // been built — TabView makes its pages lazily.
+            .onChange(of: store.goalsInterviewRequest) { _, _ in consumeGoalsRequest() }
+            .onAppear(perform: consumeGoalsRequest)
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button {
@@ -100,23 +105,18 @@ struct CoachView: View {
             }
             .glassCard(cornerRadius: 16)
 
-            Button {
-                savedGoalsText = nil
-                saveError = nil
-                coach.startGoalsInterview(model: model,
-                                          sessions: store.sessions,
-                                          brief: store.brief,
-                                          workspace: store.anthropicWorkspace)
-            } label: {
+            Button(action: beginGoalsInterview) {
                 HStack {
                     VStack(alignment: .leading, spacing: 2) {
-                        Text("Help me set my goals")
+                        Text(goalsActionTitle)
                             .font(.subheadline.weight(.bold))
-                        Text("A few questions, then it writes your \(store.goalsPath).")
+                        Text(goalsActionSubtitle)
                             .font(.caption).foregroundStyle(.secondary)
                     }
                     Spacer()
-                    Image(systemName: "target").font(.headline)
+                    Image(systemName: hasGoals ? "target" : "plus.circle.fill")
+                        .font(.headline)
+                        .foregroundStyle(hasGoals ? Color.secondary : Theme.accent)
                 }
                 .foregroundStyle(.primary)
                 .glassCard(cornerRadius: 14)
@@ -138,6 +138,23 @@ struct CoachView: View {
                 .buttonStyle(.plain)
             }
         }
+    }
+
+    private func consumeGoalsRequest() {
+        guard store.goalsInterviewRequest else { return }
+        store.goalsInterviewRequest = false
+        beginGoalsInterview()
+    }
+
+    private func beginGoalsInterview() {
+        savedGoalsText = nil
+        saveError = nil
+        draft = ""
+        inputFocused = false
+        coach.startGoalsInterview(model: model,
+                                  sessions: store.sessions,
+                                  brief: store.brief,
+                                  workspace: store.anthropicWorkspace)
     }
 
     @ViewBuilder
@@ -214,6 +231,19 @@ struct CoachView: View {
     }
 
     private var hasBrief: Bool { store.brief.hasContent }
+    private var hasGoals: Bool { !store.brief.goals.isEmpty }
+
+    /// Typed explicitly — a ternary of two literals is ambiguous between Text's
+    /// LocalizedStringKey and StringProtocol overloads.
+    private var goalsActionTitle: LocalizedStringKey {
+        hasGoals ? "Update your goals" : "Set up your goals"
+    }
+
+    private var goalsActionSubtitle: LocalizedStringKey {
+        hasGoals
+            ? "Review what's in \(store.goalsPath) and say what's changed."
+            : "A few questions, then it writes your \(store.goalsPath)."
+    }
 
     /// Typed explicitly — a ternary of two literals is ambiguous between Label's
     /// LocalizedStringKey and StringProtocol overloads.

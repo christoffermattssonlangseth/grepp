@@ -183,7 +183,7 @@ enum CoachContext {
         \(standingBrief(brief))
         <training-log>
         \(excerpt.text)</training-log>
-        \(mode == .goalsInterview ? interviewBrief : "")
+        \(mode == .goalsInterview ? interviewBrief(hasGoals: !trimmed(brief.goals).text.isEmpty) : "")
         """
     }
 
@@ -264,10 +264,25 @@ enum CoachContext {
     static let goalsInterviewRequest = "Help me set my training goals."
 
     /// Bolted onto the system prompt for the duration of an interview.
-    private static let interviewBrief = """
+    ///
+    /// Setting goals and revisiting them are the same conversation with a different
+    /// opening: the first asks what they want, the second asks what has changed.
+    private static func interviewBrief(hasGoals: Bool) -> String {
+        let opening = hasGoals
+            ? """
+              They already have goals, shown above. Open by reflecting them back in a \
+              line and asking what has changed — met, missed, no longer the point, or a \
+              date that has moved. Don't re-interview them from scratch on things they \
+              have already told you.
+              """
+            : """
+              They have no goals on file yet, so start from the beginning.
+              """
 
-    INTERVIEW MODE. They have asked you to help them set their goals, so run the \
-    conversation rather than waiting to be asked. Interview them — two or three \
+        return """
+
+    INTERVIEW MODE. \(opening) Run the conversation rather than waiting to be asked. \
+    Interview them — two or three \
     questions at a time, never a wall of them — and make the questions specific to \
     what the log already shows: "you've squatted 120 for a triple twice since July, \
     is 140 by June the target or is that too soft?" beats "what are your goals?". \
@@ -292,6 +307,7 @@ enum CoachContext {
     already have goals in their brief, carry forward the ones still true and drop the \
     ones they've moved on from — this replaces the file, it doesn't append to it.
     """
+    }
 
     /// One reply, split into what to show and what to offer saving.
     struct Reply: Equatable {

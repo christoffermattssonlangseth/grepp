@@ -45,6 +45,13 @@ struct SettingsView: View {
                         .font(.caption)
                         .foregroundStyle(.secondary)
 
+                    Button {
+                        store.requestGoalsInterview()
+                    } label: {
+                        Label(goalsActionTitle, systemImage: "target")
+                    }
+                    .disabled(!CoachCredentials.hasKey)
+
                     labeled("workspace id", text: $store.anthropicWorkspace, placeholder: "wrkspc_… (optional)")
                     Text("""
                     Only needed if the key isn't scoped to a single workspace. \
@@ -90,6 +97,12 @@ struct SettingsView: View {
             .background(Theme.backgroundView)
             .navigationTitle("Settings")
         }
+    }
+
+    /// Explicitly a String, so `Label` resolves to its StringProtocol overload
+    /// rather than being ambiguous with the LocalizedStringKey one.
+    private var goalsActionTitle: String {
+        store.brief.goals.isEmpty ? "Set up your goals" : "Update your goals"
     }
 
     /// Whether the coaching notes were found, and what to do about it.

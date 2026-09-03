@@ -16,6 +16,11 @@ final class Store: ObservableObject {
     @AppStorage("gh_path") var path = "training.md"
     @AppStorage("gh_branch") var branch = "main"
 
+    /// Claude workspace for the Coach tab. An identifier, not a secret, so it sits
+    /// in UserDefaults beside the repo config. Only needed when the API key spans
+    /// more than one workspace.
+    @AppStorage("anthropic_workspace") var anthropicWorkspace = ""
+
     @Published var token: String = Keychain.get(account: "token") ?? ""
 
     /// Claude API key for the Coach tab. Also lives in the Keychain, under its own

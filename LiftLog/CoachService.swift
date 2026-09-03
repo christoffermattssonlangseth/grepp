@@ -79,7 +79,7 @@ final class CoachService: ObservableObject {
         isResponding = false
     }
 
-    func send(_ question: String, model: CoachModelChoice, sessions: [Session]) {
+    func send(_ question: String, model: CoachModelChoice, workspace: String, sessions: [Session]) {
         let trimmed = question.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty, !isResponding else { return }
 
@@ -108,7 +108,7 @@ final class CoachService: ObservableObject {
         messages.append(reply)
         isResponding = true
 
-        let service = ClaudeService(apiKey: key, model: model)
+        let service = ClaudeService(apiKey: key, model: model, workspaceID: workspace)
 
         task = Task { [weak self] in
             do {

@@ -96,6 +96,18 @@ read from the first of these that has one:
 `*.local.xcconfig`. Usage bills to your Anthropic account at standard API
 pricing; create a key in the [Claude Console](https://platform.claude.com/).
 
+### Workspace ID (only for some keys)
+
+A key scoped to one workspace needs nothing else — leave the field blank. A
+**personal or service account key that spans several workspaces** has to say
+which one each request acts in, or the API answers `400 anthropic-workspace-id
+is required when authenticating with an identity-linked API key`. Paste the
+`wrkspc_…` value into *Settings ▸ Coach*; it's the **ID** column of
+[Settings ▸ Workspaces](https://platform.claude.com/settings/workspaces) in the
+Console. It's an identifier rather than a secret, so it lives in `UserDefaults`
+beside the repo config, not the Keychain. Creating a workspace-scoped key
+instead works just as well and needs no ID.
+
 > **Before distributing this to anyone else**, a key that ships inside the app is
 > the wrong model — anyone with the binary can pull it out and bill you. Put a
 > small backend in front that holds the key server-side and forwards requests,

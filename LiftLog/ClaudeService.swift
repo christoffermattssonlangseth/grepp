@@ -8,6 +8,10 @@ import Foundation
 struct ClaudeService {
     var apiKey: String
     var model: CoachModelChoice
+    /// Workspace to bill and act in. Required for a key that isn't scoped to a
+    /// single workspace (a "personal" or "service account" key spanning several);
+    /// empty, and the header is left off, which is what a workspace-scoped key wants.
+    var workspaceID: String = ""
 
     private static let endpoint = URL(string: "https://api.anthropic.com/v1/messages")!
 
@@ -30,6 +34,7 @@ struct ClaudeService {
 
     enum ClaudeError: LocalizedError {
         case missingKey
+        case missingWorkspace
         case notHTTP
         case api(status: Int, message: String)
 
@@ -37,12 +42,16 @@ struct ClaudeService {
             switch self {
             case .missingKey:
                 return "No Claude API key. Add one in Settings ▸ Coach."
+            case .missingWorkspace:
+                return "This key isn't tied to one workspace, so Claude needs to be told which to use. Paste the workspace ID in Settings ▸ Coach — it's the ID column of Settings ▸ Workspaces in the Claude Console."
             case .notHTTP:
                 return "Unexpected non-HTTP response from the Claude API."
             case .api(let status, let message):
                 switch status {
                 case 401, 403:
                     return "Claude rejected the API key. Check it in Settings ▸ Coach."
+                case 404 where message.localizedCaseInsensitiveContains("workspace"):
+                    return "Claude doesn't recognise that workspace ID, or this key can't reach it. Check it in Settings ▸ Coach."
                 case 429:
                     return "Rate limited by Claude — wait a moment and ask again."
                 case 500...599:
@@ -78,6 +87,12 @@ struct ClaudeService {
         request.setValue(apiKey, forHTTPHeaderField: "x-api-key")
         request.setValue(Self.apiVersion, forHTTPHeaderField: "anthropic-version")
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        // Only sent when set: a workspace-scoped key rejects nothing, but an empty
+        // header value is not a valid workspace ID.
+        let workspace = workspaceID.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !workspace.isEmpty {
+            request.setValue(workspace, forHTTPHeaderField: "anthropic-workspace-id")
+        }
         request.httpBody = try JSONSerialization.data(withJSONObject: body(system: system, turns: turns))
 
         let (bytes, response) = try await URLSession.shared.bytes(for: request)
@@ -88,7 +103,13 @@ struct ClaudeService {
             // stream, but it still arrives as bytes — reassemble it to get the reason.
             var raw = ""
             for try await line in bytes.lines { raw += line }
-            throw ClaudeError.api(status: http.statusCode, message: Self.reason(fromErrorBody: raw))
+            let reason = Self.reason(fromErrorBody: raw)
+            // The API names this one precisely; turn it into an instruction the user
+            // can act on rather than passing the raw wording through.
+            if http.statusCode == 400, reason.contains("anthropic-workspace-id") {
+                throw ClaudeError.missingWorkspace
+            }
+            throw ClaudeError.api(status: http.statusCode, message: reason)
         }
 
         // Server-sent events: "event:" lines name the type, "data:" lines carry the

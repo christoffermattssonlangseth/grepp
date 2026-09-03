@@ -173,7 +173,7 @@ struct CoachView: View {
         guard !trimmed.isEmpty else { return }
         draft = ""
         inputFocused = false
-        coach.send(trimmed, model: model, sessions: store.sessions)
+        coach.send(trimmed, model: model, workspace: store.anthropicWorkspace, sessions: store.sessions)
     }
 
     // MARK: - No key

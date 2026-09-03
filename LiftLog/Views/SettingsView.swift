@@ -38,6 +38,15 @@ struct SettingsView: View {
                     """)
                         .font(.caption)
                         .foregroundStyle(.secondary)
+
+                    labeled("workspace id", text: $store.anthropicWorkspace, placeholder: "wrkspc_… (optional)")
+                    Text("""
+                    Only needed if the key isn't scoped to a single workspace. \
+                    Find it in the **ID** column of Settings ▸ Workspaces in the Console — \
+                    or leave this blank and create a workspace-scoped key instead.
+                    """)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
                 }
                 .listRowBackground(Rectangle().fill(.regularMaterial))
 

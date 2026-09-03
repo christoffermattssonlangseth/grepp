@@ -168,10 +168,17 @@ final class Store: ObservableObject {
     private func companion(at path: String, cacheKey: String) async -> String? {
         guard !path.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return "" }
         let file = GitHubService(owner: owner, repo: repo, path: path, branch: branch, token: token)
-        guard let state = try? await file.fetch() else { return nil }
-        let content = state?.content ?? ""
-        defaults.set(content, forKey: cacheKey)
-        return content
+        do {
+            // fetch() answers nil for a 404 — the file simply isn't there, which is a
+            // real answer and clears any stale cache. `try?` can't express that: it
+            // flattens, so a dead connection would read as "no such file" and quietly
+            // blank the brief.
+            let content = try await file.fetch()?.content ?? ""
+            defaults.set(content, forKey: cacheKey)
+            return content
+        } catch {
+            return nil   // couldn't reach it — keep whatever we had
+        }
     }
 
     /// Unique exercise names seen in history, for the picker (most recent first).

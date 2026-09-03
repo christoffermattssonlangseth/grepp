@@ -107,7 +107,10 @@ enum CoachContext {
     ///
     /// It goes in `system` rather than in the question, so it stays byte-identical
     /// across a conversation's turns and can be prompt-cached.
-    static func systemPrompt(for excerpt: LogExcerpt, brief: Brief = .none, today: Date = Date()) -> String {
+    static func systemPrompt(for excerpt: LogExcerpt,
+                             brief: Brief = .none,
+                             mode: Mode = .coaching,
+                             today: Date = Date()) -> String {
         let todayString = Session.dateFormatter.string(from: today)
 
         let coverage: String
@@ -180,6 +183,7 @@ enum CoachContext {
         \(standingBrief(brief))
         <training-log>
         \(excerpt.text)</training-log>
+        \(mode == .goalsInterview ? interviewBrief : "")
         """
     }
 
@@ -240,6 +244,89 @@ enum CoachContext {
         }
 
         return block
+    }
+
+    // MARK: - Goals interview
+
+    /// What the coach is doing this conversation.
+    enum Mode: Equatable {
+        /// Answering questions about training.
+        case coaching
+        /// Interviewing the lifter to write their goals file.
+        case goalsInterview
+    }
+
+    /// The fence the coach wraps a finished goals file in, so the app can lift it
+    /// out of the prose and offer to save it.
+    static let goalsFence = "```goals.md"
+
+    /// The opening turn of the interview, sent as the lifter's own message.
+    static let goalsInterviewRequest = "Help me set my training goals."
+
+    /// Bolted onto the system prompt for the duration of an interview.
+    private static let interviewBrief = """
+
+    INTERVIEW MODE. They have asked you to help them set their goals, so run the \
+    conversation rather than waiting to be asked. Interview them — two or three \
+    questions at a time, never a wall of them — and make the questions specific to \
+    what the log already shows: "you've squatted 120 for a triple twice since July, \
+    is 140 by June the target or is that too soft?" beats "what are your goals?". \
+    Worth covering: what they want to hit and by when, whether bodyweight is meant \
+    to move, any fixed dates (a meet, a trip, surgery), and what they explicitly \
+    do not care about right now — knowing what to ignore is as useful as knowing \
+    what to chase.
+
+    Don't drag it out. After three or four exchanges, or as soon as they tell you to \
+    just write it, produce the file. Say one short line first — that this is their \
+    goals file and they can save it — then the file itself in a fenced block tagged \
+    exactly `goals.md`, and nothing after the closing fence:
+
+    \(goalsFence)
+    # Goals
+
+    - 140 kg squat by June. Currently 120.
+    ```
+
+    Write it in their words, short, as Markdown. Put in only what they actually told \
+    you: never invent a target, a date or a number to round the file out. If they \
+    already have goals in their brief, carry forward the ones still true and drop the \
+    ones they've moved on from — this replaces the file, it doesn't append to it.
+    """
+
+    /// One reply, split into what to show and what to offer saving.
+    struct Reply: Equatable {
+        /// The conversational part, without the file block.
+        var prose: String
+        /// A complete goals file, once the coach has closed the fence.
+        var goals: String?
+        /// The fence is open but not yet closed — the file is still streaming in.
+        var isWritingGoals: Bool
+
+        init(prose: String, goals: String? = nil, isWritingGoals: Bool = false) {
+            self.prose = prose
+            self.goals = goals
+            self.isWritingGoals = isWritingGoals
+        }
+    }
+
+    /// Pull a proposed goals file out of a reply, tolerating a half-arrived one.
+    ///
+    /// Called on every streamed chunk, so a partial block has to read as "still
+    /// writing" rather than as prose with a stray fence in it.
+    static func parseReply(_ text: String) -> Reply {
+        guard let fence = text.range(of: goalsFence) else {
+            return Reply(prose: text)
+        }
+        let prose = String(text[text.startIndex..<fence.lowerBound])
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        let rest = text[fence.upperBound...]
+
+        guard let close = rest.range(of: "```") else {
+            return Reply(prose: prose, isWritingGoals: true)
+        }
+        let goals = String(rest[rest.startIndex..<close.lowerBound])
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        return Reply(prose: prose, goals: goals.isEmpty ? nil : goals)
     }
 
     /// Starter questions offered on an empty Coach screen. Weighted towards "what

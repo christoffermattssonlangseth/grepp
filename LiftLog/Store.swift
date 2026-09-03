@@ -103,6 +103,43 @@ final class Store: ObservableObject {
         GitHubService(owner: owner, repo: repo, path: path, branch: branch, token: token)
     }
 
+    /// Overwrite the goals file with a version the coach wrote in an interview.
+    ///
+    /// A whole-file replace of `goalsPath` and nothing else — it never touches the
+    /// log or the coaching notes, and git history means a bad one is a revert away.
+    /// Unlike a workout this isn't queued when offline: you're sitting in a chat
+    /// looking at it, so a plain failure you can retry beats a silent queue.
+    @discardableResult
+    func saveGoals(_ text: String) async -> CommitResult {
+        guard !isBusy else { return .failed }
+        let path = goalsPath.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !path.isEmpty else {
+            status = "No goals file set — add a path in Settings."
+            return .failed
+        }
+
+        isBusy = true; status = "Saving goals…"
+        defer { isBusy = false }
+
+        let file = GitHubService(owner: owner, repo: repo, path: path, branch: branch, token: token)
+        let content = text.hasSuffix("\n") ? text : text + "\n"
+        do {
+            // Fetch first for the sha: a nil sha creates the file, a stale one is a 409.
+            let existing = try await file.fetch()
+            _ = try await file.put(content: content, sha: existing?.sha, message: "Update \(path) from Coach")
+            brief.goals = content
+            defaults.set(content, forKey: goalsCacheKey)
+            status = "Goals saved ✓"
+            return .pushed
+        } catch is URLError {
+            status = "Offline — couldn't save your goals. Try again when you have signal."
+            return .failed
+        } catch {
+            status = error.localizedDescription
+            return .failed
+        }
+    }
+
     /// Refresh the two companion files. Deliberately cannot fail the load: they're
     /// optional, a 404 just means the file isn't there, and anything else leaves the
     /// cached copy in place — a hiccup fetching your notes must never cost you the

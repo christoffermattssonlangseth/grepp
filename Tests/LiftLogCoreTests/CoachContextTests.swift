@@ -110,6 +110,76 @@ final class CoachContextTests: XCTestCase {
         XCTAssertEqual(CoachContext.excerpt(from: []).note, "No training logged yet.")
     }
 
+    // MARK: - goals interview
+
+    private let fence = CoachContext.goalsFence
+
+    func testPlainReplyHasNoProposedFile() {
+        let reply = CoachContext.parseReply("Squat 87.5 for 3x5 on Thursday.")
+        XCTAssertEqual(reply.prose, "Squat 87.5 for 3x5 on Thursday.")
+        XCTAssertNil(reply.goals)
+        XCTAssertFalse(reply.isWritingGoals)
+    }
+
+    func testProposedFileIsSplitOutOfTheProse() {
+        let reply = CoachContext.parseReply("""
+        Here are your goals — save them if they look right.
+
+        \(fence)
+        # Goals
+
+        - 140 kg squat by June.
+        ```
+        """)
+        XCTAssertEqual(reply.prose, "Here are your goals — save them if they look right.")
+        XCTAssertEqual(reply.goals, "# Goals\n\n- 140 kg squat by June.")
+        XCTAssertFalse(reply.isWritingGoals)
+    }
+
+    func testHalfArrivedFileReadsAsStillWriting() {
+        // Every streamed chunk goes through this, so an unclosed fence must not
+        // surface as prose with a stray ``` in it.
+        let reply = CoachContext.parseReply("""
+        Here are your goals.
+
+        \(fence)
+        # Goals
+
+        - 140 kg squa
+        """)
+        XCTAssertEqual(reply.prose, "Here are your goals.")
+        XCTAssertNil(reply.goals, "nothing to save until the fence closes")
+        XCTAssertTrue(reply.isWritingGoals)
+    }
+
+    func testEmptyFencedBlockOffersNothingToSave() {
+        let reply = CoachContext.parseReply("Here you go.\n\n\(fence)\n```")
+        XCTAssertNil(reply.goals)
+    }
+
+    func testInterviewBriefOnlyAppearsInInterviewMode() {
+        let excerpt = CoachContext.excerpt(from: [session("2026-08-01")])
+
+        let coaching = CoachContext.systemPrompt(for: excerpt)
+        XCTAssertFalse(coaching.contains("INTERVIEW MODE"))
+        XCTAssertFalse(coaching.contains(fence), "no fence protocol outside an interview")
+
+        let interview = CoachContext.systemPrompt(for: excerpt, mode: .goalsInterview)
+        XCTAssertTrue(interview.contains("INTERVIEW MODE"))
+        XCTAssertTrue(interview.contains(fence), "must tell the model how to emit the file")
+        XCTAssertTrue(interview.contains("never invent a target"))
+        // Still a coach: the log and the format key don't go away mid-interview.
+        XCTAssertTrue(interview.contains("<training-log>"))
+    }
+
+    func testInterviewReplacesRatherThanAppendsExistingGoals() {
+        let text = CoachContext.systemPrompt(for: CoachContext.excerpt(from: []),
+                                             brief: .init(goals: "140 kg squat."),
+                                             mode: .goalsInterview)
+        XCTAssertTrue(text.contains("<goals>"), "the interview sees the current goals")
+        XCTAssertTrue(text.contains("this replaces the file, it doesn't append to it"))
+    }
+
     // MARK: - system prompt
 
     func testSystemPromptCarriesTheLogAndTheFormatKey() {

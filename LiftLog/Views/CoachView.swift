@@ -8,6 +8,11 @@ struct CoachView: View {
 
     @AppStorage("coach_model") private var model: CoachModelChoice = .sonnet
     @State private var draft = ""
+    @State private var savingGoals = false
+    /// The exact text last committed, so a revised file offers Save again rather
+    /// than staying stuck on "Saved".
+    @State private var savedGoalsText: String?
+    @State private var saveError: String?
     @FocusState private var inputFocused: Bool
 
     /// The only thing that can stop Coach working now is a missing key.
@@ -25,6 +30,8 @@ struct CoachView: View {
                     Button {
                         coach.reset()
                         draft = ""
+                        savedGoalsText = nil
+                        saveError = nil
                     } label: {
                         Label("New chat", systemImage: "square.and.pencil")
                     }
@@ -74,15 +81,7 @@ struct CoachView: View {
                     .foregroundStyle(.white)
                     .frame(maxWidth: .infinity, alignment: .trailing)
             case .coach:
-                VStack(alignment: .leading, spacing: 6) {
-                    Text(message.text)
-                        .font(.body)
-                        .textSelection(.enabled)
-                    if message.isStreaming {
-                        ProgressView().controlSize(.small)
-                    }
-                }
-                .glassCard(cornerRadius: 16)
+                coachBubble(message)
             }
         }
     }
@@ -101,6 +100,29 @@ struct CoachView: View {
             }
             .glassCard(cornerRadius: 16)
 
+            Button {
+                savedGoalsText = nil
+                saveError = nil
+                coach.startGoalsInterview(model: model,
+                                          sessions: store.sessions,
+                                          brief: store.brief,
+                                          workspace: store.anthropicWorkspace)
+            } label: {
+                HStack {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Help me set my goals")
+                            .font(.subheadline.weight(.bold))
+                        Text("A few questions, then it writes your \(store.goalsPath).")
+                            .font(.caption).foregroundStyle(.secondary)
+                    }
+                    Spacer()
+                    Image(systemName: "target").font(.headline)
+                }
+                .foregroundStyle(.primary)
+                .glassCard(cornerRadius: 14)
+            }
+            .buttonStyle(.plain)
+
             ForEach(CoachContext.suggestedQuestions, id: \.self) { question in
                 Button {
                     ask(question)
@@ -116,6 +138,79 @@ struct CoachView: View {
                 .buttonStyle(.plain)
             }
         }
+    }
+
+    @ViewBuilder
+    private func coachBubble(_ message: CoachMessage) -> some View {
+        let reply = CoachContext.parseReply(message.text)
+
+        VStack(alignment: .leading, spacing: 6) {
+            if !reply.prose.isEmpty {
+                Text(reply.prose)
+                    .font(.body)
+                    .textSelection(.enabled)
+            }
+            if reply.isWritingGoals {
+                Label("writing your goals…", systemImage: "square.and.pencil")
+                    .font(.caption).foregroundStyle(.secondary)
+            } else if message.isStreaming {
+                ProgressView().controlSize(.small)
+            }
+        }
+        .glassCard(cornerRadius: 16)
+
+        // The file gets its own card: it's a thing you save, not a paragraph, and a
+        // raw fenced block in a chat bubble reads as noise.
+        if let goals = reply.goals {
+            goalsCard(goals)
+        }
+    }
+
+    /// A goals file the coach has written, with the one button that commits it.
+    private func goalsCard(_ goals: String) -> some View {
+        let saved = savedGoalsText == goals
+
+        return VStack(alignment: .leading, spacing: 12) {
+            Label(store.goalsPath, systemImage: "doc.text")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.secondary)
+
+            Text(goals)
+                .font(.system(.footnote, design: .monospaced))
+                .textSelection(.enabled)
+                .frame(maxWidth: .infinity, alignment: .leading)
+
+            Button {
+                Task {
+                    savingGoals = true
+                    saveError = nil
+                    if await store.saveGoals(goals) == .pushed {
+                        savedGoalsText = goals
+                    } else {
+                        saveError = store.status
+                    }
+                    savingGoals = false
+                }
+            } label: {
+                HStack(spacing: 8) {
+                    if savingGoals { ProgressView().controlSize(.small) }
+                    Text(saved ? "Saved to \(store.goalsPath)" : "Save to \(store.goalsPath)")
+                        .font(.subheadline.weight(.bold))
+                }
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 10)
+            }
+            .buttonStyle(.borderedProminent)
+            .tint(saved ? .green : Theme.accent)
+            .disabled(savingGoals || saved)
+
+            // Only this save's own failure — never whatever the last load happened
+            // to leave in store.status.
+            if let saveError {
+                Text(saveError).font(.caption2).foregroundStyle(.orange)
+            }
+        }
+        .glassCard(cornerRadius: 16)
     }
 
     private var hasBrief: Bool { store.brief.hasContent }

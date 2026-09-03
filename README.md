@@ -111,9 +111,17 @@ revertable, exactly like the log, with nothing to retrain and no model to
 fine-tune. The Coach screen names the files it's reading so you can tell the
 brief actually landed.
 
+**Let it interview you.** On an empty Coach screen, *Help me set my goals* starts
+an interview instead of a form — and because the coach can already see your log,
+the questions are specific ("you've squatted 120 for a triple twice since July,
+is 140 by June the target or is that too soft?"). After a few exchanges it writes
+the file, shows it to you, and a **Save to `goals.md`** button commits it to your
+repo. It replaces `goals.md` and nothing else; git history means a bad one is a
+revert away. Prefer to write it yourself? Ignore the button — a hand-written file
+works identically.
+
 **Why two files rather than one?** Only so the app can own one of them: a future
-in-app interview can rewrite `goals.md` without ever touching prose you
-hand-wrote. The model is shown both as a single brief, so nothing depends on you
+interview can rewrite `goals.md` without ever touching prose you hand-wrote. The model is shown both as a single brief, so nothing depends on you
 having filed a thought under the "right" heading — put it in either and it works.
 
 Both are optional: with neither, Coach runs on its own defaults. Rename them in

@@ -123,6 +123,9 @@ logged or stored anywhere else.
 - Open **`LiftLog.xcodeproj`** in Xcode.
 - Source lives in `LiftLog/` (an Xcode 16 synchronized folder, so files in it
   are part of the target automatically — just add new files there).
+- The whole palette is `Theme.accent`; the app icon is drawn from it by
+  `Scripts/make-icon.py` (needs `pillow`), so a re-skin is one constant and one
+  re-run rather than an edited PNG.
 - Select your iPhone as the run destination and press ▶. Free provisioning runs
   it for 7 days per rebuild; a paid Apple Developer account keeps it installed.
 - First run: enable **Developer Mode** on the phone (Settings ▸ Privacy & Security)

@@ -15,7 +15,7 @@ struct SettingsView: View {
                 }
                 .listRowBackground(Rectangle().fill(.regularMaterial))
 
-                Section("Token") {
+                Section("GitHub token") {
                     SecureField("ghp_… (fine-grained PAT)", text: $store.token)
                         .textInputAutocapitalization(.never)
                         .autocorrectionDisabled()
@@ -23,6 +23,27 @@ struct SettingsView: View {
                     Text("Create a fine-grained token scoped to just this repo with **Contents: Read and write**.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
+                }
+                .listRowBackground(Rectangle().fill(.regularMaterial))
+
+                Section("Coach") {
+                    SecureField("sk-ant-… (Claude API key)", text: $store.anthropicKey)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+                        .onChange(of: store.anthropicKey) { _ in store.saveAnthropicKey() }
+                    Text("""
+                    Stored in the Keychain — never in source or UserDefaults. \
+                    Create one in the [Claude Console](https://platform.claude.com/). \
+                    Usage bills to your Anthropic account.
+                    """)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    if CoachAvailability.current == .needsPackage {
+                        Label("This build doesn't link ClaudeForFoundationModels — see README ▸ Coach.",
+                              systemImage: "info.circle")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
                 }
                 .listRowBackground(Rectangle().fill(.regularMaterial))
 

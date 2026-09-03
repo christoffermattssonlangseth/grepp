@@ -1,12 +1,15 @@
 import Foundation
 import Security
 
-/// Minimal Keychain wrapper for storing the GitHub token securely
-/// (never in UserDefaults / @AppStorage).
+/// Minimal Keychain wrapper for storing secrets securely (never in
+/// UserDefaults / @AppStorage, and never in source). Callers pass a `service`
+/// to keep unrelated credentials — the GitHub token, the Claude API key — in
+/// separate keychain items.
 enum Keychain {
-    private static let service = "com.liftlog.github"
+    static let gitHubService = "com.liftlog.github"
+    static let anthropicService = "com.liftlog.anthropic"
 
-    static func set(_ value: String, account: String) {
+    static func set(_ value: String, account: String, service: String = gitHubService) {
         let data = Data(value.utf8)
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
@@ -19,7 +22,7 @@ enum Keychain {
         SecItemAdd(add as CFDictionary, nil)
     }
 
-    static func get(account: String) -> String? {
+    static func get(account: String, service: String = gitHubService) -> String? {
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
@@ -33,7 +36,7 @@ enum Keychain {
         return String(data: data, encoding: .utf8)
     }
 
-    static func delete(account: String) {
+    static func delete(account: String, service: String = gitHubService) {
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,

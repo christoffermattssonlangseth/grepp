@@ -46,6 +46,74 @@ The format **is** the data: greppable, diffable, and directly readable by any
 model. Your training history stays portable and future-proof — usable by tools
 that don't exist yet, no database migration required.
 
+## Coach
+
+The **Coach** tab is a chat with Claude that reads your training log. The
+session's instructions carry the coach's brief, a key to the `training.md`
+format, and as much of the log as fits a character budget (newest sessions
+first — whole days, never half a day). Answers stream in as they're generated.
+A **Sonnet 5 / Opus 5** picker sits above the input: Sonnet is the default
+because it's fast and cheap; Opus is there when you want it to chew on a few
+months of history.
+
+Claude is reached through Apple's **Foundation Models** framework via
+Anthropic's [`ClaudeForFoundationModels`](https://github.com/anthropics/ClaudeForFoundationModels)
+package, so it's the same `LanguageModelSession` API as the on-device model —
+just with `ClaudeLanguageModel` passed as the `model:`.
+
+### The package is not linked by default
+
+`ClaudeForFoundationModels` is **beta** and requires **iOS 27 / Xcode 27
+(beta)**. This project's deployment target is **iOS 26.5**, so adding the
+package outright would stop the app building on the current stable toolchain.
+Instead the Coach code is gated two ways and ships inert:
+
+- **Compile time** — everything touching `FoundationModels` sits behind
+  `#if canImport(ClaudeForFoundationModels)`. Without the package the app builds
+  exactly as before and the Coach tab explains that it isn't linked.
+- **Run time** — `@available(iOS 27.0, *)` / `#available`, so an iOS 26 device
+  running an Xcode 27 build gets an explanation instead of a crash.
+
+To turn it on, in **Xcode 27**: *File ▸ Add Package Dependencies…* →
+`https://github.com/anthropics/ClaudeForFoundationModels.git` (from `0.1.0`),
+add the `ClaudeForFoundationModels` product to the **LiftLog** target, and raise
+`IPHONEOS_DEPLOYMENT_TARGET` to `27.0`. Nothing else changes — `canImport` picks
+it up. Drop the package to go back to a stable-toolchain build.
+
+### The API key
+
+**The key is never in source and never committed** — this repo is public. It's
+read from the first of these that has one:
+
+1. **Keychain** — paste it into *Settings ▸ Coach*. The normal path, and the
+   only one that works on a device from the home screen.
+2. **`ANTHROPIC_API_KEY`** environment variable — set it in the scheme
+   (*Product ▸ Scheme ▸ Edit Scheme ▸ Run ▸ Arguments*), which lives in
+   `xcuserdata/` and is already gitignored. Convenient in the Simulator.
+3. **`LiftLog/Secrets.plist`** — untracked, one `ANTHROPIC_API_KEY` string.
+   Gitignored, but it *is* copied into the app bundle, so it's dev-only: a key
+   in a bundle is extractable from the binary just like a hardcoded one.
+
+`.gitignore` covers `Secrets.plist`, `LiftLog/Secrets.plist`, `.env` and
+`*.local.xcconfig`. Usage bills to your Anthropic account at standard API
+pricing.
+
+> **Before distributing this to anyone else**, `.apiKey` is the wrong auth mode —
+> any key that reaches the app can be pulled back out of it. Switch
+> `ClaudeCoachBackend` to `.appAttest(clientID: "clid_…")`, Anthropic's
+> recommended path, which ships no key at all (register the app in the Claude
+> Console and add the App Attest capability), or `.proxied(...)` through a
+> backend that holds the key server-side.
+
+### What leaves the phone
+
+The question and the log excerpt go straight from the app to `api.anthropic.com`
+— Apple is not in the request path. The log text is assembled in exactly one
+place (`CoachContext.instructions`) and handed to the session; it is never
+printed, never logged to the console, and never written anywhere but the
+existing offline cache. Errors surface the API's status and reason, never the
+prompt.
+
 ## Open & run
 - Open **`LiftLog.xcodeproj`** in Xcode.
 - Source lives in `LiftLog/` (an Xcode 16 synchronized folder, so files in it
@@ -66,7 +134,11 @@ that don't exist yet, no database migration required.
 - **Trends** — per-lift progression chart (top-set weight by default; Est. 1RM as a
   secondary metric; added-load or max-reps for bodyweight lifts) with short-term
   (3-week) and long-term (all-time) change tiles.
-- **Settings** — GitHub owner / repo / path / branch + a fine-grained token.
+- **Coach** — a chat with Claude that has your `training.md` in front of it. Ask
+  "how's my squat progressing" or "heavy or light today, given last week" and get
+  an answer that cites your own dates and loads. See [Coach](#coach) below.
+- **Settings** — GitHub owner / repo / path / branch + a fine-grained token, and
+  the Claude API key for Coach.
 
 ## Tests
 The pure-logic layer (parsing, serialization, analytics) lives in `LiftLog/Core`
@@ -80,8 +152,9 @@ swift test
 The same files compile into the iOS target via Xcode's synchronized folder, so
 `swift test` exercises the exact production code. Coverage: `training.md`
 parse/serialize round-trips, the `bw` / `bw+5` bodyweight tokens, malformed-line
-handling, and the Trends analytics (top-set, Est. 1RM, added-load series, change
-tiles).
+handling, the Trends analytics (top-set, Est. 1RM, added-load series, change
+tiles), and the Coach context builder (budgeting, truncation notes, and that what
+we send the model still round-trips through the parser).
 
 ## GitHub token
 Create a **fine-grained personal access token** scoped to only this repo with

@@ -71,17 +71,11 @@ One line per exercise per day; a blank line separates dates:
 
 ## Coach
 
-A chat with Claude that reads your training log and tells you what to do next.
-Ask it to plan a session, push a lift forward, or explain why something has
-stalled, and it answers with numbers — load, sets and reps, sized from the
-increments *you* have been making — citing the dates behind each call, and
-saying so when the log is too thin to support one. Answers stream in, and a
-**Sonnet 5 / Opus 5** picker sits above the input.
-
-Your whole `training.md` goes with every question (up to about five years of it),
-so there's nothing to export. It calls the
+Setting it up, and the details. Answers stream in, and a **Sonnet 5 / Opus 5**
+picker sits above the input — Sonnet by default, Opus when you want it to chew
+on a few years of history. It calls the
 [Messages API](https://platform.claude.com/docs/en/api/messages/create) directly
-over HTTPS — no SDK, no extra packages, nothing to install.
+over HTTPS, so there's no SDK or extra package to install.
 
 ### Teach it who you are
 

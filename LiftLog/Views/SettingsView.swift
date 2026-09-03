@@ -19,7 +19,7 @@ struct SettingsView: View {
                     SecureField("ghp_… (fine-grained PAT)", text: $store.token)
                         .textInputAutocapitalization(.never)
                         .autocorrectionDisabled()
-                        .onChange(of: store.token) { _ in store.saveToken() }
+                        .onChange(of: store.token) { _, _ in store.saveToken() }
                     Text("Create a fine-grained token scoped to just this repo with **Contents: Read and write**.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
@@ -30,7 +30,7 @@ struct SettingsView: View {
                     SecureField("sk-ant-… (Claude API key)", text: $store.anthropicKey)
                         .textInputAutocapitalization(.never)
                         .autocorrectionDisabled()
-                        .onChange(of: store.anthropicKey) { _ in store.saveAnthropicKey() }
+                        .onChange(of: store.anthropicKey) { _, _ in store.saveAnthropicKey() }
                     Text("""
                     Stored in the Keychain — never in source or UserDefaults. \
                     Create one in the [Claude Console](https://platform.claude.com/). \

@@ -22,7 +22,11 @@ enum WorkoutParser {
 
             let dateKey = tokens[0]
             let name = tokens[1]
-            let sets = tokens[2...].compactMap(parseSet)
+            // A closure rather than `compactMap(parseSet)`: passing the method as a
+            // function value strips it of the caller's actor isolation, which the
+            // app target (MainActor by default) rejects. This compiles the same in
+            // the Foundation-only package target.
+            let sets = tokens[2...].compactMap { parseSet($0) }
             guard !sets.isEmpty else { continue }
 
             let entry = ExerciseEntry(name: name, sets: sets)

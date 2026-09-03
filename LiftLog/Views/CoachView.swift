@@ -95,7 +95,7 @@ struct CoachView: View {
                     .font(.body.weight(.medium))
                     .padding(.horizontal, 14).padding(.vertical, 10)
                     .background(Theme.accent, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-                    .foregroundStyle(.white)
+                    .foregroundStyle(Theme.onAccent)
                     .frame(maxWidth: .infinity, alignment: .trailing)
             case .coach:
                 coachBubble(message)
@@ -322,7 +322,7 @@ struct CoachView: View {
                         .font(.headline.weight(.bold))
                         .frame(width: 44, height: 44)
                         .background(Theme.accent, in: Circle())
-                        .foregroundStyle(.white)
+                        .foregroundStyle(Theme.onAccent)
                 }
                 .disabled(!coach.isResponding && draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
             }

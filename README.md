@@ -133,7 +133,7 @@ logged or stored anywhere else.
   or type a new name), enter weight/reps on the big number pads, and "Finish
   exercise" to add it to the day. A live "Today's Session" list shows the workout
   building up, and a **rest timer** starts counting up each time you add a set.
-  Bold / gym-friendly styling: strong accent, large touch targets, chunky buttons.
+  Bold, gym-friendly styling: a steel accent, large touch targets, chunky buttons.
 - **History** — browse every session; pull to refresh from GitHub. Swipe any
   exercise to delete it (with a confirm), which is pushed like any other edit.
 - **Trends** — per-lift progression chart (top-set weight by default; Est. 1RM as a

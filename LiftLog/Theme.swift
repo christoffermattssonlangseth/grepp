@@ -1,10 +1,21 @@
 import SwiftUI
 
-/// Central visual style. Bold, gym-friendly: one strong accent, chunky shapes,
-/// large type. Change `accent` here to re-skin the whole app.
+/// Central visual style. Cold and hard-wearing: one steel accent, chunky shapes,
+/// large type. Change `accent` and `onAccent` here to re-skin the whole app.
 enum Theme {
-    /// Vivid orange — high-energy, reads well in light and dark.
-    static let accent = Color(red: 1.0, green: 0.42, blue: 0.13)
+    /// Steel cyan — cool and instrument-like, which suits a screen full of
+    /// numbers better than a warm accent does.
+    ///
+    /// Deliberately a shade deeper than it looks like it wants to be: white text
+    /// on it needs 4.5:1 for the small type in a Coach bubble, and a brighter
+    /// steel (#2B8CB3) only manages 3.81:1. This one measures 4.99:1 on white
+    /// and 4.48:1 against the light ground it also tints.
+    static let accent = Color(red: 0.122, green: 0.471, blue: 0.600)   // #1F7899
+
+    /// Anything drawn *on* the accent — button labels, the send glyph, chat text.
+    /// Named rather than inlined as `.white` so a re-skin to a light accent is
+    /// one edit here instead of a hunt through the views.
+    static let onAccent = Color.white
 
     static let corner: CGFloat = 20
     static let bigFieldHeight: CGFloat = 76

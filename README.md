@@ -111,9 +111,13 @@ revertable, exactly like the log, with nothing to retrain and no model to
 fine-tune. The Coach screen names the files it's reading so you can tell the
 brief actually landed.
 
-**Or let it interview you.** *Set up your goals* — on the Coach screen, and in
-*Settings ▸ Coach* so it's reachable mid-conversation — starts an interview
-instead of opening a form. Because the coach can already see your log, the
+**Your brief**, from the person icon in the Coach tab's toolbar (or *Settings ▸
+Coach*), is where both files live: it shows what the coach currently knows about
+you, lets you edit either one right there, and commits your changes straight to
+your repo. No round trip to GitHub to change a line.
+
+**Or let it interview you.** *Set up your goals* — on an empty Coach screen, or
+from the brief screen — starts an interview instead of opening a form. Because the coach can already see your log, the
 questions are specific ("you've squatted 120 for a triple twice since July, is
 140 by June the target or is that too soft?"). After a few exchanges it writes
 the file, shows it to you, and **Save to `goals.md`** commits it to your repo.

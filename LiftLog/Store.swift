@@ -60,19 +60,55 @@ final class Store: ObservableObject {
         selectedTab = 0
     }
 
-    /// A "run the goals interview" request handed from Settings to the Coach tab,
-    /// which consumes it and clears it. Same shape as `editRequest` — setting up
-    /// your goals belongs with the other settings, but the interview itself only
-    /// makes sense in the chat.
-    @Published var goalsInterviewRequest = false
+    /// An "open Your brief" request handed from Settings to the Coach tab, which
+    /// consumes it and clears it. Same shape as `editRequest`: the brief is
+    /// configured from Settings, but it belongs to Coach, which is where it's used.
+    @Published var briefRequest = false
 
-    func requestGoalsInterview() {
-        goalsInterviewRequest = true
+    func requestBrief() {
+        briefRequest = true
         selectedTab = 3
     }
 
     /// The outcome of a `commit`, so callers don't have to sniff `status` text.
     enum CommitResult { case pushed, queued, failed }
+
+    /// The two files that make up the coach's standing brief. One identity for
+    /// each, so a screen can read, edit and save either without special-casing.
+    enum BriefFile: String, CaseIterable, Identifiable {
+        case coaching, goals
+        var id: String { rawValue }
+
+        var title: String {
+            switch self {
+            case .coaching: return "How I train"
+            case .goals: return "What I'm working toward"
+            }
+        }
+
+        var hint: String {
+            switch self {
+            case .coaching:
+                return "Philosophy, preferences, the shape of your week, injuries to work around."
+            case .goals:
+                return "Targets and dates. The coach programmes backwards from these."
+            }
+        }
+    }
+
+    func path(for file: BriefFile) -> String {
+        switch file {
+        case .coaching: return coachingPath
+        case .goals: return goalsPath
+        }
+    }
+
+    func text(for file: BriefFile) -> String {
+        switch file {
+        case .coaching: return brief.coaching
+        case .goals: return brief.goals
+        }
+    }
 
     private enum StoreError: LocalizedError {
         case unsafeMerge
@@ -114,40 +150,51 @@ final class Store: ObservableObject {
         GitHubService(owner: owner, repo: repo, path: path, branch: branch, token: token)
     }
 
-    /// Overwrite the goals file with a version the coach wrote in an interview.
+    /// Overwrite one of the brief files — hand-edited, or written by the coach in
+    /// an interview.
     ///
-    /// A whole-file replace of `goalsPath` and nothing else — it never touches the
-    /// log or the coaching notes, and git history means a bad one is a revert away.
-    /// Unlike a workout this isn't queued when offline: you're sitting in a chat
+    /// A whole-file replace of that one path and nothing else: it never touches the
+    /// log or the other brief file, and git history means a bad write is a revert
+    /// away. Unlike a workout it isn't queued when offline — you're sitting there
     /// looking at it, so a plain failure you can retry beats a silent queue.
     @discardableResult
-    func saveGoals(_ text: String) async -> CommitResult {
+    func save(_ text: String, to file: BriefFile) async -> CommitResult {
         guard !isBusy else { return .failed }
-        let path = goalsPath.trimmingCharacters(in: .whitespacesAndNewlines)
+        let path = self.path(for: file).trimmingCharacters(in: .whitespacesAndNewlines)
         guard !path.isEmpty else {
-            status = "No goals file set — add a path in Settings."
+            status = "No \(file.rawValue) file set — add a path in Settings."
             return .failed
         }
 
-        isBusy = true; status = "Saving goals…"
+        isBusy = true; status = "Saving \(path)…"
         defer { isBusy = false }
 
-        let file = GitHubService(owner: owner, repo: repo, path: path, branch: branch, token: token)
+        let remote = GitHubService(owner: owner, repo: repo, path: path, branch: branch, token: token)
         let content = text.hasSuffix("\n") ? text : text + "\n"
         do {
             // Fetch first for the sha: a nil sha creates the file, a stale one is a 409.
-            let existing = try await file.fetch()
-            _ = try await file.put(content: content, sha: existing?.sha, message: "Update \(path) from Coach")
-            brief.goals = content
-            defaults.set(content, forKey: goalsCacheKey)
-            status = "Goals saved ✓"
+            let existing = try await remote.fetch()
+            _ = try await remote.put(content: content, sha: existing?.sha, message: "Update \(path) from LiftLog")
+            switch file {
+            case .coaching: brief.coaching = content
+            case .goals: brief.goals = content
+            }
+            defaults.set(content, forKey: cacheKey(for: file))
+            status = "Saved \(path) ✓"
             return .pushed
         } catch is URLError {
-            status = "Offline — couldn't save your goals. Try again when you have signal."
+            status = "Offline — couldn't save \(path). Try again when you have signal."
             return .failed
         } catch {
             status = error.localizedDescription
             return .failed
+        }
+    }
+
+    private func cacheKey(for file: BriefFile) -> String {
+        switch file {
+        case .coaching: return coachingCacheKey
+        case .goals: return goalsCacheKey
         }
     }
 

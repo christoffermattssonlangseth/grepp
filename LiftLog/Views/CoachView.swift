@@ -13,6 +13,7 @@ struct CoachView: View {
     /// than staying stuck on "Saved".
     @State private var savedGoalsText: String?
     @State private var saveError: String?
+    @State private var showingBrief = false
     @FocusState private var inputFocused: Bool
 
     /// The only thing that can stop Coach working now is a missing key.
@@ -28,9 +29,20 @@ struct CoachView: View {
             // Both, deliberately: onChange catches a request while Coach is already
             // on screen, onAppear catches one that arrives before the tab has ever
             // been built — TabView makes its pages lazily.
-            .onChange(of: store.goalsInterviewRequest) { _, _ in consumeGoalsRequest() }
-            .onAppear(perform: consumeGoalsRequest)
+            .onChange(of: store.briefRequest) { _, _ in consumeBriefRequest() }
+            .onAppear(perform: consumeBriefRequest)
+            .sheet(isPresented: $showingBrief) {
+                BriefView {
+                    // The sheet is already dismissing; start the interview behind it.
+                    beginGoalsInterview()
+                }
+            }
             .toolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    Button { showingBrief = true } label: {
+                        Label("Your brief", systemImage: "person.text.rectangle")
+                    }
+                }
                 ToolbarItem(placement: .topBarTrailing) {
                     Button {
                         coach.reset()
@@ -140,10 +152,10 @@ struct CoachView: View {
         }
     }
 
-    private func consumeGoalsRequest() {
-        guard store.goalsInterviewRequest else { return }
-        store.goalsInterviewRequest = false
-        beginGoalsInterview()
+    private func consumeBriefRequest() {
+        guard store.briefRequest else { return }
+        store.briefRequest = false
+        showingBrief = true
     }
 
     private func beginGoalsInterview() {
@@ -201,7 +213,7 @@ struct CoachView: View {
                 Task {
                     savingGoals = true
                     saveError = nil
-                    if await store.saveGoals(goals) == .pushed {
+                    if await store.save(goals, to: .goals) == .pushed {
                         savedGoalsText = goals
                     } else {
                         saveError = store.status

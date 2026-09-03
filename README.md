@@ -2,17 +2,19 @@
   <img src="LiftLog/Assets.xcassets/AppIcon.appiconset/icon-1024.png" width="120" alt="LiftLog icon">
 </p>
 
-# LiftLog — iOS workout logger
+# LiftLog
 
-A native SwiftUI app that logs workouts into a plain-text `training.md` and
-pushes each entry straight to a GitHub repo via the Contents API. No server, no
-database — the text file stays the single source of truth, human-readable and
-diff-friendly.
+### An iOS workout log that lives in your own GitHub repo — with a Claude coach that reads it.
 
-Because the log is plain text, it doubles as a **coach**. The Coach tab puts the
-whole file in front of Claude and answers "what should I squat on Thursday?" with
-numbers from your own history — coached to rules you write yourself, in Markdown,
-in the same repo.
+Log a session on the big number pads, and every set lands as a line of text in a
+repo you control. No server, no database, no export — the file *is* the data,
+which is exactly why an LLM can pick it up and coach from it with nothing in
+between.
+
+Ask **Coach** what to squat on Thursday and it answers from your own history:
+real loads, real rep schemes, the dates it reasoned from. Tell it how you train
+and what you're chasing in two more Markdown files beside the log, and it coaches
+to your rules rather than a textbook's — changing its mind is a commit.
 
 Point the app at any repo you control from the **Settings** tab (GitHub owner /
 repo / path / branch + a fine-grained token). It reads and writes one file, so
@@ -21,6 +23,24 @@ your training history is portable, greppable, and outlives the app itself.
 <p align="center">
   <img src="docs/session.png" width="300" alt="LiftLog Session screen — bold, gym-friendly logging UI">
 </p>
+
+## Ask your log
+
+Nothing to export, no schema to reverse-engineer: the whole file goes to the
+model as it is. So these are questions you type into the app, not things you'd
+have to build something to answer:
+
+> _"Am I progressing on squat over the last two months, or just adding volume?"_
+> _"Plan next week's lower body from my recent top sets."_
+> _"Which lifts have stalled the longest, and what do I do about it?"_
+
+You get numbers back — load, sets and reps, sized from the increments *you've*
+been making — with the dates each call rests on, and a straight "the log doesn't
+show that" when it can't support one.
+
+The format **is** the data: greppable, diffable, readable by any model. Your
+history stays portable and outlives the app — usable by tools that don't exist
+yet, no migration required.
 
 ## `training.md` format
 
@@ -35,25 +55,6 @@ One line per exercise per day; a blank line separates dates:
 - **Exercise** — lowercase `kebab-case` (consistent spelling groups sessions for trends).
 - **Sets** — space-separated `weightxreps` tokens: `82.5x8` (kg × reps),
   `bwx6` (bodyweight × reps), `bw+5x8` (bodyweight **+ 5 kg** × reps).
-
-## Ask your log
-
-There's nothing to export and no schema to reverse-engineer, so the whole file
-goes straight to the model. Which means these are questions you type into the
-app, not things you'd have to build something to answer:
-
-> _"Am I progressing on squat over the last two months, or just adding volume?"_
-> _"Plan next week's lower body from my recent top sets."_
-> _"Which lifts have stalled the longest, and what do I do about it?"_
-
-You get numbers back — load, sets and reps, sized from the increments *you've*
-been making — with the dates each call rests on. Write down how you train and
-what you're aiming at in two more Markdown files beside the log, and it coaches
-to your rules instead of a textbook's. Changing its mind is a commit.
-
-The format **is** the data: greppable, diffable, and readable by any model. Your
-history stays portable and outlives the app — usable by tools that don't exist
-yet, no migration required.
 
 ## Coach
 

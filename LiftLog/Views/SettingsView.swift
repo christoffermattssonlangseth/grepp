@@ -39,6 +39,11 @@ struct SettingsView: View {
                         .font(.caption)
                         .foregroundStyle(.secondary)
 
+                    labeled("coaching file", text: $store.coachingPath, placeholder: "coaching.md")
+                    Text(coachingHint)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+
                     labeled("workspace id", text: $store.anthropicWorkspace, placeholder: "wrkspc_… (optional)")
                     Text("""
                     Only needed if the key isn't scoped to a single workspace. \
@@ -84,6 +89,14 @@ struct SettingsView: View {
             .background(Theme.backgroundView)
             .navigationTitle("Settings")
         }
+    }
+
+    /// Whether the coaching notes were found, and what to do about it.
+    private var coachingHint: LocalizedStringKey {
+        if store.coachingGuide.isEmpty {
+            return "No coaching notes found. Commit a **\(store.coachingPath)** beside your log — how you like to train, injuries to work around, anything you want the coach to follow — and it becomes its standing brief."
+        }
+        return "^[\(store.coachingGuide.count) character](inflect: true) of coaching notes loaded. Edit the file in your repo, then reload below."
     }
 
     private func labeled(_ label: String, text: Binding<String>, placeholder: String) -> some View {

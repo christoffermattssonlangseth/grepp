@@ -16,6 +16,11 @@ final class Store: ObservableObject {
     @AppStorage("gh_path") var path = "training.md"
     @AppStorage("gh_branch") var branch = "main"
 
+    /// Optional companion file to `training.md`, in the same repo and branch: the
+    /// lifter's own coaching notes, handed to the Coach tab as a standing brief.
+    /// Blank, or a file that isn't there, and Coach just runs on its own defaults.
+    @AppStorage("gh_coaching_path") var coachingPath = "coaching.md"
+
     /// Claude workspace for the Coach tab. An identifier, not a secret, so it sits
     /// in UserDefaults beside the repo config. Only needed when the API key spans
     /// more than one workspace.
@@ -34,6 +39,10 @@ final class Store: ObservableObject {
 
     /// Writes that haven't reached GitHub yet, oldest first. Persisted across launches.
     @Published private(set) var pending: [PendingWrite] = []
+
+    /// Contents of `coachingPath`, or empty when there's no such file. Cached like
+    /// the log so it survives a cold start with no signal.
+    @Published private(set) var coachingGuide = ""
 
     /// Drives the selected tab so views can jump between them (0 = Log … 4 = Settings).
     @Published var selectedTab = 0
@@ -61,11 +70,13 @@ final class Store: ObservableObject {
 
     // UserDefaults keys for the offline cache + queue.
     private let cacheKey = "gh_cache"
+    private let coachingCacheKey = "gh_coaching_cache"
     private let pendingKey = "gh_pending"
     private var defaults: UserDefaults { .standard }
 
     init() {
         pending = loadPending()
+        coachingGuide = defaults.string(forKey: coachingCacheKey) ?? ""
         // Show cached content + any queued writes immediately, before the network load.
         sessions = WorkoutParser.applying(pending, to: cachedSessions())
     }
@@ -86,6 +97,25 @@ final class Store: ObservableObject {
 
     private var service: GitHubService {
         GitHubService(owner: owner, repo: repo, path: path, branch: branch, token: token)
+    }
+
+    /// Same repo and branch as the log, different file.
+    private var coachingService: GitHubService {
+        GitHubService(owner: owner, repo: repo, path: coachingPath, branch: branch, token: token)
+    }
+
+    /// Refresh the coaching notes. Deliberately cannot fail the load: the file is
+    /// optional, a 404 just means there isn't one, and anything else falls back to
+    /// the cached copy so a hiccup here never costs you the training history.
+    private func loadCoachingGuide() async {
+        guard !coachingPath.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            coachingGuide = ""
+            return
+        }
+        if let state = try? await coachingService.fetch() {
+            coachingGuide = state?.content ?? ""
+            defaults.set(coachingGuide, forKey: coachingCacheKey)
+        }
     }
 
     /// Unique exercise names seen in history, for the picker (most recent first).
@@ -120,6 +150,7 @@ final class Store: ObservableObject {
                 sessions = WorkoutParser.applying(pending, to: [])
                 status = "No file yet — first save will create it.\(pendingSuffix)"
             }
+            await loadCoachingGuide()
             await flushPending()
         } catch is URLError {
             // Offline: fall back to the cache so the app still shows history.

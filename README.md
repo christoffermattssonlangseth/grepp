@@ -78,6 +78,35 @@ and the log is rebuilt per question — log a set mid-chat and the next answer s
 it. The system prompt is marked for prompt caching, which makes follow-ups
 cheaper once the log is long enough to clear the model's minimum cacheable prefix.
 
+### `coaching.md` — teach it how *you* want to be coached
+
+Drop a **`coaching.md`** next to your `training.md`, in the same repo and branch,
+and Coach reads it as a standing brief: how you like to train, what your week
+looks like, injuries to work around, how big your jumps are, whatever reading
+you want its advice to reflect. It's plain Markdown with no schema — write
+prose, write bullets, write whatever you'd tell a coach on day one.
+
+```markdown
+- Four days a week, upper/lower. Squat and deadlift once each.
+- I add 2.5 kg upper / 5 kg lower when the top set moves cleanly.
+- Left shoulder doesn't like flat barbell benching at volume. Incline is fine.
+- Lead with the prescription. I'll ask if I want the reasoning.
+```
+
+The point is that **changing how you're coached is a commit.** Read something
+that changes your mind about programming, edit the file, push — the next
+question reflects it. Versioned, diffable and revertable, exactly like the log,
+with nothing to retrain and no model to fine-tune. The Coach screen says which
+file it's reading so you can tell the brief actually landed.
+
+The file is optional: no `coaching.md` and Coach just runs on its own defaults.
+Set a different name in *Settings ▸ Coach*, or blank the field to switch it off.
+It's fetched with the log, cached for offline like the log, capped at 20,000
+characters, and a fetch failure can never cost you your training history. Your
+notes are instructions about *training* — the prompt tells the model to ignore
+anything in them that tries to rewrite its own rules, and to speak up rather
+than follow a brief into an injury.
+
 ### The API key
 
 **The key is never in source and never committed** — this repo is public. It's
@@ -155,7 +184,8 @@ Swapping back later means replacing `ClaudeService` and nothing else —
   (3-week) and long-term (all-time) change tiles.
 - **Coach** — a chat with Claude that has your `training.md` in front of it. Ask
   "what should my next squat session be" or "which lifts have stalled" and get
-  concrete loads and rep schemes, cited from your own dates and numbers. See
+  concrete loads and rep schemes, cited from your own dates and numbers. Add a
+  `coaching.md` beside your log and it coaches to *your* rules. See
   [Coach](#coach) below.
 - **Settings** — GitHub owner / repo / path / branch + a fine-grained token, and
   the Claude API key for Coach.
@@ -175,7 +205,8 @@ parse/serialize round-trips, the `bw` / `bw+5` bodyweight tokens, malformed-line
 handling, the Trends analytics (top-set, Est. 1RM, added-load series, change
 tiles), and the Coach context builder (that a four-year log is sent whole, the
 newest-first trimming and truncation notes beyond that, and that what we send the
-model still round-trips through the parser).
+model still round-trips through the parser, and that coaching notes become a
+standing brief that stays separate from the log data).
 
 ## GitHub token
 Create a **fine-grained personal access token** scoped to only this repo with

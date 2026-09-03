@@ -95,6 +95,9 @@ struct CoachView: View {
                 Text("Your \(store.path) goes with every question, so answers cite your own dates and loads.")
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
+                Label(coachingHint, systemImage: hasCoachingNotes ? "checkmark.seal" : "doc.badge.plus")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             }
             .glassCard(cornerRadius: 16)
 
@@ -113,6 +116,16 @@ struct CoachView: View {
                 .buttonStyle(.plain)
             }
         }
+    }
+
+    private var hasCoachingNotes: Bool { !store.coachingGuide.isEmpty }
+
+    /// Typed explicitly — a ternary of two literals is ambiguous between Label's
+    /// LocalizedStringKey and StringProtocol overloads.
+    private var coachingHint: LocalizedStringKey {
+        hasCoachingNotes
+            ? "Coaching by your \(store.coachingPath)."
+            : "Add a \(store.coachingPath) beside your log to say how you want to be coached."
     }
 
     private func errorCard(_ text: String) -> some View {
@@ -173,7 +186,11 @@ struct CoachView: View {
         guard !trimmed.isEmpty else { return }
         draft = ""
         inputFocused = false
-        coach.send(trimmed, model: model, workspace: store.anthropicWorkspace, sessions: store.sessions)
+        coach.send(trimmed,
+                   model: model,
+                   sessions: store.sessions,
+                   guide: store.coachingGuide,
+                   workspace: store.anthropicWorkspace)
     }
 
     // MARK: - No key

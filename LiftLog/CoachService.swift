@@ -79,7 +79,11 @@ final class CoachService: ObservableObject {
         isResponding = false
     }
 
-    func send(_ question: String, model: CoachModelChoice, workspace: String, sessions: [Session]) {
+    func send(_ question: String,
+              model: CoachModelChoice,
+              sessions: [Session],
+              guide: String,
+              workspace: String) {
         let trimmed = question.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty, !isResponding else { return }
 
@@ -100,8 +104,12 @@ final class CoachService: ObservableObject {
         // Rebuilt per question rather than pinned at the start of the chat, so a
         // workout logged mid-conversation is picked up on the next answer.
         let excerpt = CoachContext.excerpt(from: sessions)
-        let system = CoachContext.systemPrompt(for: excerpt)
-        contextNote = excerpt.note
+        let system = CoachContext.systemPrompt(for: excerpt, guide: guide)
+        // Say when the standing brief is in play — otherwise there's no way to
+        // tell from the answers whether the coaching notes were picked up.
+        contextNote = guide.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            ? excerpt.note
+            : excerpt.note + " + your notes"
 
         messages.append(CoachMessage(role: .you, text: trimmed))
         let reply = CoachMessage(role: .coach, text: "", isStreaming: true)

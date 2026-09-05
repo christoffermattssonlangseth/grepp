@@ -78,7 +78,13 @@ struct LogView: View {
                     }
                 }
                 .padding()
+                // Tap anywhere that isn't a control and the keyboard goes. Buttons and
+                // fields still win the tap; this only catches the space between them.
+                .contentShape(Rectangle())
+                .onTapGesture { focus = nil }
             }
+            // …and dragging the list down pulls the keyboard away with it.
+            .scrollDismissesKeyboard(.interactively)
             .background(Theme.backgroundView)
             .navigationTitle("Session")
             .sheet(isPresented: $showingPicker) {

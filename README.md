@@ -223,15 +223,3 @@ The exercise you're mid-way through â€” sets landed, the plan, the rest clock â€
 and the Coach conversation both survive the app being killed in the background,
 and come back on the next launch. Gyms also eat battery, and iOS quietly kills
 whatever's behind the music app.
-
----
-
-<p align="center">
-  <a href="https://claude.com/claude-code"><img src="https://img.shields.io/badge/pair--programmed%20with-Claude%20Fable%205.1-1F7899?style=flat-square" alt="Pair-programmed with Claude Fable 5.1"></a>
-</p>
-
-<p align="center">
-  <sub>Built in <a href="https://claude.com/claude-code">Claude Code</a>. The Coach tab, the brief and the interview
-  were laid down with Claude Opus 5; the steel, the motion and the prescriptions with
-  <b>Claude Fable 5.1</b>. The commits say which.</sub>
-</p>

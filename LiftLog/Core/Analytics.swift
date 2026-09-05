@@ -46,6 +46,31 @@ enum Analytics {
         }
     }
 
+    /// A personal record, if a set is one.
+    enum Record: Equatable {
+        case load   // heavier than anything logged for the lift
+        case reps   // more reps than ever at this load
+    }
+
+    /// Judge one set against the lift's history. Weighted lifts compare weight;
+    /// bodyweight lifts compare added load, so bw+5 beats bw and bwx9 beats bwx8.
+    /// The very first set of a new lift is not a record — there's nothing to beat.
+    ///
+    /// `extra` is for sets landed but not yet committed: the second 90x5 today is
+    /// not a record just because the first was.
+    static func record(for set: WorkSet, exercise name: String,
+                       in sessions: [Session], plus extra: [WorkSet] = []) -> Record? {
+        let history = allSets(name, in: sessions) + extra
+        guard !history.isEmpty else { return nil }
+        let load: (WorkSet) -> Double = { $0.weight ?? ($0.added ?? 0) }
+
+        let mine = load(set)
+        if mine > (history.map(load).max() ?? 0) { return .load }
+        if let bestReps = history.filter({ load($0) == mine }).map(\.reps).max(),
+           set.reps > bestReps { return .reps }
+        return nil
+    }
+
     /// A lift with no weighted sets (e.g. pull-ups) — 1RM/top-set don't apply.
     static func isBodyweight(_ name: String, in sessions: [Session]) -> Bool {
         let sets = allSets(name, in: sessions)

@@ -28,6 +28,7 @@ struct LogView: View {
     /// Haptic triggers — bumped on the event, never read.
     @State private var setAdded = 0
     @State private var exerciseFinished = 0
+    @State private var recordSet = 0
     /// When non-nil, the rest clock is running from this instant.
     @State private var restStart: Date?
     @FocusState private var focus: Field?
@@ -96,6 +97,9 @@ struct LogView: View {
             // 11. Feel: a tap that lands a set should be felt, and finishing more so.
             .sensoryFeedback(.impact(weight: .medium), trigger: setAdded)
             .sensoryFeedback(.success, trigger: exerciseFinished)
+            // A record lands on top of the ordinary set buzz: a heavy hit after a
+            // medium one, which reads as "more" without a second haptic vocabulary.
+            .sensoryFeedback(.impact(weight: .heavy, intensity: 1), trigger: recordSet)
             .refreshable { await store.load() }
             .onAppear { applyEditRequest(); applyPrescription() }
             .onChange(of: store.editRequest) { _, _ in applyEditRequest() }
@@ -396,6 +400,7 @@ struct LogView: View {
                             .background(Theme.accent, in: Circle())
                         Text(loadLabel(set))
                             .font(.body.weight(.semibold))
+                        if let record = record(at: idx) { recordBadge(record) }
                         Spacer()
                         Text("× \(set.reps)").font(.title3.weight(.heavy))
                         Button {
@@ -410,8 +415,7 @@ struct LogView: View {
                 }
                 Button {
                     if let last = sets.last {
-                        sets.append(WorkSet(weight: last.weight, added: last.added, reps: last.reps))
-                        restStart = Date()
+                        land(WorkSet(weight: last.weight, added: last.added, reps: last.reps))
                     }
                 } label: {
                     Label("repeat last set", systemImage: "arrow.uturn.down")
@@ -495,14 +499,39 @@ struct LogView: View {
     private func addSet() {
         guard let reps = parsedReps else { return }
         let added = isBodyweight ? parsedAdded : nil
-        sets.append(WorkSet(weight: isBodyweight ? nil : parsedWeight,
-                            added: (added ?? 0) > 0 ? added : nil,
-                            reps: reps))
         repsText = ""
         focus = nil
+        land(WorkSet(weight: isBodyweight ? nil : parsedWeight,
+                     added: (added ?? 0) > 0 ? added : nil,
+                     reps: reps))
+    }
+
+    /// A set is done: record it, start the rest, feel it, and line up the next.
+    /// The one path for both add-set and repeat-last.
+    private func land(_ set: WorkSet) {
+        sets.append(set)
+        if record(at: sets.count - 1) != nil { recordSet += 1 }
         restStart = Date()   // start resting the moment a set lands
         setAdded += 1
         if let plan, sets.count < plan.count { prefill(plan[sets.count]) }
+    }
+
+    /// Is the set at `index` a personal record? Judged against every other day
+    /// plus the sets landed before it today. Today's own committed copy of this
+    /// exercise is left out, so re-logging it doesn't compare a set to itself.
+    private func record(at index: Int) -> Analytics.Record? {
+        let key = Session.dateFormatter.string(from: date)
+        let past = store.sessions.filter { $0.dateString != key }
+        return Analytics.record(for: sets[index], exercise: name, in: past, plus: Array(sets[..<index]))
+    }
+
+    private func recordBadge(_ record: Analytics.Record) -> some View {
+        let label: String = record == .load ? "PR" : "REP PR"
+        return Text(label)
+            .font(.caption2.weight(.heavy)).tracking(0.5)
+            .padding(.horizontal, 6).padding(.vertical, 2)
+            .background(Theme.accent, in: Capsule())
+            .foregroundStyle(Theme.onAccent)
     }
 
     /// Row label for a logged set: "82.5 kg", "BW +5 kg" or "Bodyweight".

@@ -3,6 +3,7 @@ import SwiftUI
 /// GitHub connection settings. The token is stored in the Keychain.
 struct SettingsView: View {
     @EnvironmentObject var store: Store
+    @AppStorage("coach_show_cost") private var showCost = true
 
     var body: some View {
         NavigationStack {
@@ -52,6 +53,8 @@ struct SettingsView: View {
                     }
 
                     labeled("workspace id", text: $store.anthropicWorkspace, placeholder: "wrkspc_… (optional)")
+
+                    Toggle("Show cost under each answer", isOn: $showCost)
                     Text("""
                     Only needed if the key isn't scoped to a single workspace. \
                     Find it in the **ID** column of Settings ▸ Workspaces in the Console — \

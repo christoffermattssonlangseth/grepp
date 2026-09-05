@@ -54,7 +54,9 @@ session, each exercise comes as a card with a **Log** button — or one **Log th
 session** button for all of them. Either way you land on the Session tab with
 the lift and the first set filled in, the plan shown as a target, each set you
 land prefilling the next, and the next exercise loading as you finish the last.
-Every exercise still pushes on its own the moment it's done.
+Every exercise still pushes on its own the moment it's done. Under each answer a
+quiet line gives the API's own token counts and what they cost — switch it off
+in *Settings ▸ Coach* if you'd rather not know.
 
 The format **is** the data: greppable, diffable, readable by any model. Your
 history stays portable and outlives the app — usable by tools that don't exist
@@ -142,9 +144,10 @@ logged or stored anywhere else.
   push it to the day. A live "Today's Session" list shows the workout building
   up. A **rest timer** starts each time you land a set, fills toward a target
   you pick (1:00 / 1:30 / 2:00 / 3:00) and buzzes once when you're due. Land a
-  set and it's felt; the digits roll like a stopwatch. When Coach hands over a
-  session, the plan shows as a target, each set prefills the next, and the next
-  lift loads as you finish the last. Steel accent, large touch targets, one
+  set and it's felt; the digits roll like a stopwatch; a set that beats your
+  all-time best for the lift gets a **PR** badge and a heavier buzz. When Coach
+  hands over a session, the plan shows as a target, each set prefills the next,
+  and the next lift loads as you finish the last. Steel accent, large touch targets, one
   raised surface per screen.
 - **History** — browse every session; pull to refresh from GitHub. Swipe any
   exercise to delete it (with a confirm), which is pushed like any other edit.

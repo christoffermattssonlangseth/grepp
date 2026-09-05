@@ -127,7 +127,10 @@ struct LogView: View {
 
     private func prefill(_ set: WorkSet?) {
         guard let set else { return }
-        weightText = set.weight.map(WorkSet.formatWeight) ?? ""
+        // A closure, not `.map(WorkSet.formatWeight)`: passing the method as a
+        // function value drops the caller's actor isolation, which the MainActor-
+        // by-default app target rejects. Same fix as parseSet in WorkoutParser.
+        weightText = set.weight.map { WorkSet.formatWeight($0) } ?? ""
         addedText = set.added.flatMap { $0 > 0 ? WorkSet.formatWeight($0) : nil } ?? ""
         repsText = String(set.reps)
     }

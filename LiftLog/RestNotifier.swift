@@ -14,6 +14,7 @@ enum RestNotifier {
     /// so this can be called every time a rest starts.
     static func schedule(in seconds: Int, next: String?) {
         let center = UNUserNotificationCenter.current()
+        let id = Self.id   // captured up front: the closure below is @Sendable
         center.removePendingNotificationRequests(withIdentifiers: [id])
         guard seconds > 0 else { return }
 

@@ -396,7 +396,7 @@ struct LogView: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             // Due, the whole card goes solid accent. That's the "in your face":
             // not a label changing colour but the biggest thing on screen changing.
-            .background(due ? AnyShapeStyle(Theme.accent) : AnyShapeStyle(.regularMaterial),
+            .background(due ? AnyShapeStyle(Theme.accent) : AnyShapeStyle(Material.regularMaterial),
                         in: RoundedRectangle(cornerRadius: Theme.corner, style: .continuous))
             .overlay(
                 RoundedRectangle(cornerRadius: Theme.corner, style: .continuous)
@@ -524,12 +524,17 @@ struct LogView: View {
         .disabled(!canFinish)
     }
 
+    private var upNextLabel: String {
+        let names = queue.map { Theme.readableName($0.name) }.joined(separator: " · ")
+        return "next  " + names
+    }
+
     /// The rest of the handed-over session. Dismissable: going off-script is
     /// allowed, and so is deciding you're done.
     private var upNext: some View {
         HStack(spacing: 8) {
             Image(systemName: "arrow.turn.down.right")
-            Text("next  " + queue.map { Theme.readableName($0.name) }.joined(separator: " · "))
+            Text(upNextLabel)
                 .lineLimit(1)
                 .minimumScaleFactor(0.8)
             Spacer()

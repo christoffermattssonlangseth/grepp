@@ -5,6 +5,7 @@ struct SettingsView: View {
     @EnvironmentObject var store: Store
     @AppStorage("coach_show_cost") private var showCost = true
     @AppStorage("bar_weight") private var barWeight: Double = 20
+    @AppStorage("plate_inventory") private var inventory = PlateInventory.standard
 
     var body: some View {
         NavigationStack {
@@ -35,7 +36,20 @@ struct SettingsView: View {
                         Text("10 kg").tag(10.0)
                     }
                     .pickerStyle(.segmented)
-                    Text("For the plate calculator under the weight field.")
+
+                    ForEach(PlateMath.sizes, id: \.self) { size in
+                        Stepper(value: plateCount(size), in: 0...20) {
+                            HStack {
+                                Text("\(PlateMath.label(size)) kg")
+                                    .monospacedDigit()
+                                Spacer()
+                                Text("× \(inventory.counts[size] ?? 0)")
+                                    .monospacedDigit()
+                                    .foregroundStyle((inventory.counts[size] ?? 0) == 0 ? .tertiary : .secondary)
+                            }
+                        }
+                    }
+                    Text("The plates you own, both sides together — four 25s is two a side. The calculator never suggests a plate you don't have.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
@@ -136,6 +150,15 @@ struct SettingsView: View {
             return "Neither file found. Commit them beside your log — **\(store.coachingPath)** for how you like to train and what to work around, **\(store.goalsPath)** for what you're aiming at — and they become the coach's standing brief."
         }
         return "Loaded \(found.joined(separator: " and ")). Edit them in your repo, then reload below."
+    }
+
+    /// A binding into one plate size's count. Writing replaces the whole inventory
+    /// value, which is what makes AppStorage persist it.
+    private func plateCount(_ size: Double) -> Binding<Int> {
+        Binding(
+            get: { inventory.counts[size] ?? 0 },
+            set: { inventory.counts[size] = $0 }
+        )
     }
 
     private func labeled(_ label: String, text: Binding<String>, placeholder: String) -> some View {

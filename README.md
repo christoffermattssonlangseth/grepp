@@ -162,7 +162,8 @@ logged or stored anywhere else.
   beside your log and it coaches to *your* rules, toward *your* targets. See
   [Coach](#coach) below.
 - **Settings** — GitHub owner / repo / path / branch + a fine-grained token, the
-  Claude API key for Coach, and your bar weight for the plate calculator.
+  Claude API key for Coach, and your bar and the plates you actually own — the
+  calculator never suggests one you don't have.
 
 ## Tests
 The pure-logic layer (parsing, serialization, analytics) lives in `LiftLog/Core`

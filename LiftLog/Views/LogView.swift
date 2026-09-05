@@ -25,8 +25,9 @@ struct LogView: View {
     @State private var queue: [ExerciseEntry] = []
     /// How long to rest before the timer says you're due. Persisted: it's a habit.
     @AppStorage("rest_target") private var restTarget = 90
-    /// The bar the plate calculator loads onto. Set in Settings.
+    /// The bar and the plates the calculator has to work with. Set in Settings.
     @AppStorage("bar_weight") private var barWeight: Double = 20
+    @AppStorage("plate_inventory") private var inventory = PlateInventory.standard
     /// Haptic triggers — bumped on the event, never read.
     @State private var setAdded = 0
     @State private var exerciseFinished = 0
@@ -267,7 +268,7 @@ struct LogView: View {
 
                 // What to load, the moment there's a weight in the field.
                 if !isBodyweight, let target = parsedWeight,
-                   let load = PlateMath.load(target, bar: barWeight) {
+                   let load = PlateMath.load(target, bar: barWeight, inventory: inventory) {
                     plateLine(load)
                 }
 
@@ -550,13 +551,13 @@ struct LogView: View {
         if load.perSide.isEmpty {
             text = "empty bar"
         } else {
-            let plates = load.perSide.map { WorkSet.formatWeight($0) }.joined(separator: " · ")
-            let approx = load.isApproximate ? "  ≈ \(WorkSet.formatWeight(load.total))" : ""
+            let plates = load.perSide.map { PlateMath.label($0) }.joined(separator: " · ")
+            let approx = load.isApproximate ? "  ≈ \(PlateMath.label(load.total))" : ""
             text = "per side  " + plates + approx
         }
         // Always name the bar: a 20 default silently gives a 15-bar lifter the
         // wrong plates, and this is the only place they'd ever notice.
-        let bar = "  · \(WorkSet.formatWeight(barWeight)) bar"
+        let bar = "  · \(PlateMath.label(barWeight)) bar"
         return Label {
             Text(text + bar)
                 .font(.system(.footnote, design: .monospaced).weight(.semibold))

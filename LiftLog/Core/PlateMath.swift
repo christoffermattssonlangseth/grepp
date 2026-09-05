@@ -7,6 +7,9 @@ enum PlateMath {
     /// Every plate size the rack UI offers, largest first.
     static let sizes: [Double] = [25, 20, 15, 10, 5, 2.5, 1.25, 0.5, 0.25]
 
+    /// The bars on offer: Olympic, women's, technique, and the light EZ/curl bar.
+    static let bars: [Double] = [20, 15, 10, 7.5]
+
     /// The smallest step any plate can be — everything is worked in these units
     /// so the search is over integers and there is no floating-point drift.
     static let unit = 0.25
@@ -43,13 +46,18 @@ enum PlateMath {
         let want = Int(((target - bar) / 2 / unit).rounded())
 
         // Per-side stock: a pair per side, so an odd plate out can't be used.
-        let stock: [(units: Int, count: Int)] = inventory.counts
-            .compactMap { size, total in
-                let perSide = total / 2
-                let units = Int((size / unit).rounded())
-                return perSide > 0 && units > 0 ? (units, perSide) : nil
+        // A plain loop, deliberately: a multi-statement closure returning a tuple
+        // and a sort on its labels is the kind of expression the type-checker can
+        // give up on, and when it gives up on a file every type in it vanishes.
+        var stock: [(units: Int, count: Int)] = []
+        for (size, total) in inventory.counts {
+            let perSide = total / 2
+            let units = Int((size / unit).rounded())
+            if perSide > 0 && units > 0 {
+                stock.append((units: units, count: perSide))
             }
-            .sorted { $0.units > $1.units }
+        }
+        stock.sort { $0.units > $1.units }
 
         // best[s]: the preferred way to load exactly s units, or nil if impossible.
         var best = [[Int]?](repeating: nil, count: want + 1)
@@ -107,4 +115,42 @@ struct PlateInventory: Equatable, RawRepresentable {
 
     /// A well-stocked commercial rack. What you get until you tell it otherwise.
     static let standard = PlateInventory(counts: [25: 8, 20: 8, 15: 4, 10: 4, 5: 4, 2.5: 4, 1.25: 4, 0.5: 0, 0.25: 0])
+}
+
+/// A bar that isn't the default, per exercise — the 10 kg bar you seal-row
+/// with. Keyed by the exercise name as logged, case-insensitively, so it
+/// follows the lift wherever it's logged. Stored as a string so it fits
+/// `AppStorage`: "seal-row:10,curl:7.5".
+struct BarOverrides: Equatable, RawRepresentable {
+    var bars: [String: Double]
+
+    init(bars: [String: Double] = [:]) { self.bars = bars }
+
+    init?(rawValue: String) {
+        var bars: [String: Double] = [:]
+        for pair in rawValue.split(separator: ",") {
+            let kv = pair.split(separator: ":")
+            guard kv.count == 2, let kg = Double(kv[1]) else { continue }
+            bars[String(kv[0]).lowercased()] = kg
+        }
+        self.bars = bars
+    }
+
+    var rawValue: String {
+        bars.keys.sorted()
+            .map { "\($0):\(PlateMath.label(bars[$0] ?? 0))" }
+            .joined(separator: ",")
+    }
+
+    /// The bar this exercise uses, if it's been told; nil means the default.
+    func bar(for exercise: String) -> Double? {
+        bars[exercise.trimmingCharacters(in: .whitespaces).lowercased()]
+    }
+
+    /// Set, or clear with nil, the bar for an exercise.
+    mutating func set(_ kg: Double?, for exercise: String) {
+        let key = exercise.trimmingCharacters(in: .whitespaces).lowercased()
+        guard !key.isEmpty else { return }
+        if let kg { bars[key] = kg } else { bars.removeValue(forKey: key) }
+    }
 }

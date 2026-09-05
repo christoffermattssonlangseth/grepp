@@ -86,4 +86,28 @@ final class PlateMathTests: XCTestCase {
         XCTAssertEqual(PlateMath.label(1.25), "1.25")
         XCTAssertEqual(PlateMath.label(0.25), "0.25")
     }
+
+    // MARK: - per-exercise bars
+
+    func testBarOverridesFollowTheExerciseCaseInsensitively() {
+        var bars = BarOverrides()
+        XCTAssertNil(bars.bar(for: "seal-row"), "nothing set means the default")
+        bars.set(10, for: "Seal-Row")
+        XCTAssertEqual(bars.bar(for: "seal-row"), 10)
+        XCTAssertEqual(bars.bar(for: "SEAL-ROW "), 10)
+        bars.set(nil, for: "seal-row")
+        XCTAssertNil(bars.bar(for: "seal-row"), "cleared back to the default")
+        bars.set(10, for: "  ")
+        XCTAssertTrue(bars.bars.isEmpty, "no exercise, nothing to remember")
+    }
+
+    func testBarOverridesRoundTripThroughTheirRawValue() {
+        var bars = BarOverrides()
+        bars.set(10, for: "seal-row")
+        bars.set(7.5, for: "curl")
+        XCTAssertEqual(bars.rawValue, "curl:7.5,seal-row:10")
+        XCTAssertEqual(BarOverrides(rawValue: bars.rawValue), bars)
+        XCTAssertEqual(BarOverrides(rawValue: "seal-row:10,junk,x:y")?.bars, ["seal-row": 10],
+                       "a bad pair is skipped, not fatal")
+    }
 }

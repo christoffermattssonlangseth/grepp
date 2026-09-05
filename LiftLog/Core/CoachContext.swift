@@ -285,7 +285,7 @@ enum CoachContext {
     // MARK: - Goals interview
 
     /// What the coach is doing this conversation.
-    enum Mode: Equatable {
+    enum Mode: String, Codable, Equatable {
         /// Answering questions about training.
         case coaching
         /// Interviewing the lifter to write their goals file.

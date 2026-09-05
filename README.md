@@ -145,11 +145,14 @@ logged or stored anywhere else.
   library, or just type a new name.
 - Big number pads. Under the weight field, what to load per side — worked out
   from the plates you actually own, so it never suggests one you don't have.
+  The line names the bar, and tapping it sets a different one for *that*
+  exercise: seal rows on the 10, everything else on your default.
 - Land a set and it's felt. A set that beats your all-time best for the lift
   gets a **PR** badge and a heavier buzz.
-- A rest timer that starts on every set, fills toward a target you pick
-  (1:00 / 1:30 / 2:00 / 3:00), and buzzes once when you're due. The digits roll
-  like a stopwatch.
+- A rest timer that starts on every set and fills toward a target you pick
+  (1:00 / 1:30 / 2:00 / 3:00). When you're due the whole card flips to the
+  accent and buzzes; if the phone's locked or you're in another app, a
+  notification says so — and names the next set if the plan knows it.
 - "Today's Session" builds up live. Each finished exercise pushes to GitHub on
   its own — nothing waits on an "end session" tap that a dead phone could swallow.
 - When Coach hands over a session: the plan shows as a target, each set
@@ -207,6 +210,11 @@ successful load or save**, replaying each change through the same safe
 merge-on-remote path; you can also see and retry it from **Settings ▸ Waiting to
 sync**. The queue survives an app kill (persisted in `UserDefaults`; the token stays
 in the Keychain).
+
+The exercise you're mid-way through — sets landed, the plan, the rest clock —
+and the Coach conversation both survive the app being killed in the background,
+and come back on the next launch. Gyms also eat battery, and iOS quietly kills
+whatever's behind the music app.
 
 ---
 

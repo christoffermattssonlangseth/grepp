@@ -40,6 +40,7 @@ struct BriefView: View {
                 }
                 .padding()
             }
+            .dismissesKeyboardOnTap()
             .background(Theme.backgroundView)
             .navigationTitle("Your brief")
             .navigationBarTitleDisplayMode(.inline)

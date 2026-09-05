@@ -28,7 +28,7 @@ struct ClaudeService {
     /// Token counts the API reports for one answer. Input is split three ways
     /// because they bill differently: fresh, read from the prompt cache, and
     /// written to it.
-    struct Usage: Equatable {
+    struct Usage: Equatable, Codable {
         var input = 0
         var cacheRead = 0
         var cacheWrite = 0

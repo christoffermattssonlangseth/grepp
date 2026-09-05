@@ -28,7 +28,15 @@ struct LogView: View {
     /// The bar and the plates the calculator has to work with. Set in Settings.
     @AppStorage("bar_weight") private var barWeight: Double = 20
     @AppStorage("plate_inventory") private var inventory = PlateInventory.standard
+    /// Exercises on a bar other than the default — seal rows on the 10, say.
+    @AppStorage("bar_overrides") private var barOverrides = BarOverrides()
+
+    /// The bar for the exercise in the field: its own if it has one, else the default.
+    private var effectiveBar: Double { barOverrides.bar(for: name) ?? barWeight }
     /// Haptic triggers — bumped on the event, never read.
+    /// Set once the saved draft has been looked at, so a view rebuild can't
+    /// restore over the top of live work.
+    @State private var restored = false
     @State private var setAdded = 0
     @State private var exerciseFinished = 0
     @State private var recordSet = 0
@@ -71,6 +79,7 @@ struct LogView: View {
                 }
                 .padding()
             }
+            .dismissesKeyboardOnTap()
             .background(Theme.backgroundView)
             .navigationTitle("Session")
             .sheet(isPresented: $showingPicker) {
@@ -104,10 +113,40 @@ struct LogView: View {
             // medium one, which reads as "more" without a second haptic vocabulary.
             .sensoryFeedback(.impact(weight: .heavy, intensity: 1), trigger: recordSet)
             .refreshable { await store.load() }
-            .onAppear { applyEditRequest(); applyPrescription() }
+            .onAppear { restoreDraft(); applyEditRequest(); applyPrescription() }
+            // Everything in flight, saved on every change — one equatable value,
+            // so it's one modifier rather than one per field.
+            .onChange(of: currentDraft) { _, draft in store.saveDraft(draft) }
+            .onChange(of: restStart) { _, _ in syncRestNotification() }
+            .onChange(of: restTarget) { _, _ in syncRestNotification() }
             .onChange(of: store.editRequest) { _, _ in applyEditRequest() }
             .onChange(of: store.prescriptionRequest) { _, _ in applyPrescription() }
         }
+    }
+
+    /// What's in flight, or nil when nothing is worth keeping.
+    private var currentDraft: SessionDraft? {
+        let draft = SessionDraft(date: date, name: name, sets: sets, isBodyweight: isBodyweight,
+                                 weightText: weightText, addedText: addedText, repsText: repsText,
+                                 plan: plan, queue: queue, restStart: restStart)
+        return draft.isEmpty ? nil : draft
+    }
+
+    /// Pick up where a killed app left off. Only into an empty input area, and
+    /// only once per view lifetime. A rest clock older than half an hour is
+    /// dropped — that isn't a rest any more.
+    private func restoreDraft() {
+        guard !restored else { return }
+        restored = true
+        guard let d = store.draft, name.isEmpty, sets.isEmpty, queue.isEmpty else { return }
+        date = d.date
+        name = d.name
+        sets = d.sets
+        isBodyweight = d.isBodyweight
+        weightText = d.weightText; addedText = d.addedText; repsText = d.repsText
+        plan = d.plan
+        queue = d.queue
+        if let start = d.restStart, Date().timeIntervalSince(start) < 30 * 60 { restStart = start }
     }
 
     /// Load a prescription from Coach. The first set's numbers go in the fields
@@ -268,7 +307,7 @@ struct LogView: View {
 
                 // What to load, the moment there's a weight in the field.
                 if !isBodyweight, let target = parsedWeight,
-                   let load = PlateMath.load(target, bar: barWeight, inventory: inventory) {
+                   let load = PlateMath.load(target, bar: effectiveBar, inventory: inventory) {
                     plateLine(load)
                 }
 
@@ -310,54 +349,69 @@ struct LogView: View {
     // MARK: - Rest timer
 
     private var restTimerCard: some View {
-        Card {
-            TimelineView(.periodic(from: restStart ?? Date(), by: 1)) { context in
-                let elapsed = restSeconds(at: context.date)
-                let due = elapsed >= restTarget
-                VStack(spacing: 12) {
-                    HStack(spacing: 12) {
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(due ? "ready" : "rest")
-                                .font(.caption.weight(.heavy)).tracking(1.5)
-                                .foregroundStyle(due ? Theme.accent : Color.secondary)
-                            Text(clock(elapsed))
-                                .font(.system(size: 44, weight: .heavy))
-                                .fontWidth(.condensed)
-                                .monospacedDigit()
-                                .foregroundStyle(Theme.accent)
-                                // Digits roll over rather than snap — 0:59 to 1:00
-                                // reads like a stopwatch, not a re-render.
-                                .contentTransition(.numericText())
-                                .animation(.snappy, value: elapsed)
-                        }
-                        Spacer()
-                        restTargetMenu
-                        Button { restStart = Date() } label: {
-                            Image(systemName: "arrow.counterclockwise")
-                                .font(.title3.weight(.bold))
-                                .frame(width: 44, height: 44)
-                                .background(.ultraThinMaterial, in: Circle())
-                        }
-                        .buttonStyle(.plain)
-                        Button { restStart = nil } label: {
-                            Image(systemName: "xmark")
-                                .font(.subheadline.weight(.bold))
-                                .foregroundStyle(.secondary)
-                                .frame(width: 44, height: 44)
-                                .background(.ultraThinMaterial, in: Circle())
-                        }
-                        .buttonStyle(.plain)
+        TimelineView(.periodic(from: restStart ?? Date(), by: 1)) { context in
+            let elapsed = restSeconds(at: context.date)
+            let due = elapsed >= restTarget
+            let label: String = due ? "READY" : "rest"
+            VStack(spacing: 12) {
+                HStack(spacing: 12) {
+                    VStack(alignment: .leading, spacing: 0) {
+                        Text(label)
+                            .font(.caption.weight(.heavy)).tracking(2)
+                            .foregroundStyle(due ? Theme.onAccent : Color.secondary)
+                        Text(clock(elapsed))
+                            .font(.system(size: 56, weight: .heavy))
+                            .fontWidth(.condensed)
+                            .monospacedDigit()
+                            .foregroundStyle(due ? Theme.onAccent : Theme.accent)
+                            // Digits roll over rather than snap — 0:59 to 1:00
+                            // reads like a stopwatch, not a re-render.
+                            .contentTransition(.numericText())
+                            .animation(.snappy, value: elapsed)
                     }
-                    // A thin bar filling toward the target — readable at a glance,
-                    // mid-set, from across the rack.
-                    ProgressView(value: Double(min(elapsed, restTarget)), total: Double(restTarget))
-                        .tint(Theme.accent)
-                        .animation(.linear(duration: 1), value: elapsed)
+                    Spacer()
+                    restTargetMenu
+                    Button { restStart = Date() } label: {
+                        Image(systemName: "arrow.counterclockwise")
+                            .font(.title3.weight(.bold))
+                            .frame(width: 44, height: 44)
+                            .background(.ultraThinMaterial, in: Circle())
+                    }
+                    .buttonStyle(.plain)
+                    Button { restStart = nil } label: {
+                        Image(systemName: "xmark")
+                            .font(.subheadline.weight(.bold))
+                            .foregroundStyle(.secondary)
+                            .frame(width: 44, height: 44)
+                            .background(.ultraThinMaterial, in: Circle())
+                    }
+                    .buttonStyle(.plain)
                 }
-                // One buzz when rest is up. Only on the way *to* due — a reset
-                // flipping it back must not fire a second success.
-                .sensoryFeedback(.success, trigger: due) { wasDue, isDue in !wasDue && isDue }
+                // A thin bar filling toward the target — readable at a glance,
+                // mid-set, from across the rack.
+                ProgressView(value: Double(min(elapsed, restTarget)), total: Double(restTarget))
+                    .tint(due ? Theme.onAccent : Theme.accent)
+                    .animation(.linear(duration: 1), value: elapsed)
             }
+            .padding(16)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            // Due, the whole card goes solid accent. That's the "in your face":
+            // not a label changing colour but the biggest thing on screen changing.
+            .background(due ? AnyShapeStyle(Theme.accent) : AnyShapeStyle(Material.regularMaterial),
+                        in: RoundedRectangle(cornerRadius: Theme.corner, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: Theme.corner, style: .continuous)
+                    .strokeBorder(.white.opacity(0.18), lineWidth: 0.8)
+            )
+            .shadow(color: .black.opacity(due ? 0.22 : 0.12), radius: 12, x: 0, y: 6)
+            // A heartbeat while due, driven by the clock's own ticks — nothing
+            // repeating forever that has to be babysat.
+            .scaleEffect(due && elapsed % 2 == 0 ? 1.015 : 1)
+            .animation(.easeInOut(duration: 0.5), value: elapsed)
+            .animation(.snappy, value: due)
+            // One buzz when rest is up. Only on the way *to* due — a reset
+            // flipping it back must not fire a second success.
+            .sensoryFeedback(.success, trigger: due) { wasDue, isDue in !wasDue && isDue }
         }
     }
 
@@ -382,6 +436,23 @@ struct LogView: View {
                 .background(.ultraThinMaterial, in: Capsule())
         }
         .buttonStyle(.plain)
+    }
+
+    /// Keep the "rest's up" notification in step with the clock: set for when
+    /// the target lands, moved if the target changes mid-rest, cancelled when the
+    /// rest ends. It only ever shows when the phone is locked or you're elsewhere.
+    private func syncRestNotification() {
+        guard let start = restStart else { RestNotifier.cancel(); return }
+        let remaining = restTarget - Int(Date().timeIntervalSince(start))
+        guard remaining > 0 else { RestNotifier.cancel(); return }
+        RestNotifier.schedule(in: remaining, next: nextUp)
+    }
+
+    /// "squat · 87.5 kg × 5" when the plan knows the next set; nil when it doesn't.
+    private var nextUp: String? {
+        guard let plan, sets.count < plan.count, !name.isEmpty else { return nil }
+        let next = plan[sets.count]
+        return "\(Theme.readableName(name)) · \(loadLabel(next)) × \(next.reps)"
     }
 
     private func restSeconds(at now: Date) -> Int {
@@ -454,12 +525,17 @@ struct LogView: View {
         .disabled(!canFinish)
     }
 
+    private var upNextLabel: String {
+        let names = queue.map { Theme.readableName($0.name) }.joined(separator: " · ")
+        return "next  " + names
+    }
+
     /// The rest of the handed-over session. Dismissable: going off-script is
     /// allowed, and so is deciding you're done.
     private var upNext: some View {
         HStack(spacing: 8) {
             Image(systemName: "arrow.turn.down.right")
-            Text("next  " + queue.map { Theme.readableName($0.name) }.joined(separator: " · "))
+            Text(upNextLabel)
                 .lineLimit(1)
                 .minimumScaleFactor(0.8)
             Spacer()
@@ -555,18 +631,48 @@ struct LogView: View {
             let approx = load.isApproximate ? "  ≈ \(PlateMath.label(load.total))" : ""
             text = "per side  " + plates + approx
         }
-        // Always name the bar: a 20 default silently gives a 15-bar lifter the
-        // wrong plates, and this is the only place they'd ever notice.
-        let bar = "  · \(PlateMath.label(barWeight)) bar"
-        return Label {
-            Text(text + bar)
-                .font(.system(.footnote, design: .monospaced).weight(.semibold))
-        } icon: {
-            Image(systemName: "circlebadge.2.fill")
+        return HStack(spacing: 8) {
+            Label {
+                Text(text)
+                    .font(.system(.footnote, design: .monospaced).weight(.semibold))
+            } icon: {
+                Image(systemName: "circlebadge.2.fill")
+            }
+            Spacer(minLength: 8)
+            barMenu
         }
         .font(.footnote.weight(.semibold))
         .foregroundStyle(.secondary)
-        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    /// Always names the bar, and it's a menu: a different bar for *this* exercise
+    /// is set right here and remembered for it. The default lives in Settings.
+    /// Disabled until an exercise is chosen — there's nothing to remember it for.
+    private var barMenu: some View {
+        Menu {
+            ForEach(PlateMath.bars, id: \.self) { kg in
+                Button { barOverrides.set(kg, for: name) } label: {
+                    if kg == effectiveBar {
+                        Label("\(PlateMath.label(kg)) kg", systemImage: "checkmark")
+                    } else {
+                        Text("\(PlateMath.label(kg)) kg")
+                    }
+                }
+            }
+            Divider()
+            Button { barOverrides.set(nil, for: name) } label: {
+                Text("Default · \(PlateMath.label(barWeight)) kg")
+            }
+        } label: {
+            HStack(spacing: 3) {
+                Text("\(PlateMath.label(effectiveBar)) bar")
+                    .font(.system(.footnote, design: .monospaced).weight(.semibold))
+                Image(systemName: "chevron.up.chevron.down")
+                    .font(.caption2)
+            }
+            .foregroundStyle(barOverrides.bar(for: name) == nil ? Color.secondary : Theme.accent)
+        }
+        .disabled(name.isEmpty)
     }
 
     /// Row label for a logged set: "82.5 kg", "BW +5 kg" or "Bodyweight".

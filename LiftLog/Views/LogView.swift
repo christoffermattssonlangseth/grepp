@@ -111,6 +111,8 @@ struct LogView: View {
             // Everything in flight, saved on every change — one equatable value,
             // so it's one modifier rather than one per field.
             .onChange(of: currentDraft) { _, draft in store.saveDraft(draft) }
+            .onChange(of: restStart) { _, _ in syncRestNotification() }
+            .onChange(of: restTarget) { _, _ in syncRestNotification() }
             .onChange(of: store.editRequest) { _, _ in applyEditRequest() }
             .onChange(of: store.prescriptionRequest) { _, _ in applyPrescription() }
         }
@@ -341,54 +343,69 @@ struct LogView: View {
     // MARK: - Rest timer
 
     private var restTimerCard: some View {
-        Card {
-            TimelineView(.periodic(from: restStart ?? Date(), by: 1)) { context in
-                let elapsed = restSeconds(at: context.date)
-                let due = elapsed >= restTarget
-                VStack(spacing: 12) {
-                    HStack(spacing: 12) {
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(due ? "ready" : "rest")
-                                .font(.caption.weight(.heavy)).tracking(1.5)
-                                .foregroundStyle(due ? Theme.accent : Color.secondary)
-                            Text(clock(elapsed))
-                                .font(.system(size: 44, weight: .heavy))
-                                .fontWidth(.condensed)
-                                .monospacedDigit()
-                                .foregroundStyle(Theme.accent)
-                                // Digits roll over rather than snap — 0:59 to 1:00
-                                // reads like a stopwatch, not a re-render.
-                                .contentTransition(.numericText())
-                                .animation(.snappy, value: elapsed)
-                        }
-                        Spacer()
-                        restTargetMenu
-                        Button { restStart = Date() } label: {
-                            Image(systemName: "arrow.counterclockwise")
-                                .font(.title3.weight(.bold))
-                                .frame(width: 44, height: 44)
-                                .background(.ultraThinMaterial, in: Circle())
-                        }
-                        .buttonStyle(.plain)
-                        Button { restStart = nil } label: {
-                            Image(systemName: "xmark")
-                                .font(.subheadline.weight(.bold))
-                                .foregroundStyle(.secondary)
-                                .frame(width: 44, height: 44)
-                                .background(.ultraThinMaterial, in: Circle())
-                        }
-                        .buttonStyle(.plain)
+        TimelineView(.periodic(from: restStart ?? Date(), by: 1)) { context in
+            let elapsed = restSeconds(at: context.date)
+            let due = elapsed >= restTarget
+            let label: String = due ? "READY" : "rest"
+            VStack(spacing: 12) {
+                HStack(spacing: 12) {
+                    VStack(alignment: .leading, spacing: 0) {
+                        Text(label)
+                            .font(.caption.weight(.heavy)).tracking(2)
+                            .foregroundStyle(due ? Theme.onAccent : Color.secondary)
+                        Text(clock(elapsed))
+                            .font(.system(size: 56, weight: .heavy))
+                            .fontWidth(.condensed)
+                            .monospacedDigit()
+                            .foregroundStyle(due ? Theme.onAccent : Theme.accent)
+                            // Digits roll over rather than snap — 0:59 to 1:00
+                            // reads like a stopwatch, not a re-render.
+                            .contentTransition(.numericText())
+                            .animation(.snappy, value: elapsed)
                     }
-                    // A thin bar filling toward the target — readable at a glance,
-                    // mid-set, from across the rack.
-                    ProgressView(value: Double(min(elapsed, restTarget)), total: Double(restTarget))
-                        .tint(Theme.accent)
-                        .animation(.linear(duration: 1), value: elapsed)
+                    Spacer()
+                    restTargetMenu
+                    Button { restStart = Date() } label: {
+                        Image(systemName: "arrow.counterclockwise")
+                            .font(.title3.weight(.bold))
+                            .frame(width: 44, height: 44)
+                            .background(.ultraThinMaterial, in: Circle())
+                    }
+                    .buttonStyle(.plain)
+                    Button { restStart = nil } label: {
+                        Image(systemName: "xmark")
+                            .font(.subheadline.weight(.bold))
+                            .foregroundStyle(.secondary)
+                            .frame(width: 44, height: 44)
+                            .background(.ultraThinMaterial, in: Circle())
+                    }
+                    .buttonStyle(.plain)
                 }
-                // One buzz when rest is up. Only on the way *to* due — a reset
-                // flipping it back must not fire a second success.
-                .sensoryFeedback(.success, trigger: due) { wasDue, isDue in !wasDue && isDue }
+                // A thin bar filling toward the target — readable at a glance,
+                // mid-set, from across the rack.
+                ProgressView(value: Double(min(elapsed, restTarget)), total: Double(restTarget))
+                    .tint(due ? Theme.onAccent : Theme.accent)
+                    .animation(.linear(duration: 1), value: elapsed)
             }
+            .padding(16)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            // Due, the whole card goes solid accent. That's the "in your face":
+            // not a label changing colour but the biggest thing on screen changing.
+            .background(due ? AnyShapeStyle(Theme.accent) : AnyShapeStyle(.regularMaterial),
+                        in: RoundedRectangle(cornerRadius: Theme.corner, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: Theme.corner, style: .continuous)
+                    .strokeBorder(.white.opacity(0.18), lineWidth: 0.8)
+            )
+            .shadow(color: .black.opacity(due ? 0.22 : 0.12), radius: 12, x: 0, y: 6)
+            // A heartbeat while due, driven by the clock's own ticks — nothing
+            // repeating forever that has to be babysat.
+            .scaleEffect(due && elapsed % 2 == 0 ? 1.015 : 1)
+            .animation(.easeInOut(duration: 0.5), value: elapsed)
+            .animation(.snappy, value: due)
+            // One buzz when rest is up. Only on the way *to* due — a reset
+            // flipping it back must not fire a second success.
+            .sensoryFeedback(.success, trigger: due) { wasDue, isDue in !wasDue && isDue }
         }
     }
 
@@ -413,6 +430,23 @@ struct LogView: View {
                 .background(.ultraThinMaterial, in: Capsule())
         }
         .buttonStyle(.plain)
+    }
+
+    /// Keep the "rest's up" notification in step with the clock: set for when
+    /// the target lands, moved if the target changes mid-rest, cancelled when the
+    /// rest ends. It only ever shows when the phone is locked or you're elsewhere.
+    private func syncRestNotification() {
+        guard let start = restStart else { RestNotifier.cancel(); return }
+        let remaining = restTarget - Int(Date().timeIntervalSince(start))
+        guard remaining > 0 else { RestNotifier.cancel(); return }
+        RestNotifier.schedule(in: remaining, next: nextUp)
+    }
+
+    /// "squat · 87.5 kg × 5" when the plan knows the next set; nil when it doesn't.
+    private var nextUp: String? {
+        guard let plan, sets.count < plan.count, !name.isEmpty else { return nil }
+        let next = plan[sets.count]
+        return "\(Theme.readableName(name)) · \(loadLabel(next)) × \(next.reps)"
     }
 
     private func restSeconds(at now: Date) -> Int {

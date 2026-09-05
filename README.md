@@ -147,9 +147,10 @@ logged or stored anywhere else.
   from the plates you actually own, so it never suggests one you don't have.
 - Land a set and it's felt. A set that beats your all-time best for the lift
   gets a **PR** badge and a heavier buzz.
-- A rest timer that starts on every set, fills toward a target you pick
-  (1:00 / 1:30 / 2:00 / 3:00), and buzzes once when you're due. The digits roll
-  like a stopwatch.
+- A rest timer that starts on every set and fills toward a target you pick
+  (1:00 / 1:30 / 2:00 / 3:00). When you're due the whole card flips to the
+  accent and buzzes; if the phone's locked or you're in another app, a
+  notification says so — and names the next set if the plan knows it.
 - "Today's Session" builds up live. Each finished exercise pushes to GitHub on
   its own — nothing waits on an "end session" tap that a dead phone could swallow.
 - When Coach hands over a session: the plan shows as a target, each set

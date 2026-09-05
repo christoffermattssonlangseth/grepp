@@ -4,6 +4,7 @@ import SwiftUI
 struct SettingsView: View {
     @EnvironmentObject var store: Store
     @AppStorage("coach_show_cost") private var showCost = true
+    @AppStorage("bar_weight") private var barWeight: Double = 20
 
     var body: some View {
         NavigationStack {
@@ -22,6 +23,19 @@ struct SettingsView: View {
                         .autocorrectionDisabled()
                         .onChange(of: store.token) { _, _ in store.saveToken() }
                     Text("Create a fine-grained token scoped to just this repo with **Contents: Read and write**.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                .listRowBackground(Rectangle().fill(.regularMaterial))
+
+                Section("Gym") {
+                    Picker("bar weight", selection: $barWeight) {
+                        Text("20 kg").tag(20.0)
+                        Text("15 kg").tag(15.0)
+                        Text("10 kg").tag(10.0)
+                    }
+                    .pickerStyle(.segmented)
+                    Text("For the plate calculator under the weight field.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }

@@ -25,6 +25,8 @@ struct LogView: View {
     @State private var queue: [ExerciseEntry] = []
     /// How long to rest before the timer says you're due. Persisted: it's a habit.
     @AppStorage("rest_target") private var restTarget = 90
+    /// The bar the plate calculator loads onto. Set in Settings.
+    @AppStorage("bar_weight") private var barWeight: Double = 20
     /// Haptic triggers — bumped on the event, never read.
     @State private var setAdded = 0
     @State private var exerciseFinished = 0
@@ -261,6 +263,12 @@ struct LogView: View {
                     }
                     bigField(title: "Reps", text: $repsText,
                              keyboard: .numberPad, focusValue: .reps)
+                }
+
+                // What to load, the moment there's a weight in the field.
+                if !isBodyweight, let target = parsedWeight,
+                   let load = PlateMath.load(target, bar: barWeight) {
+                    plateLine(load)
                 }
 
                 Button { addSet() } label: {
@@ -532,6 +540,29 @@ struct LogView: View {
             .padding(.horizontal, 6).padding(.vertical, 2)
             .background(Theme.accent, in: Capsule())
             .foregroundStyle(Theme.onAccent)
+    }
+
+    /// "per side  25 · 5 · 2.5 · 1.25" for the weight in the field, or "empty bar".
+    /// When the exact weight can't be made from a standard set, the nearest load
+    /// below and what it actually weighs: "per side  25 · 5 · 2.5  ≈ 85".
+    private func plateLine(_ load: PlateMath.Load) -> some View {
+        let text: String
+        if load.perSide.isEmpty {
+            text = "empty bar"
+        } else {
+            let plates = load.perSide.map { WorkSet.formatWeight($0) }.joined(separator: " · ")
+            let approx = load.isApproximate ? "  ≈ \(WorkSet.formatWeight(load.total))" : ""
+            text = "per side  " + plates + approx
+        }
+        return Label {
+            Text(text)
+                .font(.system(.footnote, design: .monospaced).weight(.semibold))
+        } icon: {
+            Image(systemName: "circlebadge.2.fill")
+        }
+        .font(.footnote.weight(.semibold))
+        .foregroundStyle(.secondary)
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     /// Row label for a logged set: "82.5 kg", "BW +5 kg" or "Bodyweight".

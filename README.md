@@ -140,8 +140,8 @@ logged or stored anywhere else.
 
 ## Tabs
 - **Session** — choose an exercise (searchable list + your history, or type a
-  new name), enter weight/reps on the big number pads, and "Finish exercise" to
-  push it to the day. A live "Today's Session" list shows the workout building
+  new name), enter weight/reps on the big number pads — a line underneath says
+  what to load per side — and "Finish exercise" to push it to the day. A live "Today's Session" list shows the workout building
   up. A **rest timer** starts each time you land a set, fills toward a target
   you pick (1:00 / 1:30 / 2:00 / 3:00) and buzzes once when you're due. Land a
   set and it's felt; the digits roll like a stopwatch; a set that beats your
@@ -161,8 +161,8 @@ logged or stored anywhere else.
   hands the whole thing to the Session tab. Add a `coaching.md` and `goals.md`
   beside your log and it coaches to *your* rules, toward *your* targets. See
   [Coach](#coach) below.
-- **Settings** — GitHub owner / repo / path / branch + a fine-grained token, and
-  the Claude API key for Coach.
+- **Settings** — GitHub owner / repo / path / branch + a fine-grained token, the
+  Claude API key for Coach, and your bar weight for the plate calculator.
 
 ## Tests
 The pure-logic layer (parsing, serialization, analytics) lives in `LiftLog/Core`

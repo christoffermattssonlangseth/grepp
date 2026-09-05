@@ -210,10 +210,14 @@ struct LogView: View {
                 }
 
                 Button { addSet() } label: {
-                    Text("+ add set")
-                        .font(.subheadline.weight(.heavy)).tracking(1)
-                        .frame(maxWidth: .infinity)
-                        .frame(height: 44)
+                    HStack(spacing: 6) {
+                        Image(systemName: "plus")
+                            .symbolEffect(.bounce, value: setAdded)
+                        Text("add set")
+                    }
+                    .font(.subheadline.weight(.heavy)).tracking(1)
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 44)
                 }
                 // Bordered, not glass: a disabled glass button fades to nothing and
                 // reads as broken. Bordered stays a visible, muted pill — and keeps
@@ -252,8 +256,13 @@ struct LogView: View {
                     TimelineView(.periodic(from: restStart ?? Date(), by: 1)) { context in
                         Text(restElapsed(at: context.date))
                             .font(.system(size: 44, weight: .heavy))
+                            .fontWidth(.condensed)
                             .monospacedDigit()
                             .foregroundStyle(Theme.accent)
+                            // Digits roll over rather than snap — 0:59 to 1:00 reads
+                            // like a stopwatch, not a re-render.
+                            .contentTransition(.numericText())
+                            .animation(.snappy, value: context.date)
                     }
                 }
                 Spacer()
@@ -361,6 +370,7 @@ struct LogView: View {
                 .focused($focus, equals: focusValue)
                 .multilineTextAlignment(.center)
                 .font(.system(size: 40, weight: .heavy))
+                .fontWidth(.condensed)
                 .monospacedDigit()
                 .frame(maxWidth: .infinity)
                 .frame(height: Theme.bigFieldHeight)

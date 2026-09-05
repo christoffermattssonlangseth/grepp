@@ -14,6 +14,8 @@ struct CoachView: View {
     @State private var savedGoalsText: String?
     @State private var saveError: String?
     @State private var showingBrief = false
+    /// Bumped per send, so the arrow bounces on fire.
+    @State private var sent = 0
     @FocusState private var inputFocused: Bool
 
     /// The only thing that can stop Coach working now is a missing key.
@@ -323,6 +325,7 @@ struct CoachView: View {
                     if coach.isResponding { coach.cancel() } else { ask(draft) }
                 } label: {
                     Image(systemName: coach.isResponding ? "stop.fill" : "arrow.up")
+                        .symbolEffect(.bounce, value: sent)
                         .font(.headline.weight(.bold))
                         .frame(width: 44, height: 44)
                         .background(Theme.accent, in: Circle())
@@ -341,6 +344,7 @@ struct CoachView: View {
         guard !trimmed.isEmpty else { return }
         draft = ""
         inputFocused = false
+        sent += 1
         coach.send(trimmed,
                    model: model,
                    sessions: store.sessions,

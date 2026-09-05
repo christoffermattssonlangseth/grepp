@@ -73,6 +73,20 @@ struct Barbell: View {
 }
 
 extension View {
+    /// Tap any empty space, or drag a scrolling list, and the keyboard goes.
+    /// Controls still win their own taps — this only catches the space between
+    /// them. Dismisses through the responder chain rather than a FocusState, so it
+    /// works on any screen with no wiring; put it on the screen's scroll container.
+    func dismissesKeyboardOnTap() -> some View {
+        self
+            .contentShape(Rectangle())
+            .onTapGesture {
+                UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder),
+                                                to: nil, from: nil, for: nil)
+            }
+            .scrollDismissesKeyboard(.interactively)
+    }
+
     /// The quieter surface. Same shape and padding as `glassCard`, but thinner
     /// material, no highlight edge and no shadow — so it sits *in* the page rather
     /// than floating above it. Use it for chrome and lists; reserve `glassCard` for

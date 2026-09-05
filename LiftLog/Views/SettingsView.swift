@@ -139,6 +139,7 @@ struct SettingsView: View {
                 }
                 .listRowBackground(Color.clear)
             }
+            .dismissesKeyboardOnTap()
             .scrollContentBackground(.hidden)
             .background(Theme.backgroundView)
             .navigationTitle("Settings")

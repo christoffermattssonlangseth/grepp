@@ -74,7 +74,7 @@ struct CoachView: View {
                     }
                     .padding(16)
                 }
-                .scrollDismissesKeyboard(.interactively)
+                .dismissesKeyboardOnTap()
                 .onChange(of: coach.messages) { _, _ in scroll(proxy) }
                 .onChange(of: coach.errorText) { _, _ in scroll(proxy) }
             }

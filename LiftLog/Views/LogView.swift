@@ -19,6 +19,9 @@ struct LogView: View {
     @State private var repsText = ""
 
     @State private var showingPicker = false
+    /// Haptic triggers — bumped on the event, never read.
+    @State private var setAdded = 0
+    @State private var exerciseFinished = 0
     /// When non-nil, the rest clock is running from this instant.
     @State private var restStart: Date?
     @FocusState private var focus: Field?
@@ -44,7 +47,6 @@ struct LogView: View {
         NavigationStack {
             ScrollView {
                 VStack(spacing: 16) {
-                    dateCard
                     if !todayExercises.isEmpty { todaySessionCard }
                     sectionLabel("add exercise")
                     exerciseCard
@@ -71,11 +73,21 @@ struct LogView: View {
                 }
             }
             .toolbar {
+                // The date as a compact pill up here, not a whole card under the
+                // title: on a gym screen that card-height belongs to the number pad.
+                ToolbarItem(placement: .topBarTrailing) {
+                    DatePicker("Date", selection: $date, displayedComponents: .date)
+                        .labelsHidden()
+                        .tint(Theme.accent)
+                }
                 ToolbarItemGroup(placement: .keyboard) {
                     Spacer()
                     Button("Done") { focus = nil }
                 }
             }
+            // 11. Feel: a tap that lands a set should be felt, and finishing more so.
+            .sensoryFeedback(.impact(weight: .medium), trigger: setAdded)
+            .sensoryFeedback(.success, trigger: exerciseFinished)
             .refreshable { await store.load() }
             .onAppear { applyEditRequest() }
             .onChange(of: store.editRequest) { _, _ in applyEditRequest() }
@@ -107,20 +119,10 @@ struct LogView: View {
         .padding(.top, 4)
     }
 
-    // MARK: - Date
-
-    private var dateCard: some View {
-        Card {
-            DatePicker("Date", selection: $date, displayedComponents: .date)
-                .font(.headline)
-                .tint(Theme.accent)
-        }
-    }
-
     // MARK: - Today's session
 
     private var todaySessionCard: some View {
-        Card {
+        Panel {
             VStack(alignment: .leading, spacing: 12) {
                 HStack {
                     Text("today's session")
@@ -134,8 +136,9 @@ struct LogView: View {
                     VStack(alignment: .leading, spacing: 3) {
                         Text(Theme.readableName(ex.name))
                             .font(.subheadline.weight(.heavy)).tracking(0.5)
-                        Text(ex.sets.map(\.token).joined(separator: "   "))
-                            .font(.footnote.weight(.medium)).foregroundStyle(.secondary)
+                        Text(ex.sets.map(\.token).joined(separator: "  "))
+                            .font(.system(.footnote, design: .monospaced).weight(.medium))
+                            .foregroundStyle(.secondary)
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.vertical, 10)
@@ -158,7 +161,7 @@ struct LogView: View {
     // MARK: - Exercise selector
 
     private var exerciseCard: some View {
-        Card {
+        Panel {
             VStack(alignment: .leading, spacing: 12) {
                 Button {
                     focus = nil
@@ -166,7 +169,7 @@ struct LogView: View {
                 } label: {
                     HStack(spacing: 10) {
                         Text(name.isEmpty ? "choose exercise" : Theme.readableName(name))
-                            .font(.system(size: 22, weight: .bold, design: .rounded))
+                            .font(.system(size: 22, weight: .bold))
                             .foregroundStyle(name.isEmpty ? .secondary : .primary)
                             .lineLimit(1)
                             .minimumScaleFactor(0.6)
@@ -178,7 +181,8 @@ struct LogView: View {
                 }
                 if let last = lastEntry {
                     Label {
-                        Text("last: " + last.sets.map(\.token).joined(separator: "  "))
+                        Text("last  " + last.sets.map(\.token).joined(separator: "  "))
+                            .font(.system(.footnote, design: .monospaced).weight(.semibold))
                     } icon: {
                         Image(systemName: "clock.arrow.circlepath")
                     }
@@ -211,7 +215,10 @@ struct LogView: View {
                         .frame(maxWidth: .infinity)
                         .frame(height: 44)
                 }
-                .buttonStyle(.glass)
+                // Bordered, not glass: a disabled glass button fades to nothing and
+                // reads as broken. Bordered stays a visible, muted pill — and keeps
+                // glass for the one primary action, finish.
+                .buttonStyle(.bordered)
                 .tint(Theme.accent)
                 .disabled(!canAddSet)
 
@@ -244,7 +251,7 @@ struct LogView: View {
                         .foregroundStyle(.secondary)
                     TimelineView(.periodic(from: restStart ?? Date(), by: 1)) { context in
                         Text(restElapsed(at: context.date))
-                            .font(.system(size: 44, weight: .heavy, design: .rounded))
+                            .font(.system(size: 44, weight: .heavy))
                             .monospacedDigit()
                             .foregroundStyle(Theme.accent)
                     }
@@ -277,7 +284,7 @@ struct LogView: View {
     // MARK: - Current sets
 
     private var setsCard: some View {
-        Card {
+        Panel {
             VStack(alignment: .leading, spacing: 10) {
                 Text("current sets")
                     .font(.caption.weight(.heavy)).tracking(1.5)
@@ -353,7 +360,8 @@ struct LogView: View {
                 .keyboardType(keyboard)
                 .focused($focus, equals: focusValue)
                 .multilineTextAlignment(.center)
-                .font(.system(size: 40, weight: .heavy, design: .rounded))
+                .font(.system(size: 40, weight: .heavy))
+                .monospacedDigit()
                 .frame(maxWidth: .infinity)
                 .frame(height: Theme.bigFieldHeight)
                 .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
@@ -375,6 +383,7 @@ struct LogView: View {
         repsText = ""
         focus = nil
         restStart = Date()   // start resting the moment a set lands
+        setAdded += 1
     }
 
     /// Row label for a logged set: "82.5 kg", "BW +5 kg" or "Bodyweight".
@@ -404,12 +413,19 @@ struct LogView: View {
             name = ""; sets = []; weightText = ""; addedText = ""; repsText = ""; isBodyweight = false
             restStart = nil
             focus = nil
+            exerciseFinished += 1
         }
     }
 }
 
-/// A frosted-glass container used to group content into cards.
+/// The raised surface — the number pad and the rest timer, the things you act on.
 private struct Card<Content: View>: View {
     @ViewBuilder var content: Content
     var body: some View { content.glassCard() }
+}
+
+/// The flat surface — lists and chrome that should sit in the page, not float.
+private struct Panel<Content: View>: View {
+    @ViewBuilder var content: Content
+    var body: some View { content.panel() }
 }

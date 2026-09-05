@@ -92,7 +92,9 @@ struct TrendsView: View {
                     Chart(series) { point in
                         LineMark(x: .value("Date", point.date),
                                  y: .value(metric.rawValue, point.value))
-                            .interpolationMethod(.catmullRom)
+                            // Monotone, not Catmull-Rom: on sparse training data the
+                            // latter overshoots and draws a peak that was never lifted.
+                            .interpolationMethod(.monotone)
                             .foregroundStyle(.tint)
                         PointMark(x: .value("Date", point.date),
                                   y: .value(metric.rawValue, point.value))
@@ -127,7 +129,7 @@ struct TrendsView: View {
     }
 
     private func statTile(title: String, subtitle: String, change: TrendChange?) -> some View {
-        CardBox {
+        PanelBox {
             VStack(alignment: .leading, spacing: 4) {
                 Text(title.lowercased()).font(.caption).foregroundStyle(.secondary)
                 if let c = change {
@@ -136,7 +138,9 @@ struct TrendsView: View {
                         Text(formatted(c.delta) + " \(metric.unit)")
                     }
                     .font(.title3.weight(.bold))
-                    .foregroundStyle(c.isUp ? .green : .red)
+                    // Accent for up, muted for down. System green/red read as traffic
+                    // lights against steel, and red should mean an error, not a dip.
+                    .foregroundStyle(c.isUp ? Theme.accent : Color.secondary)
                     Text(String(format: "%+.0f%%", c.percent))
                         .font(.footnote).foregroundStyle(.secondary)
                 } else {
@@ -184,8 +188,14 @@ struct TrendsView: View {
     }
 }
 
-/// Reusable frosted-glass card container.
+/// The raised surface — the chart.
 private struct CardBox<Content: View>: View {
     @ViewBuilder var content: Content
     var body: some View { content.glassCard() }
+}
+
+/// The flat surface — the stat tiles beneath it.
+private struct PanelBox<Content: View>: View {
+    @ViewBuilder var content: Content
+    var body: some View { content.panel() }
 }

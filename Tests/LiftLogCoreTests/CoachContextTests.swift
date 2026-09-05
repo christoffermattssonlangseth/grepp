@@ -101,7 +101,8 @@ final class CoachContextTests: XCTestCase {
 
     func testNoteReportsCoverageAndOmissions() {
         let full = CoachContext.excerpt(from: [session("2026-08-01"), session("2026-08-08")])
-        XCTAssertEqual(full.note, "Context: 2 sessions 2026-08-01 → 2026-08-08.")
+        XCTAssertEqual(full.note, "2 sessions · 1 Aug – 8 Aug")
+        XCTAssertEqual(CoachContext.excerpt(from: [session("2026-08-01")]).note, "1 session · 1 Aug")
 
         let trimmed = CoachContext.excerpt(from: (1...9).map { session(String(format: "2026-08-%02d", $0)) },
                                            budget: 50)

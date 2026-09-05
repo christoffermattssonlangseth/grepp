@@ -91,12 +91,16 @@ struct CoachView: View {
         ForEach(coach.messages) { message in
             switch message.role {
             case .you:
-                Text(message.text)
-                    .font(.body.weight(.medium))
-                    .padding(.horizontal, 14).padding(.vertical, 10)
-                    .background(Theme.accent, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-                    .foregroundStyle(Theme.onAccent)
-                    .frame(maxWidth: .infinity, alignment: .trailing)
+                // A leading spacer with a floor, so a long question wraps inside a
+                // bubble instead of becoming a full-width block.
+                HStack {
+                    Spacer(minLength: 56)
+                    Text(message.text)
+                        .font(.body.weight(.medium))
+                        .padding(.horizontal, 14).padding(.vertical, 10)
+                        .background(Theme.accent, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                        .foregroundStyle(Theme.onAccent)
+                }
             case .coach:
                 coachBubble(message)
             }
@@ -227,7 +231,7 @@ struct CoachView: View {
                     if await store.save(goals, to: .goals) == .pushed {
                         savedGoalsText = goals
                     } else {
-                        saveError = store.status
+                        saveError = store.briefStatus
                     }
                     savingGoals = false
                 }
@@ -241,7 +245,7 @@ struct CoachView: View {
                 .padding(.vertical, 10)
             }
             .buttonStyle(.borderedProminent)
-            .tint(saved ? .green : Theme.accent)
+            .tint(saved ? Color.secondary : Theme.accent)   // done, not a traffic light
             .disabled(savingGoals || saved)
 
             // Only this save's own failure — never whatever the last load happened

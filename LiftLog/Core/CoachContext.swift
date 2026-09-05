@@ -68,12 +68,31 @@ enum CoachContext {
         var isEmpty: Bool { sessionCount == 0 }
 
         /// One line for the UI, so it's visible what the model was actually shown.
+        /// Short by design — it sits beside the model picker and has to survive a
+        /// small phone without truncating.
         var note: String {
             guard let firstDate, let lastDate else { return "No training logged yet." }
-            let span = sessionCount == 1 ? "1 session (\(lastDate))" : "\(sessionCount) sessions \(firstDate) → \(lastDate)"
-            return omittedCount == 0 ? "Context: \(span)." : "Context: \(span) · \(omittedCount) older omitted."
+            let span = sessionCount == 1
+                ? "1 session · \(CoachContext.short(firstDate))"
+                : "\(sessionCount) sessions · \(CoachContext.short(firstDate)) – \(CoachContext.short(lastDate))"
+            return omittedCount == 0 ? span : "\(span) · \(omittedCount) older omitted"
         }
     }
+
+    /// "2026-08-01" → "1 Aug", for the context line. Falls back to the ISO string
+    /// rather than crash on anything unexpected.
+    static func short(_ iso: String) -> String {
+        guard let date = Session.dateFormatter.date(from: iso) else { return iso }
+        return shortFormatter.string(from: date)
+    }
+
+    private static let shortFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "en_US_POSIX")
+        f.timeZone = TimeZone(identifier: "UTC")
+        f.dateFormat = "d MMM"
+        return f
+    }()
 
     /// Take whole sessions from the newest backwards until the budget runs out.
     /// Sessions are never split — half a day's work reads as a day where you did

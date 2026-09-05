@@ -148,7 +148,7 @@ struct BriefView: View {
         saving = file
         saveErrors[file] = nil
         if await store.save(draft(file), to: file) != .pushed {
-            saveErrors[file] = store.status
+            saveErrors[file] = store.briefStatus
         } else {
             // Re-seed from what actually landed, so the button settles on "Saved"
             // rather than staying dirty over a trailing-newline difference.

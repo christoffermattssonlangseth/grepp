@@ -73,8 +73,21 @@ struct Barbell: View {
 }
 
 extension View {
+    /// The quieter surface. Same shape and padding as `glassCard`, but thinner
+    /// material, no highlight edge and no shadow — so it sits *in* the page rather
+    /// than floating above it. Use it for chrome and lists; reserve `glassCard` for
+    /// the one or two things on a screen that should read as raised.
+    func panel(cornerRadius: CGFloat = Theme.corner) -> some View {
+        self
+            .padding(16)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(.thinMaterial,
+                        in: RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
+    }
+
     /// Frosted-glass card: a translucent material panel with a hairline highlight
-    /// edge and a soft drop shadow. The one place the app's card look is defined.
+    /// edge and a soft drop shadow. The raised surface — when everything is a
+    /// glass card nothing is, so most content belongs in `panel` instead.
     func glassCard(cornerRadius: CGFloat = Theme.corner) -> some View {
         self
             .padding(16)

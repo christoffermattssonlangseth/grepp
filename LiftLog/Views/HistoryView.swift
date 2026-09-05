@@ -24,8 +24,9 @@ struct HistoryView: View {
                         ForEach(session.exercises) { ex in
                             VStack(alignment: .leading, spacing: 2) {
                                 Text(ex.name).font(.headline)
+                                // Mono, because this *is* the line from the file.
                                 Text(ex.sets.map(\.token).joined(separator: "  "))
-                                    .font(.subheadline)
+                                    .font(.system(.subheadline, design: .monospaced))
                                     .foregroundStyle(.secondary)
                             }
                             .contentShape(Rectangle())

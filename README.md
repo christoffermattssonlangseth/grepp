@@ -138,32 +138,38 @@ logged or stored anywhere else.
 - First run: enable **Developer Mode** on the phone (Settings ▸ Privacy & Security)
   and **Trust** the developer (Settings ▸ General ▸ VPN & Device Management).
 
-## Tabs
-- **Session** — choose an exercise (searchable list + your history, or type a
-  new name), enter weight/reps on the big number pads — a line underneath says
-  what to load per side — and "Finish exercise" to push it to the day. A live "Today's Session" list shows the workout building
-  up. A **rest timer** starts each time you land a set, fills toward a target
-  you pick (1:00 / 1:30 / 2:00 / 3:00) and buzzes once when you're due. Land a
-  set and it's felt; the digits roll like a stopwatch; a set that beats your
-  all-time best for the lift gets a **PR** badge and a heavier buzz. When Coach
-  hands over a session, the plan shows as a target, each set prefills the next,
-  and the next lift loads as you finish the last. Steel accent, large touch targets, one
-  raised surface per screen.
-- **History** — browse every session; pull to refresh from GitHub. Swipe any
-  exercise to delete it (with a confirm), which is pushed like any other edit.
-- **Trends** — per-lift progression chart (top-set weight by default; Est. 1RM as a
-  secondary metric; added-load or max-reps for bodyweight lifts) with short-term
-  (3-week) and long-term (all-time) change tiles. Drag along the line to read a
-  session off it. The line is drawn so it can't show a peak you never lifted.
-- **Coach** — a chat with Claude that has your `training.md` in front of it. Ask
-  "what session should I do today" and get concrete loads and rep schemes, cited
-  from your own dates and numbers — with a **Log the session** button that
-  hands the whole thing to the Session tab. Add a `coaching.md` and `goals.md`
-  beside your log and it coaches to *your* rules, toward *your* targets. See
-  [Coach](#coach) below.
-- **Settings** — GitHub owner / repo / path / branch + a fine-grained token, the
-  Claude API key for Coach, and your bar and the plates you actually own — the
-  calculator never suggests one you don't have.
+## Features
+
+**Session** — logging, built for a gym floor.
+- A searchable exercise picker: your own history first, then a built-in
+  library, or just type a new name.
+- Big number pads. Under the weight field, what to load per side — worked out
+  from the plates you actually own, so it never suggests one you don't have.
+- Land a set and it's felt. A set that beats your all-time best for the lift
+  gets a **PR** badge and a heavier buzz.
+- A rest timer that starts on every set, fills toward a target you pick
+  (1:00 / 1:30 / 2:00 / 3:00), and buzzes once when you're due. The digits roll
+  like a stopwatch.
+- "Today's Session" builds up live. Each finished exercise pushes to GitHub on
+  its own — nothing waits on an "end session" tap that a dead phone could swallow.
+- When Coach hands over a session: the plan shows as a target, each set
+  prefills the next, and the next lift loads as you finish the last.
+
+**History** — every session, newest first. Pull to refresh. Tap an exercise to
+edit it, swipe to delete; both push like any other change.
+
+**Trends** — a progression chart per lift: top-set weight, Est. 1RM, or added
+load / max reps for bodyweight lifts, with short-term (3-week) and all-time
+change tiles. Drag along the line to read a session off it. Drawn so it can
+never show a peak you didn't lift.
+
+**Coach** — a chat with Claude that has your `training.md` in front of it. Ask
+"what session should I do today" and get loads and rep schemes cited from your
+own numbers, with a **Log the session** button. Teach it who you are with
+`coaching.md` and `goals.md`, or let it interview you. See [Coach](#coach).
+
+**Settings** — the GitHub repo and token, the Claude key, your bar and plates,
+and the offline sync queue.
 
 ## Tests
 The pure-logic layer (parsing, serialization, analytics) lives in `LiftLog/Core`

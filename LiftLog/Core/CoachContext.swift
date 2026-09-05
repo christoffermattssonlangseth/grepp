@@ -445,13 +445,27 @@ enum CoachContext {
     /// code and links but not block elements — a `## Heading` would show its
     /// hashes. Models reach for headings anyway, so fold them into bold.
     static func chatMarkdown(_ raw: String) -> String {
-        raw.split(separator: "\n", omittingEmptySubsequences: false).map { line in
+        let lines = raw.split(separator: "\n", omittingEmptySubsequences: false).map { line -> String in
             let trimmed = line.trimmingCharacters(in: .whitespaces)
             guard trimmed.hasPrefix("#") else { return String(line) }
             let title = trimmed.drop { $0 == "#" }.trimmingCharacters(in: .whitespaces)
             return title.isEmpty ? String(line) : "**\(title)**"
         }
-        .joined(separator: "\n")
+        // Whitespace is preserved on purpose so paragraphs keep their breaks — but
+        // a model that leaves three blank lines makes a hole in the bubble. One is
+        // a paragraph break; more than one collapses to one.
+        var out: [String] = []
+        var blanks = 0
+        for line in lines {
+            if line.trimmingCharacters(in: .whitespaces).isEmpty {
+                blanks += 1
+                if blanks <= 1 { out.append("") }
+            } else {
+                blanks = 0
+                out.append(line)
+            }
+        }
+        return out.joined(separator: "\n")
     }
 
     /// Starter questions offered on an empty Coach screen. Weighted towards "what

@@ -182,7 +182,7 @@ final class CoachService: ObservableObject {
         let system = CoachContext.systemPrompt(for: excerpt, brief: brief, mode: mode)
         // Say when the standing brief is in play — otherwise there's no way to
         // tell from the answers whether the coaching notes were picked up.
-        contextNote = brief.hasContent ? excerpt.note + " · with brief" : excerpt.note
+        contextNote = brief.hasContent ? excerpt.note + " · brief" : excerpt.note
 
         messages.append(CoachMessage(role: .you, text: trimmed))
         let reply = CoachMessage(role: .coach, text: "", isStreaming: true, model: model)

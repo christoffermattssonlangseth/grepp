@@ -39,6 +39,11 @@ final class Store: ObservableObject {
     @Published var status: String = ""
     @Published var isBusy = false
 
+    /// Outcome of the last brief-file save. Kept apart from `status`, which is
+    /// about the log and its sync: the Log tab shows `status`, and a "Saved
+    /// goals.md" from the Coach tab has no business appearing there.
+    @Published private(set) var briefStatus: String = ""
+
     /// Writes that haven't reached GitHub yet, oldest first. Persisted across launches.
     @Published private(set) var pending: [PendingWrite] = []
 
@@ -57,6 +62,18 @@ final class Store: ObservableObject {
     /// Send the user to the Log tab pre-filled to edit a specific past exercise.
     func requestEdit(exercise name: String, on date: Date) {
         editRequest = EditRequest(name: name, date: date)
+        selectedTab = 0
+    }
+
+    /// Prescriptions from Coach handed to the Log tab, in order: exercises and
+    /// the sets to do. Log loads the first as a target and advances to the next as
+    /// each is finished — a whole session without leaving the tab. Every exercise
+    /// still pushes on its own the moment it's done; only the *navigation* is
+    /// batched, never the saves.
+    @Published var prescriptionRequest: [ExerciseEntry] = []
+
+    func requestLog(_ entries: [ExerciseEntry]) {
+        prescriptionRequest = entries
         selectedTab = 0
     }
 
@@ -162,11 +179,11 @@ final class Store: ObservableObject {
         guard !isBusy else { return .failed }
         let path = self.path(for: file).trimmingCharacters(in: .whitespacesAndNewlines)
         guard !path.isEmpty else {
-            status = "No \(file.rawValue) file set — add a path in Settings."
+            briefStatus = "No \(file.rawValue) file set — add a path in Settings."
             return .failed
         }
 
-        isBusy = true; status = "Saving \(path)…"
+        isBusy = true; briefStatus = "Saving \(path)…"
         defer { isBusy = false }
 
         let remote = GitHubService(owner: owner, repo: repo, path: path, branch: branch, token: token)
@@ -180,13 +197,13 @@ final class Store: ObservableObject {
             case .goals: brief.goals = content
             }
             defaults.set(content, forKey: cacheKey(for: file))
-            status = "Saved \(path) ✓"
+            briefStatus = "Saved \(path) ✓"
             return .pushed
         } catch is URLError {
-            status = "Offline — couldn't save \(path). Try again when you have signal."
+            briefStatus = "Offline — couldn't save \(path). Try again when you have signal."
             return .failed
         } catch {
-            status = error.localizedDescription
+            briefStatus = error.localizedDescription
             return .failed
         }
     }

@@ -9,6 +9,17 @@ struct TrendsView: View {
     // Persisted so Trends reopens on the lift you last looked at.
     @AppStorage("trends_exercise") private var exercise = ""
     @State private var metric: Analytics.Metric = .topSet
+    /// Where a finger is on the chart's x-axis, if it's on it at all.
+    @State private var scrub: Date?
+
+    /// The logged point nearest the finger — a drag snaps to real sessions,
+    /// never interpolates a value that wasn't lifted.
+    private var scrubbed: TrendPoint? {
+        guard let scrub else { return nil }
+        return series.min {
+            abs($0.date.timeIntervalSince(scrub)) < abs($1.date.timeIntervalSince(scrub))
+        }
+    }
 
     private var exercises: [String] { store.knownExercises.sorted() }
 
@@ -27,9 +38,15 @@ struct TrendsView: View {
         NavigationStack {
             ScrollView {
                 if exercises.isEmpty {
-                    ContentUnavailableView("No data yet", systemImage: "chart.line.uptrend.xyaxis",
-                                           description: Text("Log some workouts to see trends."))
-                        .padding(.top, 80)
+                    ContentUnavailableView {
+                        VStack(spacing: 12) {
+                            Barbell(height: 38)
+                            Text("No data yet")
+                        }
+                    } description: {
+                        Text("Log some workouts to see trends.")
+                    }
+                    .padding(.top, 80)
                 } else {
                     VStack(spacing: 16) {
                         exercisePicker
@@ -89,16 +106,44 @@ struct TrendsView: View {
                     .font(.caption).foregroundStyle(.secondary)
 
                 if series.count >= 2 {
-                    Chart(series) { point in
-                        LineMark(x: .value("Date", point.date),
-                                 y: .value(metric.rawValue, point.value))
-                            .interpolationMethod(.catmullRom)
-                            .foregroundStyle(.tint)
-                        PointMark(x: .value("Date", point.date),
-                                  y: .value(metric.rawValue, point.value))
-                            .foregroundStyle(.tint)
-                            .symbolSize(28)
+                    Chart {
+                        ForEach(series) { point in
+                            LineMark(x: .value("Date", point.date),
+                                     y: .value(metric.rawValue, point.value))
+                                // Monotone, not Catmull-Rom: on sparse training data the
+                                // latter overshoots and draws a peak that was never lifted.
+                                .interpolationMethod(.monotone)
+                                .foregroundStyle(.tint)
+                            PointMark(x: .value("Date", point.date),
+                                      y: .value(metric.rawValue, point.value))
+                                .foregroundStyle(.tint)
+                                .symbolSize(28)
+                        }
+                        // Drag along the line to read a session off it.
+                        if let picked = scrubbed {
+                            RuleMark(x: .value("Date", picked.date))
+                                .foregroundStyle(.secondary.opacity(0.35))
+                                .annotation(position: .top, spacing: 6,
+                                            overflowResolution: .init(x: .fit(to: .chart), y: .disabled)) {
+                                    VStack(spacing: 2) {
+                                        Text("\(WorkSet.formatWeight(picked.value)) \(metric.unit)")
+                                            .font(.caption.weight(.bold))
+                                            .monospacedDigit()
+                                        Text(picked.date, format: .dateTime.day().month(.abbreviated))
+                                            .font(.caption2)
+                                            .foregroundStyle(.secondary)
+                                    }
+                                    .padding(.horizontal, 8).padding(.vertical, 5)
+                                    .background(.regularMaterial,
+                                                in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                                }
+                            PointMark(x: .value("Date", picked.date),
+                                      y: .value(metric.rawValue, picked.value))
+                                .foregroundStyle(.tint)
+                                .symbolSize(90)
+                        }
                     }
+                    .chartXSelection(value: $scrub)
                     .chartYScale(domain: .automatic(includesZero: false))
                     .chartXAxis {
                         AxisMarks(values: .automatic(desiredCount: 4)) {
@@ -127,16 +172,20 @@ struct TrendsView: View {
     }
 
     private func statTile(title: String, subtitle: String, change: TrendChange?) -> some View {
-        CardBox {
+        PanelBox {
             VStack(alignment: .leading, spacing: 4) {
                 Text(title.lowercased()).font(.caption).foregroundStyle(.secondary)
                 if let c = change {
                     HStack(spacing: 4) {
                         Image(systemName: c.isUp ? "arrow.up.right" : "arrow.down.right")
                         Text(formatted(c.delta) + " \(metric.unit)")
+                            .contentTransition(.numericText())
                     }
                     .font(.title3.weight(.bold))
-                    .foregroundStyle(c.isUp ? .green : .red)
+                    .animation(.snappy, value: c.delta)
+                    // Accent for up, muted for down. System green/red read as traffic
+                    // lights against steel, and red should mean an error, not a dip.
+                    .foregroundStyle(c.isUp ? Theme.accent : Color.secondary)
                     Text(String(format: "%+.0f%%", c.percent))
                         .font(.footnote).foregroundStyle(.secondary)
                 } else {
@@ -184,8 +233,14 @@ struct TrendsView: View {
     }
 }
 
-/// Reusable frosted-glass card container.
+/// The raised surface — the chart.
 private struct CardBox<Content: View>: View {
     @ViewBuilder var content: Content
     var body: some View { content.glassCard() }
+}
+
+/// The flat surface — the stat tiles beneath it.
+private struct PanelBox<Content: View>: View {
+    @ViewBuilder var content: Content
+    var body: some View { content.panel() }
 }

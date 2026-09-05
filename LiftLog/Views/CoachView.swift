@@ -14,6 +14,8 @@ struct CoachView: View {
     @State private var savedGoalsText: String?
     @State private var saveError: String?
     @State private var showingBrief = false
+    /// Bumped per send, so the arrow bounces on fire.
+    @State private var sent = 0
     @FocusState private var inputFocused: Bool
 
     /// The only thing that can stop Coach working now is a missing key.
@@ -91,12 +93,16 @@ struct CoachView: View {
         ForEach(coach.messages) { message in
             switch message.role {
             case .you:
-                Text(message.text)
-                    .font(.body.weight(.medium))
-                    .padding(.horizontal, 14).padding(.vertical, 10)
-                    .background(Theme.accent, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-                    .foregroundStyle(Theme.onAccent)
-                    .frame(maxWidth: .infinity, alignment: .trailing)
+                // A leading spacer with a floor, so a long question wraps inside a
+                // bubble instead of becoming a full-width block.
+                HStack {
+                    Spacer(minLength: 56)
+                    Text(message.text)
+                        .font(.body.weight(.medium))
+                        .padding(.horizontal, 14).padding(.vertical, 10)
+                        .background(Theme.accent, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                        .foregroundStyle(Theme.onAccent)
+                }
             case .coach:
                 coachBubble(message)
             }
@@ -193,6 +199,9 @@ struct CoachView: View {
             if reply.isWritingGoals {
                 Label("writing your goals…", systemImage: "square.and.pencil")
                     .font(.caption).foregroundStyle(.secondary)
+            } else if reply.isWritingPrescription {
+                Label("writing a prescription…", systemImage: "square.and.pencil")
+                    .font(.caption).foregroundStyle(.secondary)
             } else if message.isStreaming {
                 ProgressView().controlSize(.small)
             }
@@ -204,6 +213,48 @@ struct CoachView: View {
         if let goals = reply.goals {
             goalsCard(goals)
         }
+
+        // Each prescribed exercise is one tap from the Log tab — the advice
+        // becoming the next set is the loop closing. Two or more and there's a
+        // single button for the lot, which Log works through in order.
+        if reply.prescriptions.count >= 2 {
+            Button {
+                store.requestLog(reply.prescriptions.map { ExerciseEntry(name: $0.name, sets: $0.sets) })
+            } label: {
+                Label("Log the session · \(reply.prescriptions.count) exercises",
+                      systemImage: "list.bullet.rectangle.portrait")
+                    .font(.subheadline.weight(.bold))
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 8)
+            }
+            .buttonStyle(.borderedProminent)
+            .tint(Theme.accent)
+        }
+        ForEach(Array(reply.prescriptions.enumerated()), id: \.offset) { _, rx in
+            prescriptionCard(rx)
+        }
+    }
+
+    private func prescriptionCard(_ rx: CoachContext.Prescription) -> some View {
+        HStack(spacing: 12) {
+            VStack(alignment: .leading, spacing: 3) {
+                Text(Theme.readableName(rx.name))
+                    .font(.subheadline.weight(.bold))
+                Text(rx.sets.map(\.token).joined(separator: "  "))
+                    .font(.system(.footnote, design: .monospaced))
+                    .foregroundStyle(.secondary)
+            }
+            Spacer()
+            Button {
+                store.requestLog([ExerciseEntry(name: rx.name, sets: rx.sets)])
+            } label: {
+                Label("Log", systemImage: "plus.circle.fill")
+                    .font(.subheadline.weight(.bold))
+            }
+            .buttonStyle(.borderedProminent)
+            .tint(Theme.accent)
+        }
+        .panel(cornerRadius: 14)
     }
 
     /// A goals file the coach has written, with the one button that commits it.
@@ -227,7 +278,7 @@ struct CoachView: View {
                     if await store.save(goals, to: .goals) == .pushed {
                         savedGoalsText = goals
                     } else {
-                        saveError = store.status
+                        saveError = store.briefStatus
                     }
                     savingGoals = false
                 }
@@ -241,7 +292,7 @@ struct CoachView: View {
                 .padding(.vertical, 10)
             }
             .buttonStyle(.borderedProminent)
-            .tint(saved ? .green : Theme.accent)
+            .tint(saved ? Color.secondary : Theme.accent)   // done, not a traffic light
             .disabled(savingGoals || saved)
 
             // Only this save's own failure — never whatever the last load happened
@@ -319,6 +370,7 @@ struct CoachView: View {
                     if coach.isResponding { coach.cancel() } else { ask(draft) }
                 } label: {
                     Image(systemName: coach.isResponding ? "stop.fill" : "arrow.up")
+                        .symbolEffect(.bounce, value: sent)
                         .font(.headline.weight(.bold))
                         .frame(width: 44, height: 44)
                         .background(Theme.accent, in: Circle())
@@ -337,6 +389,7 @@ struct CoachView: View {
         guard !trimmed.isEmpty else { return }
         draft = ""
         inputFocused = false
+        sent += 1
         coach.send(trimmed,
                    model: model,
                    sessions: store.sessions,

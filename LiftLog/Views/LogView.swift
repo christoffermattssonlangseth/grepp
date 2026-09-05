@@ -19,6 +19,15 @@ struct LogView: View {
     @State private var repsText = ""
 
     @State private var showingPicker = false
+    /// The sets Coach prescribed, shown as a target and used to prefill each next set.
+    @State private var plan: [WorkSet]?
+    /// Exercises still to come after this one, when Coach handed over a session.
+    @State private var queue: [ExerciseEntry] = []
+    /// How long to rest before the timer says you're due. Persisted: it's a habit.
+    @AppStorage("rest_target") private var restTarget = 90
+    /// Haptic triggers — bumped on the event, never read.
+    @State private var setAdded = 0
+    @State private var exerciseFinished = 0
     /// When non-nil, the rest clock is running from this instant.
     @State private var restStart: Date?
     @FocusState private var focus: Field?
@@ -44,7 +53,6 @@ struct LogView: View {
         NavigationStack {
             ScrollView {
                 VStack(spacing: 16) {
-                    dateCard
                     if !todayExercises.isEmpty { todaySessionCard }
                     sectionLabel("add exercise")
                     exerciseCard
@@ -52,6 +60,7 @@ struct LogView: View {
                     if restStart != nil { restTimerCard }
                     if !sets.isEmpty { setsCard }
                     finishButton
+                    if !queue.isEmpty { upNext }
                     if !store.status.isEmpty {
                         Text(store.status).font(.footnote).foregroundStyle(.secondary)
                     }
@@ -65,21 +74,65 @@ struct LogView: View {
                     // Switching exercise starts a fresh set list for the new movement.
                     if picked.caseInsensitiveCompare(name) != .orderedSame {
                         sets = []
+                        plan = nil
                         restStart = nil
                     }
                     name = picked
                 }
             }
             .toolbar {
+                // The date as a compact pill up here, not a whole card under the
+                // title: on a gym screen that card-height belongs to the number pad.
+                ToolbarItem(placement: .topBarTrailing) {
+                    DatePicker("Date", selection: $date, displayedComponents: .date)
+                        .labelsHidden()
+                        .tint(Theme.accent)
+                }
                 ToolbarItemGroup(placement: .keyboard) {
                     Spacer()
                     Button("Done") { focus = nil }
                 }
             }
+            // 11. Feel: a tap that lands a set should be felt, and finishing more so.
+            .sensoryFeedback(.impact(weight: .medium), trigger: setAdded)
+            .sensoryFeedback(.success, trigger: exerciseFinished)
             .refreshable { await store.load() }
-            .onAppear { applyEditRequest() }
+            .onAppear { applyEditRequest(); applyPrescription() }
             .onChange(of: store.editRequest) { _, _ in applyEditRequest() }
+            .onChange(of: store.prescriptionRequest) { _, _ in applyPrescription() }
         }
+    }
+
+    /// Load a prescription from Coach. The first set's numbers go in the fields
+    /// and the whole plan shows as a target; sets fill in as you actually do them,
+    /// each one prefilling the next — 3x5 becomes tap, tap, tap.
+    private func applyPrescription() {
+        guard let first = store.prescriptionRequest.first else { return }
+        queue = Array(store.prescriptionRequest.dropFirst())
+        store.prescriptionRequest = []
+        restStart = nil
+        load(prescription: first)
+    }
+
+    /// Put a prescribed exercise in the input area. Leaves the rest timer alone on
+    /// purpose: between the last set of one lift and the first of the next you're
+    /// resting too, and the clock that started at that last set should keep going.
+    private func load(prescription rx: ExerciseEntry) {
+        name = rx.name
+        sets = []
+        plan = rx.sets
+        isBodyweight = rx.sets.first?.isBodyweight ?? false
+        prefill(rx.sets.first)
+    }
+
+    private func prefill(_ set: WorkSet?) {
+        guard let set else { return }
+        // A closure, not `.map(WorkSet.formatWeight)`: passing the method as a
+        // function value drops the caller's actor isolation, which the MainActor-
+        // by-default app target rejects. Same fix as parseSet in WorkoutParser.
+        weightText = set.weight.map { WorkSet.formatWeight($0) } ?? ""
+        addedText = set.added.flatMap { $0 > 0 ? WorkSet.formatWeight($0) : nil } ?? ""
+        repsText = String(set.reps)
     }
 
     /// Pull a "edit this past entry" request from History into the input area.
@@ -107,20 +160,10 @@ struct LogView: View {
         .padding(.top, 4)
     }
 
-    // MARK: - Date
-
-    private var dateCard: some View {
-        Card {
-            DatePicker("Date", selection: $date, displayedComponents: .date)
-                .font(.headline)
-                .tint(Theme.accent)
-        }
-    }
-
     // MARK: - Today's session
 
     private var todaySessionCard: some View {
-        Card {
+        Panel {
             VStack(alignment: .leading, spacing: 12) {
                 HStack {
                     Text("today's session")
@@ -134,8 +177,9 @@ struct LogView: View {
                     VStack(alignment: .leading, spacing: 3) {
                         Text(Theme.readableName(ex.name))
                             .font(.subheadline.weight(.heavy)).tracking(0.5)
-                        Text(ex.sets.map(\.token).joined(separator: "   "))
-                            .font(.footnote.weight(.medium)).foregroundStyle(.secondary)
+                        Text(ex.sets.map(\.token).joined(separator: "  "))
+                            .font(.system(.footnote, design: .monospaced).weight(.medium))
+                            .foregroundStyle(.secondary)
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.vertical, 10)
@@ -158,7 +202,7 @@ struct LogView: View {
     // MARK: - Exercise selector
 
     private var exerciseCard: some View {
-        Card {
+        Panel {
             VStack(alignment: .leading, spacing: 12) {
                 Button {
                     focus = nil
@@ -166,7 +210,7 @@ struct LogView: View {
                 } label: {
                     HStack(spacing: 10) {
                         Text(name.isEmpty ? "choose exercise" : Theme.readableName(name))
-                            .font(.system(size: 22, weight: .bold, design: .rounded))
+                            .font(.system(size: 22, weight: .bold))
                             .foregroundStyle(name.isEmpty ? .secondary : .primary)
                             .lineLimit(1)
                             .minimumScaleFactor(0.6)
@@ -176,9 +220,19 @@ struct LogView: View {
                             .foregroundStyle(Theme.accent)
                     }
                 }
+                if let plan {
+                    Label {
+                        Text("plan  " + plan.map(\.token).joined(separator: "  "))
+                            .font(.system(.footnote, design: .monospaced).weight(.semibold))
+                    } icon: {
+                        Image(systemName: "target")
+                    }
+                    .font(.footnote.weight(.semibold)).foregroundStyle(Theme.accent)
+                }
                 if let last = lastEntry {
                     Label {
-                        Text("last: " + last.sets.map(\.token).joined(separator: "  "))
+                        Text("last  " + last.sets.map(\.token).joined(separator: "  "))
+                            .font(.system(.footnote, design: .monospaced).weight(.semibold))
                     } icon: {
                         Image(systemName: "clock.arrow.circlepath")
                     }
@@ -206,12 +260,19 @@ struct LogView: View {
                 }
 
                 Button { addSet() } label: {
-                    Text("+ add set")
-                        .font(.subheadline.weight(.heavy)).tracking(1)
-                        .frame(maxWidth: .infinity)
-                        .frame(height: 44)
+                    HStack(spacing: 6) {
+                        Image(systemName: "plus")
+                            .symbolEffect(.bounce, value: setAdded)
+                        Text("add set")
+                    }
+                    .font(.subheadline.weight(.heavy)).tracking(1)
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 44)
                 }
-                .buttonStyle(.glass)
+                // Bordered, not glass: a disabled glass button fades to nothing and
+                // reads as broken. Bordered stays a visible, muted pill — and keeps
+                // glass for the one primary action, finish.
+                .buttonStyle(.bordered)
                 .tint(Theme.accent)
                 .disabled(!canAddSet)
 
@@ -237,47 +298,91 @@ struct LogView: View {
 
     private var restTimerCard: some View {
         Card {
-            HStack(spacing: 16) {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("rest")
-                        .font(.caption.weight(.heavy)).tracking(1.5)
-                        .foregroundStyle(.secondary)
-                    TimelineView(.periodic(from: restStart ?? Date(), by: 1)) { context in
-                        Text(restElapsed(at: context.date))
-                            .font(.system(size: 44, weight: .heavy, design: .rounded))
-                            .monospacedDigit()
-                            .foregroundStyle(Theme.accent)
+            TimelineView(.periodic(from: restStart ?? Date(), by: 1)) { context in
+                let elapsed = restSeconds(at: context.date)
+                let due = elapsed >= restTarget
+                VStack(spacing: 12) {
+                    HStack(spacing: 12) {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(due ? "ready" : "rest")
+                                .font(.caption.weight(.heavy)).tracking(1.5)
+                                .foregroundStyle(due ? Theme.accent : Color.secondary)
+                            Text(clock(elapsed))
+                                .font(.system(size: 44, weight: .heavy))
+                                .fontWidth(.condensed)
+                                .monospacedDigit()
+                                .foregroundStyle(Theme.accent)
+                                // Digits roll over rather than snap — 0:59 to 1:00
+                                // reads like a stopwatch, not a re-render.
+                                .contentTransition(.numericText())
+                                .animation(.snappy, value: elapsed)
+                        }
+                        Spacer()
+                        restTargetMenu
+                        Button { restStart = Date() } label: {
+                            Image(systemName: "arrow.counterclockwise")
+                                .font(.title3.weight(.bold))
+                                .frame(width: 44, height: 44)
+                                .background(.ultraThinMaterial, in: Circle())
+                        }
+                        .buttonStyle(.plain)
+                        Button { restStart = nil } label: {
+                            Image(systemName: "xmark")
+                                .font(.subheadline.weight(.bold))
+                                .foregroundStyle(.secondary)
+                                .frame(width: 44, height: 44)
+                                .background(.ultraThinMaterial, in: Circle())
+                        }
+                        .buttonStyle(.plain)
                     }
+                    // A thin bar filling toward the target — readable at a glance,
+                    // mid-set, from across the rack.
+                    ProgressView(value: Double(min(elapsed, restTarget)), total: Double(restTarget))
+                        .tint(Theme.accent)
+                        .animation(.linear(duration: 1), value: elapsed)
                 }
-                Spacer()
-                Button { restStart = Date() } label: {
-                    Image(systemName: "arrow.counterclockwise")
-                        .font(.title2.weight(.bold))
-                        .frame(width: 52, height: 52)
-                        .background(.ultraThinMaterial, in: Circle())
-                }
-                .buttonStyle(.plain)
-                Button { restStart = nil } label: {
-                    Image(systemName: "xmark")
-                        .font(.title3.weight(.bold))
-                        .foregroundStyle(.secondary)
-                        .frame(width: 52, height: 52)
-                        .background(.ultraThinMaterial, in: Circle())
-                }
-                .buttonStyle(.plain)
+                // One buzz when rest is up. Only on the way *to* due — a reset
+                // flipping it back must not fire a second success.
+                .sensoryFeedback(.success, trigger: due) { wasDue, isDue in !wasDue && isDue }
             }
         }
     }
 
-    private func restElapsed(at now: Date) -> String {
-        let seconds = max(0, Int(now.timeIntervalSince(restStart ?? now)))
-        return String(format: "%d:%02d", seconds / 60, seconds % 60)
+    /// 1:00 / 1:30 / 2:00 / 3:00 — the rests people actually take.
+    private var restTargetMenu: some View {
+        Menu {
+            ForEach([60, 90, 120, 180], id: \.self) { seconds in
+                Button { restTarget = seconds } label: {
+                    if seconds == restTarget {
+                        Label(clock(seconds), systemImage: "checkmark")
+                    } else {
+                        Text(clock(seconds))
+                    }
+                }
+            }
+        } label: {
+            Label(clock(restTarget), systemImage: "timer")
+                .font(.footnote.weight(.heavy))
+                .monospacedDigit()
+                .padding(.horizontal, 10)
+                .frame(height: 44)
+                .background(.ultraThinMaterial, in: Capsule())
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func restSeconds(at now: Date) -> Int {
+        max(0, Int(now.timeIntervalSince(restStart ?? now)))
+    }
+
+    private func clock(_ seconds: Int) -> String {
+        String(format: "%d:%02d", seconds / 60, seconds % 60)
     }
 
     // MARK: - Current sets
 
     private var setsCard: some View {
-        Card {
+        Panel {
             VStack(alignment: .leading, spacing: 10) {
                 Text("current sets")
                     .font(.caption.weight(.heavy)).tracking(1.5)
@@ -336,6 +441,25 @@ struct LogView: View {
         .disabled(!canFinish)
     }
 
+    /// The rest of the handed-over session. Dismissable: going off-script is
+    /// allowed, and so is deciding you're done.
+    private var upNext: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "arrow.turn.down.right")
+            Text("next  " + queue.map { Theme.readableName($0.name) }.joined(separator: " · "))
+                .lineLimit(1)
+                .minimumScaleFactor(0.8)
+            Spacer()
+            Button { queue = [] } label: {
+                Image(systemName: "xmark.circle.fill")
+            }
+            .buttonStyle(.plain)
+        }
+        .font(.footnote.weight(.semibold))
+        .foregroundStyle(.secondary)
+        .padding(.horizontal, 4)
+    }
+
     private var finishTitle: String {
         let alreadyLogged = todayExercises.contains { $0.name.caseInsensitiveCompare(name) == .orderedSame }
         return alreadyLogged ? "update exercise" : "finish exercise"
@@ -353,7 +477,9 @@ struct LogView: View {
                 .keyboardType(keyboard)
                 .focused($focus, equals: focusValue)
                 .multilineTextAlignment(.center)
-                .font(.system(size: 40, weight: .heavy, design: .rounded))
+                .font(.system(size: 40, weight: .heavy))
+                .fontWidth(.condensed)
+                .monospacedDigit()
                 .frame(maxWidth: .infinity)
                 .frame(height: Theme.bigFieldHeight)
                 .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
@@ -375,6 +501,8 @@ struct LogView: View {
         repsText = ""
         focus = nil
         restStart = Date()   // start resting the moment a set lands
+        setAdded += 1
+        if let plan, sets.count < plan.count { prefill(plan[sets.count]) }
     }
 
     /// Row label for a logged set: "82.5 kg", "BW +5 kg" or "Bodyweight".
@@ -390,6 +518,7 @@ struct LogView: View {
         sets = ex.sets
         isBodyweight = ex.sets.first?.isBodyweight ?? false
         weightText = ""; addedText = ""; repsText = ""
+        plan = nil
         restStart = nil
     }
 
@@ -401,15 +530,28 @@ struct LogView: View {
         // failure leaves the input so the user can retry. Today's session card
         // keeps the record either way.
         if result != .failed {
-            name = ""; sets = []; weightText = ""; addedText = ""; repsText = ""; isBodyweight = false
-            restStart = nil
+            exerciseFinished += 1
             focus = nil
+            if !queue.isEmpty {
+                // Straight on to the next prescribed lift, fields already filled.
+                load(prescription: queue.removeFirst())
+            } else {
+                name = ""; sets = []; weightText = ""; addedText = ""; repsText = ""; isBodyweight = false
+                plan = nil
+                restStart = nil
+            }
         }
     }
 }
 
-/// A frosted-glass container used to group content into cards.
+/// The raised surface — the number pad and the rest timer, the things you act on.
 private struct Card<Content: View>: View {
     @ViewBuilder var content: Content
     var body: some View { content.glassCard() }
+}
+
+/// The flat surface — lists and chrome that should sit in the page, not float.
+private struct Panel<Content: View>: View {
+    @ViewBuilder var content: Content
+    var body: some View { content.panel() }
 }

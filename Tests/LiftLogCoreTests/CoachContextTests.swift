@@ -329,6 +329,14 @@ final class CoachContextTests: XCTestCase {
         XCTAssertTrue(text.contains("cannot add to it"), "must not claim it can write the log")
     }
 
+    func testSystemPromptHoldsBlocksWhenTheSessionIsOver() {
+        // "I'm done for today" should get a review and a prose look-ahead, not a
+        // set of one-tap cards that would land on top of today's real session.
+        let text = CoachContext.systemPrompt(for: CoachContext.excerpt(from: [session("2026-08-01")]))
+        XCTAssertTrue(text.contains("say they're done, no blocks"), text)
+        XCTAssertTrue(text.contains("review the session in a few lines first"), text)
+    }
+
     // MARK: - coaching notes
 
     func testCoachingNotesBecomeAStandingBrief() {

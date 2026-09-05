@@ -175,7 +175,8 @@ never show a peak you didn't lift.
 
 **Coach** — a chat with Claude that has your `training.md` in front of it. Ask
 "what session should I do today" and get loads and rep schemes cited from your
-own numbers, with a **Log the session** button. Teach it who you are with
+own numbers, with a **Log the session** button (it reads **Load for next
+session** once you've already trained today). Teach it who you are with
 `coaching.md` and `goals.md`, or let it interview you. See [Coach](#coach).
 
 **Settings** — the GitHub repo and token, the Claude key, your bar and plates,

@@ -242,7 +242,8 @@ struct CoachView: View {
             Button {
                 store.requestLog(reply.prescriptions.map { ExerciseEntry(name: $0.name, sets: $0.sets) })
             } label: {
-                Label("Log the session · \(reply.prescriptions.count) exercises",
+                Label(trainedToday ? "Load for next session · \(reply.prescriptions.count) exercises"
+                                   : "Log the session · \(reply.prescriptions.count) exercises",
                       systemImage: "list.bullet.rectangle.portrait")
                     .font(.subheadline.weight(.bold))
                     .frame(maxWidth: .infinity)
@@ -254,6 +255,14 @@ struct CoachView: View {
         ForEach(Array(reply.prescriptions.enumerated()), id: \.offset) { _, rx in
             prescriptionCard(rx)
         }
+    }
+
+    /// Whether today's date already has exercises in the log. A prescription
+    /// pressed then would land on top of today's real session, so the buttons
+    /// stop saying "log" and say what they actually do: load a plan for next time.
+    private var trainedToday: Bool {
+        let key = Session.dateFormatter.string(from: Date())
+        return store.sessions.contains { $0.dateString == key && !$0.exercises.isEmpty }
     }
 
     private func prescriptionCard(_ rx: CoachContext.Prescription) -> some View {
@@ -269,7 +278,7 @@ struct CoachView: View {
             Button {
                 store.requestLog([ExerciseEntry(name: rx.name, sets: rx.sets)])
             } label: {
-                Label("Log", systemImage: "plus.circle.fill")
+                Label(trainedToday ? "Load" : "Log", systemImage: "plus.circle.fill")
                     .font(.subheadline.weight(.bold))
             }
             .buttonStyle(.borderedProminent)

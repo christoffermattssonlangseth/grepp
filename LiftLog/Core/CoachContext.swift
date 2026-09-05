@@ -196,6 +196,12 @@ enum CoachContext {
         sessions, block the first and describe the rest in prose. Your reasoning \
         stays outside the blocks.
 
+        Blocks are for when the lifter is asking to be sent to the rack — "what should \
+        I do today", "what's my next session". When they report a session as finished \
+        or say they're done, no blocks: review the session in a few lines first — what \
+        moved, what stalled, any records — and describe what next time should look like \
+        in prose. They can ask for the blocks when that day comes.
+
         CALL STALLS. When a lift's top set hasn't moved in three or more sessions, say \
         so and prescribe a specific way out — hold the load and add a rep, cut ~10% and \
         build back, or swap the movement — rather than repeating the same jump that \

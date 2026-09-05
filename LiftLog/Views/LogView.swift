@@ -554,8 +554,11 @@ struct LogView: View {
             let approx = load.isApproximate ? "  ≈ \(WorkSet.formatWeight(load.total))" : ""
             text = "per side  " + plates + approx
         }
+        // Always name the bar: a 20 default silently gives a 15-bar lifter the
+        // wrong plates, and this is the only place they'd ever notice.
+        let bar = "  · \(WorkSet.formatWeight(barWeight)) bar"
         return Label {
-            Text(text)
+            Text(text + bar)
                 .font(.system(.footnote, design: .monospaced).weight(.semibold))
         } icon: {
             Image(systemName: "circlebadge.2.fill")

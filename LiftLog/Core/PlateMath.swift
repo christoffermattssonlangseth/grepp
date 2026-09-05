@@ -43,13 +43,18 @@ enum PlateMath {
         let want = Int(((target - bar) / 2 / unit).rounded())
 
         // Per-side stock: a pair per side, so an odd plate out can't be used.
-        let stock: [(units: Int, count: Int)] = inventory.counts
-            .compactMap { size, total in
-                let perSide = total / 2
-                let units = Int((size / unit).rounded())
-                return perSide > 0 && units > 0 ? (units, perSide) : nil
+        // A plain loop, deliberately: a multi-statement closure returning a tuple
+        // and a sort on its labels is the kind of expression the type-checker can
+        // give up on, and when it gives up on a file every type in it vanishes.
+        var stock: [(units: Int, count: Int)] = []
+        for (size, total) in inventory.counts {
+            let perSide = total / 2
+            let units = Int((size / unit).rounded())
+            if perSide > 0 && units > 0 {
+                stock.append((units: units, count: perSide))
             }
-            .sorted { $0.units > $1.units }
+        }
+        stock.sort { $0.units > $1.units }
 
         // best[s]: the preferred way to load exactly s units, or nil if impossible.
         var best = [[Int]?](repeating: nil, count: want + 1)

@@ -21,11 +21,11 @@ repo / path / branch + a fine-grained token). It reads and writes one file, so
 your training history is portable, greppable, and outlives the app itself.
 
 <p align="center">
-  <img src="docs/session.png" width="280" alt="LiftLog Session screen — logging a workout on the big number pads">
-  <img src="docs/coach.png" width="280" alt="LiftLog Coach screen — Claude answering a question about the training log">
+  <img src="docs/session.png" width="280" alt="LiftLog Session screen — today's three exercises logged, the next one being added">
+  <img src="docs/coach-2.png" width="280" alt="LiftLog Coach screen — a prescribed session with a Log the session button and a Log button per exercise">
 </p>
 <p align="center">
-  <em><b>Session</b> — log it. &nbsp; <b>Coach</b> — ask about it.</em>
+  <em><b>Session</b> — log it. &nbsp; <b>Coach</b> — ask what to do, then log that.</em>
 </p>
 
 ## Ask your log
@@ -38,15 +38,18 @@ have to build something to answer:
 > _"Plan next week's lower body from my recent top sets."_
 > _"Which lifts have stalled the longest, and what do I do about it?"_
 
-You get numbers back. An actual answer, from the screenshot above:
+You get numbers back. An actual answer to "what session should I do today":
 
-> **Progressing well — and the last two sessions say you're leaving reps on the
-> table.** Next heavy squat: **90 kg for 3x8**, and if set three moves like the
-> last two, stop it at 10 rather than chasing another 14.
+> **Session 6: deadlift, bench, seal row.** Last session (09-03) was the light
+> squat/OHP/chin-up day, so you're up for the second deadlift+bench day.
 >
-> The heavy line: 70x8 (08-02) → 72.5 (08-06) → 75 (08-12) → 77.5 (08-18) → 80
-> (08-25) → 85 (09-01). […] The tell is the third set: 80x12 on 08-25 and 85x14
-> on 09-01. Eight-rep work isn't supposed to end in a 14.
+> – Bench: 52.5 gave you 8/8/**12** on 09-01 after 8/8/8 on 08-28 — that 12 is a
+> clear green light for +2.5. Make the third set an AMRAP but stop 2 shy; if it
+> comes in under 6, hold 55 next time.
+
+It knows which day of your split is due and that you'd rather not AMRAP a
+deadlift — that's your `coaching.md` being read, not guessed. And under the
+answer, one button logs the whole session.
 
 The prescription first, then the numbers it rests on — and a straight "the log
 doesn't show that" when it can't support one. When it prescribes your next
@@ -77,6 +80,10 @@ One line per exercise per day; a blank line separates dates:
   `bwx6` (bodyweight × reps), `bw+5x8` (bodyweight **+ 5 kg** × reps).
 
 ## Coach
+
+<p align="center">
+  <img src="docs/coach.png" width="300" alt="LiftLog Coach screen — the answer itself: which day is due, and why each load is what it is">
+</p>
 
 Setting it up, and the details. Answers stream in, and a **Sonnet 5 / Opus 5**
 picker sits above the input — Sonnet by default, Opus when you want it to chew
@@ -168,7 +175,8 @@ never show a peak you didn't lift.
 
 **Coach** — a chat with Claude that has your `training.md` in front of it. Ask
 "what session should I do today" and get loads and rep schemes cited from your
-own numbers, with a **Log the session** button. Teach it who you are with
+own numbers, with a **Log the session** button (it reads **Load for next
+session** once you've already trained today). Teach it who you are with
 `coaching.md` and `goals.md`, or let it interview you. See [Coach](#coach).
 
 **Settings** — the GitHub repo and token, the Claude key, your bar and plates,

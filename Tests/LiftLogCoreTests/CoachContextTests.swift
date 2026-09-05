@@ -191,6 +191,14 @@ final class CoachContextTests: XCTestCase {
         XCTAssertEqual(CoachContext.chatMarkdown(text), text)
     }
 
+    func testRunsOfBlankLinesCollapseToAParagraphBreak() {
+        // Three blank lines from the model would be a hole in the bubble.
+        XCTAssertEqual(CoachContext.chatMarkdown("Session 6.\n\n\n\n- Deadlift 85"),
+                       "Session 6.\n\n- Deadlift 85")
+        XCTAssertEqual(CoachContext.chatMarkdown("a\n\nb"), "a\n\nb", "one blank line is kept")
+        XCTAssertEqual(CoachContext.chatMarkdown("a\nb"), "a\nb", "no blank line stays that way")
+    }
+
     func testHashesThatArentHeadingsSurvive() {
         // A lone "#" or a mid-line hash isn't a heading and must not be eaten.
         XCTAssertEqual(CoachContext.chatMarkdown("#"), "#")
@@ -319,6 +327,14 @@ final class CoachContextTests: XCTestCase {
         XCTAssertTrue(text.contains("PRESCRIBE, DON'T LECTURE"), "must ask for a prescription")
         XCTAssertTrue(text.contains("CALL STALLS"), "must handle a stalled lift")
         XCTAssertTrue(text.contains("cannot add to it"), "must not claim it can write the log")
+    }
+
+    func testSystemPromptHoldsBlocksWhenTheSessionIsOver() {
+        // "I'm done for today" should get a review and a prose look-ahead, not a
+        // set of one-tap cards that would land on top of today's real session.
+        let text = CoachContext.systemPrompt(for: CoachContext.excerpt(from: [session("2026-08-01")]))
+        XCTAssertTrue(text.contains("say they're done, no blocks"), text)
+        XCTAssertTrue(text.contains("review the session in a few lines first"), text)
     }
 
     // MARK: - coaching notes

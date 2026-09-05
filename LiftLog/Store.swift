@@ -139,10 +139,16 @@ final class Store: ObservableObject {
     private let coachingCacheKey = "gh_coaching_cache"
     private let goalsCacheKey = "gh_goals_cache"
     private let pendingKey = "gh_pending"
+    private let draftKey = "session_draft"
     private var defaults: UserDefaults { .standard }
+
+    /// The exercise being logged right now, persisted so a kill mid-session
+    /// costs nothing. Nil when there's nothing worth keeping.
+    @Published private(set) var draft: SessionDraft?
 
     init() {
         pending = loadPending()
+        draft = loadDraft()
         brief = CoachContext.Brief(coaching: defaults.string(forKey: coachingCacheKey) ?? "",
                                    goals: defaults.string(forKey: goalsCacheKey) ?? "")
         // Show cached content + any queued writes immediately, before the network load.
@@ -405,6 +411,19 @@ final class Store: ObservableObject {
     private func cacheContent(_ content: String) { defaults.set(content, forKey: cacheKey) }
     private func cachedSessions() -> [Session] {
         WorkoutParser.parse(defaults.string(forKey: cacheKey) ?? "")
+    }
+
+    func saveDraft(_ new: SessionDraft?) {
+        draft = new
+        if let new {
+            defaults.set(try? JSONEncoder().encode(new), forKey: draftKey)
+        } else {
+            defaults.removeObject(forKey: draftKey)
+        }
+    }
+    private func loadDraft() -> SessionDraft? {
+        guard let data = defaults.data(forKey: draftKey) else { return nil }
+        return try? JSONDecoder().decode(SessionDraft.self, from: data)
     }
 
     private func savePending() {

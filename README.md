@@ -208,6 +208,11 @@ merge-on-remote path; you can also see and retry it from **Settings ▸ Waiting 
 sync**. The queue survives an app kill (persisted in `UserDefaults`; the token stays
 in the Keychain).
 
+The exercise you're mid-way through — sets landed, the plan, the rest clock —
+and the Coach conversation both survive the app being killed in the background,
+and come back on the next launch. Gyms also eat battery, and iOS quietly kills
+whatever's behind the music app.
+
 ---
 
 <p align="center">

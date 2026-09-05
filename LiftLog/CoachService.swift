@@ -53,10 +53,10 @@ enum CoachModelChoice: String, CaseIterable, Identifiable, Codable {
 }
 
 /// One turn in the Coach conversation.
-struct CoachMessage: Identifiable, Equatable {
-    enum Role { case you, coach }
+struct CoachMessage: Identifiable, Equatable, Codable {
+    enum Role: String, Codable { case you, coach }
 
-    let id = UUID()
+    var id = UUID()
     let role: Role
     var text: String
     var isStreaming = false
@@ -84,6 +84,35 @@ final class CoachService: ObservableObject {
     @Published private(set) var mode: CoachContext.Mode = .coaching
 
     private var task: Task<Void, Never>?
+
+    // The transcript is persisted so a backgrounded-and-killed app doesn't lose
+    // the conversation. Saved when a message lands or finishes, never per
+    // streamed chunk.
+    private let chatKey = "coach_chat"
+    private struct Saved: Codable {
+        var messages: [CoachMessage]
+        var mode: CoachContext.Mode
+        var contextNote: String?
+    }
+
+    init() { restore() }
+
+    private func persist() {
+        let saved = Saved(messages: messages, mode: mode, contextNote: contextNote)
+        UserDefaults.standard.set(try? JSONEncoder().encode(saved), forKey: chatKey)
+    }
+
+    private func restore() {
+        guard let data = UserDefaults.standard.data(forKey: chatKey),
+              let saved = try? JSONDecoder().decode(Saved.self, from: data) else { return }
+        // A reply cut off by a kill is kept as it stood, like a cancel — and an
+        // empty bubble the kill left behind is dropped.
+        messages = saved.messages
+            .map { var m = $0; m.isStreaming = false; return m }
+            .filter { !($0.role == .coach && $0.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty) }
+        mode = saved.mode
+        contextNote = saved.contextNote
+    }
 
     var isEmpty: Bool { messages.isEmpty }
 
@@ -113,6 +142,7 @@ final class CoachService: ObservableObject {
         contextNote = nil
         isResponding = false
         mode = .coaching
+        persist()
     }
 
     /// Stop the answer in flight, keeping whatever streamed in so far.
@@ -121,6 +151,7 @@ final class CoachService: ObservableObject {
         task = nil
         finishStreamingMessage()
         isResponding = false
+        persist()
     }
 
     func send(_ question: String,
@@ -157,6 +188,7 @@ final class CoachService: ObservableObject {
         let reply = CoachMessage(role: .coach, text: "", isStreaming: true, model: model)
         messages.append(reply)
         isResponding = true
+        persist()   // the question survives even if the answer doesn't
 
         let service = ClaudeService(apiKey: key, model: model, workspaceID: workspace)
 
@@ -180,6 +212,7 @@ final class CoachService: ObservableObject {
             self.finishStreamingMessage()
             self.isResponding = false
             self.task = nil
+            self.persist()
         }
     }
 

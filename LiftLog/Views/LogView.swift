@@ -29,6 +29,9 @@ struct LogView: View {
     @AppStorage("bar_weight") private var barWeight: Double = 20
     @AppStorage("plate_inventory") private var inventory = PlateInventory.standard
     /// Haptic triggers — bumped on the event, never read.
+    /// Set once the saved draft has been looked at, so a view rebuild can't
+    /// restore over the top of live work.
+    @State private var restored = false
     @State private var setAdded = 0
     @State private var exerciseFinished = 0
     @State private var recordSet = 0
@@ -104,10 +107,38 @@ struct LogView: View {
             // medium one, which reads as "more" without a second haptic vocabulary.
             .sensoryFeedback(.impact(weight: .heavy, intensity: 1), trigger: recordSet)
             .refreshable { await store.load() }
-            .onAppear { applyEditRequest(); applyPrescription() }
+            .onAppear { restoreDraft(); applyEditRequest(); applyPrescription() }
+            // Everything in flight, saved on every change — one equatable value,
+            // so it's one modifier rather than one per field.
+            .onChange(of: currentDraft) { _, draft in store.saveDraft(draft) }
             .onChange(of: store.editRequest) { _, _ in applyEditRequest() }
             .onChange(of: store.prescriptionRequest) { _, _ in applyPrescription() }
         }
+    }
+
+    /// What's in flight, or nil when nothing is worth keeping.
+    private var currentDraft: SessionDraft? {
+        let draft = SessionDraft(date: date, name: name, sets: sets, isBodyweight: isBodyweight,
+                                 weightText: weightText, addedText: addedText, repsText: repsText,
+                                 plan: plan, queue: queue, restStart: restStart)
+        return draft.isEmpty ? nil : draft
+    }
+
+    /// Pick up where a killed app left off. Only into an empty input area, and
+    /// only once per view lifetime. A rest clock older than half an hour is
+    /// dropped — that isn't a rest any more.
+    private func restoreDraft() {
+        guard !restored else { return }
+        restored = true
+        guard let d = store.draft, name.isEmpty, sets.isEmpty, queue.isEmpty else { return }
+        date = d.date
+        name = d.name
+        sets = d.sets
+        isBodyweight = d.isBodyweight
+        weightText = d.weightText; addedText = d.addedText; repsText = d.repsText
+        plan = d.plan
+        queue = d.queue
+        if let start = d.restStart, Date().timeIntervalSince(start) < 30 * 60 { restStart = start }
     }
 
     /// Load a prescription from Coach. The first set's numbers go in the fields

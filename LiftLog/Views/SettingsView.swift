@@ -31,11 +31,14 @@ struct SettingsView: View {
 
                 Section("Gym") {
                     Picker("bar weight", selection: $barWeight) {
-                        Text("20 kg").tag(20.0)
-                        Text("15 kg").tag(15.0)
-                        Text("10 kg").tag(10.0)
+                        ForEach(PlateMath.bars, id: \.self) { kg in
+                            Text("\(PlateMath.label(kg)) kg").tag(kg)
+                        }
                     }
                     .pickerStyle(.segmented)
+                    Text("Your default bar. An exercise on a different one — seal rows on the 10 — is set from the plate line in Session, and remembered for that exercise.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
 
                     ForEach(PlateMath.sizes, id: \.self) { size in
                         Stepper(value: plateCount(size), in: 0...20) {

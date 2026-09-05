@@ -145,6 +145,8 @@ logged or stored anywhere else.
   library, or just type a new name.
 - Big number pads. Under the weight field, what to load per side — worked out
   from the plates you actually own, so it never suggests one you don't have.
+  The line names the bar, and tapping it sets a different one for *that*
+  exercise: seal rows on the 10, everything else on your default.
 - Land a set and it's felt. A set that beats your all-time best for the lift
   gets a **PR** badge and a heavier buzz.
 - A rest timer that starts on every set and fills toward a target you pick

@@ -28,6 +28,11 @@ struct LogView: View {
     /// The bar and the plates the calculator has to work with. Set in Settings.
     @AppStorage("bar_weight") private var barWeight: Double = 20
     @AppStorage("plate_inventory") private var inventory = PlateInventory.standard
+    /// Exercises on a bar other than the default — seal rows on the 10, say.
+    @AppStorage("bar_overrides") private var barOverrides = BarOverrides()
+
+    /// The bar for the exercise in the field: its own if it has one, else the default.
+    private var effectiveBar: Double { barOverrides.bar(for: name) ?? barWeight }
     /// Haptic triggers — bumped on the event, never read.
     /// Set once the saved draft has been looked at, so a view rebuild can't
     /// restore over the top of live work.
@@ -301,7 +306,7 @@ struct LogView: View {
 
                 // What to load, the moment there's a weight in the field.
                 if !isBodyweight, let target = parsedWeight,
-                   let load = PlateMath.load(target, bar: barWeight, inventory: inventory) {
+                   let load = PlateMath.load(target, bar: effectiveBar, inventory: inventory) {
                     plateLine(load)
                 }
 
@@ -620,18 +625,48 @@ struct LogView: View {
             let approx = load.isApproximate ? "  ≈ \(PlateMath.label(load.total))" : ""
             text = "per side  " + plates + approx
         }
-        // Always name the bar: a 20 default silently gives a 15-bar lifter the
-        // wrong plates, and this is the only place they'd ever notice.
-        let bar = "  · \(PlateMath.label(barWeight)) bar"
-        return Label {
-            Text(text + bar)
-                .font(.system(.footnote, design: .monospaced).weight(.semibold))
-        } icon: {
-            Image(systemName: "circlebadge.2.fill")
+        return HStack(spacing: 8) {
+            Label {
+                Text(text)
+                    .font(.system(.footnote, design: .monospaced).weight(.semibold))
+            } icon: {
+                Image(systemName: "circlebadge.2.fill")
+            }
+            Spacer(minLength: 8)
+            barMenu
         }
         .font(.footnote.weight(.semibold))
         .foregroundStyle(.secondary)
-        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    /// Always names the bar, and it's a menu: a different bar for *this* exercise
+    /// is set right here and remembered for it. The default lives in Settings.
+    /// Disabled until an exercise is chosen — there's nothing to remember it for.
+    private var barMenu: some View {
+        Menu {
+            ForEach(PlateMath.bars, id: \.self) { kg in
+                Button { barOverrides.set(kg, for: name) } label: {
+                    if kg == effectiveBar {
+                        Label("\(PlateMath.label(kg)) kg", systemImage: "checkmark")
+                    } else {
+                        Text("\(PlateMath.label(kg)) kg")
+                    }
+                }
+            }
+            Divider()
+            Button { barOverrides.set(nil, for: name) } label: {
+                Text("Default · \(PlateMath.label(barWeight)) kg")
+            }
+        } label: {
+            HStack(spacing: 3) {
+                Text("\(PlateMath.label(effectiveBar)) bar")
+                    .font(.system(.footnote, design: .monospaced).weight(.semibold))
+                Image(systemName: "chevron.up.chevron.down")
+                    .font(.caption2)
+            }
+            .foregroundStyle(barOverrides.bar(for: name) == nil ? Color.secondary : Theme.accent)
+        }
+        .disabled(name.isEmpty)
     }
 
     /// Row label for a logged set: "82.5 kg", "BW +5 kg" or "Bodyweight".

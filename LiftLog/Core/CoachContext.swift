@@ -457,8 +457,9 @@ enum CoachContext {
     /// Starter questions offered on an empty Coach screen. Weighted towards "what
     /// should I do next", since that's what a coach is for.
     static let suggestedQuestions = [
+        // First, because it's the one that ends in a "Log the session" button.
+        "What session should I do today?",
         "What should my next squat session be?",
-        "Plan next week from my recent sessions.",
         "Which lifts have stalled, and what do I do about it?",
         "How is my squat progressing?",
     ]

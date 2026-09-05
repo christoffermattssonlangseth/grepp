@@ -7,6 +7,7 @@ struct CoachView: View {
     @StateObject private var coach = CoachService()
 
     @AppStorage("coach_model") private var model: CoachModelChoice = .sonnet
+    @AppStorage("coach_show_cost") private var showCost = true
     @State private var draft = ""
     @State private var savingGoals = false
     /// The exact text last committed, so a revised file offers Save again rather
@@ -169,6 +170,20 @@ struct CoachView: View {
         )) ?? AttributedString(text)
     }
 
+    /// "2.6k in · 1.9k cached · 1.4k out · ~4¢".
+    private func costLine(_ u: ClaudeService.Usage, _ model: CoachModelChoice) -> String {
+        let dollars = model.cost(u)
+        let money = dollars >= 1 ? String(format: "~$%.2f", dollars)
+                  : dollars >= 0.01 ? String(format: "~%.0f¢", dollars * 100)
+                  : String(format: "~%.1f¢", dollars * 100)
+        let cached = u.cacheRead > 0 ? " · \(k(u.cacheRead)) cached" : ""
+        return "\(k(u.input + u.cacheRead + u.cacheWrite)) in\(cached) · \(k(u.output)) out · \(money)"
+    }
+
+    private func k(_ n: Int) -> String {
+        n >= 1000 ? String(format: "%.1fk", Double(n) / 1000) : String(n)
+    }
+
     private func consumeBriefRequest() {
         guard store.briefRequest else { return }
         store.briefRequest = false
@@ -204,6 +219,12 @@ struct CoachView: View {
                     .font(.caption).foregroundStyle(.secondary)
             } else if message.isStreaming {
                 ProgressView().controlSize(.small)
+            }
+            // The API's own token counts, priced — not an estimate of them.
+            if showCost, !message.isStreaming, let usage = message.usage, let model = message.model {
+                Text(costLine(usage, model))
+                    .font(.caption2.monospacedDigit())
+                    .foregroundStyle(.tertiary)
             }
         }
         .glassCard(cornerRadius: 16)

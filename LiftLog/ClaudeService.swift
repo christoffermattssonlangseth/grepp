@@ -25,6 +25,22 @@ struct ClaudeService {
     /// keeps answers short is the "read on a phone" line in the system prompt.
     private static let maxTokens = 16_000
 
+    /// Token counts the API reports for one answer. Input is split three ways
+    /// because they bill differently: fresh, read from the prompt cache, and
+    /// written to it.
+    struct Usage: Equatable {
+        var input = 0
+        var cacheRead = 0
+        var cacheWrite = 0
+        var output = 0
+    }
+
+    /// What the stream yields: text as it arrives, and usage as the API reports it.
+    enum Event {
+        case text(String)
+        case usage(Usage)
+    }
+
     /// One turn of the conversation as the API wants it.
     struct Turn: Equatable {
         enum Role: String { case user, assistant }
@@ -63,9 +79,10 @@ struct ClaudeService {
         }
     }
 
-    /// Stream one answer. Each element is a **chunk** of new text, not the whole
-    /// answer so far — the caller appends.
-    func stream(system: String, turns: [Turn]) -> AsyncThrowingStream<String, Error> {
+    /// Stream one answer. Text arrives as **chunks** of new text, not the whole
+    /// answer so far — the caller appends. Usage arrives as the API reports it:
+    /// input counts at the start, the output count at the end.
+    func stream(system: String, turns: [Turn]) -> AsyncThrowingStream<Event, Error> {
         AsyncThrowingStream { continuation in
             let task = Task {
                 do {
@@ -79,7 +96,7 @@ struct ClaudeService {
         }
     }
 
-    private func send(system: String, turns: [Turn], onText: (String) -> Void) async throws {
+    private func send(system: String, turns: [Turn], onEvent: (Event) -> Void) async throws {
         guard !apiKey.isEmpty else { throw ClaudeError.missingKey }
 
         var request = URLRequest(url: Self.endpoint)
@@ -115,6 +132,7 @@ struct ClaudeService {
         // Server-sent events: "event:" lines name the type, "data:" lines carry the
         // JSON, blank lines separate them. The JSON has its own "type", so the
         // "event:" lines are redundant here and skipped.
+        var usage = Usage()
         for try await line in bytes.lines {
             try Task.checkCancellation()
             guard line.hasPrefix("data:") else { continue }
@@ -131,7 +149,21 @@ struct ClaudeService {
                 guard let delta = event["delta"] as? [String: Any],
                       delta["type"] as? String == "text_delta",
                       let text = delta["text"] as? String else { continue }
-                onText(text)
+                onEvent(.text(text))
+            case "message_start":
+                // Input-side counts come with the opening event.
+                if let u = (event["message"] as? [String: Any])?["usage"] as? [String: Any] {
+                    usage.input = u["input_tokens"] as? Int ?? 0
+                    usage.cacheRead = u["cache_read_input_tokens"] as? Int ?? 0
+                    usage.cacheWrite = u["cache_creation_input_tokens"] as? Int ?? 0
+                    onEvent(.usage(usage))
+                }
+            case "message_delta":
+                // The output count arrives with the closing one, cumulative.
+                if let u = event["usage"] as? [String: Any], let out = u["output_tokens"] as? Int {
+                    usage.output = out
+                    onEvent(.usage(usage))
+                }
             case "error":
                 let message = (event["error"] as? [String: Any])?["message"] as? String
                 throw ClaudeError.api(status: http.statusCode, message: message ?? "")

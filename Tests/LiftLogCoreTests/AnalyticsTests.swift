@@ -31,6 +31,46 @@ final class AnalyticsTests: XCTestCase {
         XCTAssertEqual(Analytics.availableMetrics("chin-ups", in: loadedBW), [.addedLoad, .maxReps])
     }
 
+    // MARK: - records
+
+    private let squat100 = [Session(date: Session.dateFormatter.date(from: "2026-08-01")!,
+                                    exercises: [ExerciseEntry(name: "squat", sets: [WorkSet(weight: 100, added: nil, reps: 5)])])]
+
+    func testFirstSetOfANewLiftIsNotARecord() {
+        XCTAssertNil(Analytics.record(for: WorkSet(weight: 100, added: nil, reps: 5), exercise: "squat", in: []))
+    }
+
+    func testHeavierThanEverIsALoadRecord() {
+        XCTAssertEqual(Analytics.record(for: WorkSet(weight: 102.5, added: nil, reps: 1), exercise: "squat", in: squat100), .load)
+        XCTAssertNil(Analytics.record(for: WorkSet(weight: 95, added: nil, reps: 10), exercise: "squat", in: squat100),
+                     "lighter isn't a record however many reps")
+    }
+
+    func testMoreRepsAtTheSameLoadIsARepRecord() {
+        XCTAssertEqual(Analytics.record(for: WorkSet(weight: 100, added: nil, reps: 6), exercise: "squat", in: squat100), .reps)
+        XCTAssertNil(Analytics.record(for: WorkSet(weight: 100, added: nil, reps: 5), exercise: "squat", in: squat100),
+                     "matching isn't beating")
+    }
+
+    func testSetsLandedTodayCountAsHistory() {
+        let first = WorkSet(weight: 105, added: nil, reps: 5)
+        XCTAssertEqual(Analytics.record(for: first, exercise: "squat", in: squat100), .load)
+        XCTAssertNil(Analytics.record(for: WorkSet(weight: 105, added: nil, reps: 5), exercise: "squat", in: squat100, plus: [first]),
+                     "the second 105x5 today isn't a record just because the first was")
+    }
+
+    func testBodyweightRecordsCompareAddedLoadThenReps() {
+        let history = [session("2026-08-01", "chin-ups", [WorkSet(weight: nil, added: nil, reps: 8)])]
+        XCTAssertEqual(Analytics.record(for: WorkSet(weight: nil, added: 5, reps: 3), exercise: "chin-ups", in: history), .load)
+        XCTAssertEqual(Analytics.record(for: WorkSet(weight: nil, added: nil, reps: 9), exercise: "chin-ups", in: history), .reps)
+        XCTAssertNil(Analytics.record(for: WorkSet(weight: nil, added: nil, reps: 7), exercise: "chin-ups", in: history))
+    }
+
+    func testRecordsMatchTheLiftNameCaseInsensitively() {
+        let history = [session("2026-08-01", "Squat", [WorkSet(weight: 100, added: nil, reps: 5)])]
+        XCTAssertEqual(Analytics.record(for: WorkSet(weight: 110, added: nil, reps: 1), exercise: "squat", in: history), .load)
+    }
+
     // MARK: - series
 
     func testTopSetSeriesTakesHeaviestPerSession() {

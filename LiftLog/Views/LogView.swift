@@ -25,9 +25,13 @@ struct LogView: View {
     @State private var queue: [ExerciseEntry] = []
     /// How long to rest before the timer says you're due. Persisted: it's a habit.
     @AppStorage("rest_target") private var restTarget = 90
+    /// The bar and the plates the calculator has to work with. Set in Settings.
+    @AppStorage("bar_weight") private var barWeight: Double = 20
+    @AppStorage("plate_inventory") private var inventory = PlateInventory.standard
     /// Haptic triggers — bumped on the event, never read.
     @State private var setAdded = 0
     @State private var exerciseFinished = 0
+    @State private var recordSet = 0
     /// When non-nil, the rest clock is running from this instant.
     @State private var restStart: Date?
     @FocusState private var focus: Field?
@@ -96,6 +100,9 @@ struct LogView: View {
             // 11. Feel: a tap that lands a set should be felt, and finishing more so.
             .sensoryFeedback(.impact(weight: .medium), trigger: setAdded)
             .sensoryFeedback(.success, trigger: exerciseFinished)
+            // A record lands on top of the ordinary set buzz: a heavy hit after a
+            // medium one, which reads as "more" without a second haptic vocabulary.
+            .sensoryFeedback(.impact(weight: .heavy, intensity: 1), trigger: recordSet)
             .refreshable { await store.load() }
             .onAppear { applyEditRequest(); applyPrescription() }
             .onChange(of: store.editRequest) { _, _ in applyEditRequest() }
@@ -259,6 +266,12 @@ struct LogView: View {
                              keyboard: .numberPad, focusValue: .reps)
                 }
 
+                // What to load, the moment there's a weight in the field.
+                if !isBodyweight, let target = parsedWeight,
+                   let load = PlateMath.load(target, bar: barWeight, inventory: inventory) {
+                    plateLine(load)
+                }
+
                 Button { addSet() } label: {
                     HStack(spacing: 6) {
                         Image(systemName: "plus")
@@ -396,6 +409,7 @@ struct LogView: View {
                             .background(Theme.accent, in: Circle())
                         Text(loadLabel(set))
                             .font(.body.weight(.semibold))
+                        if let record = record(at: idx) { recordBadge(record) }
                         Spacer()
                         Text("× \(set.reps)").font(.title3.weight(.heavy))
                         Button {
@@ -410,8 +424,7 @@ struct LogView: View {
                 }
                 Button {
                     if let last = sets.last {
-                        sets.append(WorkSet(weight: last.weight, added: last.added, reps: last.reps))
-                        restStart = Date()
+                        land(WorkSet(weight: last.weight, added: last.added, reps: last.reps))
                     }
                 } label: {
                     Label("repeat last set", systemImage: "arrow.uturn.down")
@@ -495,14 +508,65 @@ struct LogView: View {
     private func addSet() {
         guard let reps = parsedReps else { return }
         let added = isBodyweight ? parsedAdded : nil
-        sets.append(WorkSet(weight: isBodyweight ? nil : parsedWeight,
-                            added: (added ?? 0) > 0 ? added : nil,
-                            reps: reps))
         repsText = ""
         focus = nil
+        land(WorkSet(weight: isBodyweight ? nil : parsedWeight,
+                     added: (added ?? 0) > 0 ? added : nil,
+                     reps: reps))
+    }
+
+    /// A set is done: record it, start the rest, feel it, and line up the next.
+    /// The one path for both add-set and repeat-last.
+    private func land(_ set: WorkSet) {
+        sets.append(set)
+        if record(at: sets.count - 1) != nil { recordSet += 1 }
         restStart = Date()   // start resting the moment a set lands
         setAdded += 1
         if let plan, sets.count < plan.count { prefill(plan[sets.count]) }
+    }
+
+    /// Is the set at `index` a personal record? Judged against every other day
+    /// plus the sets landed before it today. Today's own committed copy of this
+    /// exercise is left out, so re-logging it doesn't compare a set to itself.
+    private func record(at index: Int) -> Analytics.Record? {
+        let key = Session.dateFormatter.string(from: date)
+        let past = store.sessions.filter { $0.dateString != key }
+        return Analytics.record(for: sets[index], exercise: name, in: past, plus: Array(sets[..<index]))
+    }
+
+    private func recordBadge(_ record: Analytics.Record) -> some View {
+        let label: String = record == .load ? "PR" : "REP PR"
+        return Text(label)
+            .font(.caption2.weight(.heavy)).tracking(0.5)
+            .padding(.horizontal, 6).padding(.vertical, 2)
+            .background(Theme.accent, in: Capsule())
+            .foregroundStyle(Theme.onAccent)
+    }
+
+    /// "per side  25 · 5 · 2.5 · 1.25" for the weight in the field, or "empty bar".
+    /// When the exact weight can't be made from a standard set, the nearest load
+    /// below and what it actually weighs: "per side  25 · 5 · 2.5  ≈ 85".
+    private func plateLine(_ load: PlateMath.Load) -> some View {
+        let text: String
+        if load.perSide.isEmpty {
+            text = "empty bar"
+        } else {
+            let plates = load.perSide.map { PlateMath.label($0) }.joined(separator: " · ")
+            let approx = load.isApproximate ? "  ≈ \(PlateMath.label(load.total))" : ""
+            text = "per side  " + plates + approx
+        }
+        // Always name the bar: a 20 default silently gives a 15-bar lifter the
+        // wrong plates, and this is the only place they'd ever notice.
+        let bar = "  · \(PlateMath.label(barWeight)) bar"
+        return Label {
+            Text(text + bar)
+                .font(.system(.footnote, design: .monospaced).weight(.semibold))
+        } icon: {
+            Image(systemName: "circlebadge.2.fill")
+        }
+        .font(.footnote.weight(.semibold))
+        .foregroundStyle(.secondary)
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     /// Row label for a logged set: "82.5 kg", "BW +5 kg" or "Bodyweight".

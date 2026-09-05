@@ -25,6 +25,25 @@ enum CoachModelChoice: String, CaseIterable, Identifiable, Codable {
         }
     }
 
+    /// Dollars per million tokens, input and output. Cache reads bill at a tenth
+    /// of input and cache writes at a quarter more — the platform's standing rule.
+    /// Check https://platform.claude.com/docs/en/about-claude/pricing if in doubt;
+    /// the app only ever shows the result with a tilde.
+    var rates: (input: Double, output: Double) {
+        switch self {
+        case .sonnet: return (2.0, 10.0)
+        case .opus: return (5.0, 25.0)
+        }
+    }
+
+    func cost(_ u: ClaudeService.Usage) -> Double {
+        let m = 1.0 / 1_000_000
+        return Double(u.input) * rates.input * m
+             + Double(u.cacheRead) * rates.input * 0.1 * m
+             + Double(u.cacheWrite) * rates.input * 1.25 * m
+             + Double(u.output) * rates.output * m
+    }
+
     var blurb: String {
         switch self {
         case .sonnet: return "Fast and cheap — the everyday default."
@@ -41,6 +60,9 @@ struct CoachMessage: Identifiable, Equatable {
     let role: Role
     var text: String
     var isStreaming = false
+    /// What the answer cost, once the API has said. Coach replies only.
+    var usage: ClaudeService.Usage?
+    var model: CoachModelChoice?
 }
 
 /// Drives one Coach conversation: holds the transcript, rebuilds the training
@@ -132,7 +154,7 @@ final class CoachService: ObservableObject {
         contextNote = brief.hasContent ? excerpt.note + " · with brief" : excerpt.note
 
         messages.append(CoachMessage(role: .you, text: trimmed))
-        let reply = CoachMessage(role: .coach, text: "", isStreaming: true)
+        let reply = CoachMessage(role: .coach, text: "", isStreaming: true, model: model)
         messages.append(reply)
         isResponding = true
 
@@ -140,9 +162,12 @@ final class CoachService: ObservableObject {
 
         task = Task { [weak self] in
             do {
-                for try await chunk in service.stream(system: system, turns: turns) {
+                for try await event in service.stream(system: system, turns: turns) {
                     guard let self, !Task.isCancelled else { return }
-                    self.append(chunk, to: reply.id)
+                    switch event {
+                    case .text(let chunk): self.append(chunk, to: reply.id)
+                    case .usage(let usage): self.setUsage(usage, on: reply.id)
+                    }
                 }
             } catch is CancellationError {
                 // Left the partial answer in place on purpose.
@@ -161,6 +186,11 @@ final class CoachService: ObservableObject {
     private func append(_ chunk: String, to id: UUID) {
         guard let idx = messages.firstIndex(where: { $0.id == id }) else { return }
         messages[idx].text += chunk
+    }
+
+    private func setUsage(_ usage: ClaudeService.Usage, on id: UUID) {
+        guard let idx = messages.firstIndex(where: { $0.id == id }) else { return }
+        messages[idx].usage = usage
     }
 
     private func finishStreamingMessage() {

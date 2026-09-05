@@ -19,6 +19,10 @@ struct LogView: View {
     @State private var repsText = ""
 
     @State private var showingPicker = false
+    /// The sets Coach prescribed, shown as a target and used to prefill each next set.
+    @State private var plan: [WorkSet]?
+    /// How long to rest before the timer says you're due. Persisted: it's a habit.
+    @AppStorage("rest_target") private var restTarget = 90
     /// Haptic triggers — bumped on the event, never read.
     @State private var setAdded = 0
     @State private var exerciseFinished = 0
@@ -67,6 +71,7 @@ struct LogView: View {
                     // Switching exercise starts a fresh set list for the new movement.
                     if picked.caseInsensitiveCompare(name) != .orderedSame {
                         sets = []
+                        plan = nil
                         restStart = nil
                     }
                     name = picked
@@ -89,9 +94,31 @@ struct LogView: View {
             .sensoryFeedback(.impact(weight: .medium), trigger: setAdded)
             .sensoryFeedback(.success, trigger: exerciseFinished)
             .refreshable { await store.load() }
-            .onAppear { applyEditRequest() }
+            .onAppear { applyEditRequest(); applyPrescription() }
             .onChange(of: store.editRequest) { _, _ in applyEditRequest() }
+            .onChange(of: store.prescriptionRequest) { _, _ in applyPrescription() }
         }
+    }
+
+    /// Load a prescription from Coach. The first set's numbers go in the fields
+    /// and the whole plan shows as a target; sets fill in as you actually do them,
+    /// each one prefilling the next — 3x5 becomes tap, tap, tap.
+    private func applyPrescription() {
+        guard let rx = store.prescriptionRequest else { return }
+        name = rx.name
+        sets = []
+        plan = rx.sets
+        restStart = nil
+        isBodyweight = rx.sets.first?.isBodyweight ?? false
+        prefill(rx.sets.first)
+        store.prescriptionRequest = nil
+    }
+
+    private func prefill(_ set: WorkSet?) {
+        guard let set else { return }
+        weightText = set.weight.map(WorkSet.formatWeight) ?? ""
+        addedText = set.added.flatMap { $0 > 0 ? WorkSet.formatWeight($0) : nil } ?? ""
+        repsText = String(set.reps)
     }
 
     /// Pull a "edit this past entry" request from History into the input area.
@@ -179,6 +206,15 @@ struct LogView: View {
                             .foregroundStyle(Theme.accent)
                     }
                 }
+                if let plan {
+                    Label {
+                        Text("plan  " + plan.map(\.token).joined(separator: "  "))
+                            .font(.system(.footnote, design: .monospaced).weight(.semibold))
+                    } icon: {
+                        Image(systemName: "target")
+                    }
+                    .font(.footnote.weight(.semibold)).foregroundStyle(Theme.accent)
+                }
                 if let last = lastEntry {
                     Label {
                         Text("last  " + last.sets.map(\.token).joined(separator: "  "))
@@ -248,46 +284,85 @@ struct LogView: View {
 
     private var restTimerCard: some View {
         Card {
-            HStack(spacing: 16) {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("rest")
-                        .font(.caption.weight(.heavy)).tracking(1.5)
-                        .foregroundStyle(.secondary)
-                    TimelineView(.periodic(from: restStart ?? Date(), by: 1)) { context in
-                        Text(restElapsed(at: context.date))
-                            .font(.system(size: 44, weight: .heavy))
-                            .fontWidth(.condensed)
-                            .monospacedDigit()
-                            .foregroundStyle(Theme.accent)
-                            // Digits roll over rather than snap — 0:59 to 1:00 reads
-                            // like a stopwatch, not a re-render.
-                            .contentTransition(.numericText())
-                            .animation(.snappy, value: context.date)
+            TimelineView(.periodic(from: restStart ?? Date(), by: 1)) { context in
+                let elapsed = restSeconds(at: context.date)
+                let due = elapsed >= restTarget
+                VStack(spacing: 12) {
+                    HStack(spacing: 12) {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(due ? "ready" : "rest")
+                                .font(.caption.weight(.heavy)).tracking(1.5)
+                                .foregroundStyle(due ? Theme.accent : Color.secondary)
+                            Text(clock(elapsed))
+                                .font(.system(size: 44, weight: .heavy))
+                                .fontWidth(.condensed)
+                                .monospacedDigit()
+                                .foregroundStyle(Theme.accent)
+                                // Digits roll over rather than snap — 0:59 to 1:00
+                                // reads like a stopwatch, not a re-render.
+                                .contentTransition(.numericText())
+                                .animation(.snappy, value: elapsed)
+                        }
+                        Spacer()
+                        restTargetMenu
+                        Button { restStart = Date() } label: {
+                            Image(systemName: "arrow.counterclockwise")
+                                .font(.title3.weight(.bold))
+                                .frame(width: 44, height: 44)
+                                .background(.ultraThinMaterial, in: Circle())
+                        }
+                        .buttonStyle(.plain)
+                        Button { restStart = nil } label: {
+                            Image(systemName: "xmark")
+                                .font(.subheadline.weight(.bold))
+                                .foregroundStyle(.secondary)
+                                .frame(width: 44, height: 44)
+                                .background(.ultraThinMaterial, in: Circle())
+                        }
+                        .buttonStyle(.plain)
                     }
+                    // A thin bar filling toward the target — readable at a glance,
+                    // mid-set, from across the rack.
+                    ProgressView(value: Double(min(elapsed, restTarget)), total: Double(restTarget))
+                        .tint(Theme.accent)
+                        .animation(.linear(duration: 1), value: elapsed)
                 }
-                Spacer()
-                Button { restStart = Date() } label: {
-                    Image(systemName: "arrow.counterclockwise")
-                        .font(.title2.weight(.bold))
-                        .frame(width: 52, height: 52)
-                        .background(.ultraThinMaterial, in: Circle())
-                }
-                .buttonStyle(.plain)
-                Button { restStart = nil } label: {
-                    Image(systemName: "xmark")
-                        .font(.title3.weight(.bold))
-                        .foregroundStyle(.secondary)
-                        .frame(width: 52, height: 52)
-                        .background(.ultraThinMaterial, in: Circle())
-                }
-                .buttonStyle(.plain)
+                // One buzz when rest is up. Only on the way *to* due — a reset
+                // flipping it back must not fire a second success.
+                .sensoryFeedback(.success, trigger: due) { wasDue, isDue in !wasDue && isDue }
             }
         }
     }
 
-    private func restElapsed(at now: Date) -> String {
-        let seconds = max(0, Int(now.timeIntervalSince(restStart ?? now)))
-        return String(format: "%d:%02d", seconds / 60, seconds % 60)
+    /// 1:00 / 1:30 / 2:00 / 3:00 — the rests people actually take.
+    private var restTargetMenu: some View {
+        Menu {
+            ForEach([60, 90, 120, 180], id: \.self) { seconds in
+                Button { restTarget = seconds } label: {
+                    if seconds == restTarget {
+                        Label(clock(seconds), systemImage: "checkmark")
+                    } else {
+                        Text(clock(seconds))
+                    }
+                }
+            }
+        } label: {
+            Label(clock(restTarget), systemImage: "timer")
+                .font(.footnote.weight(.heavy))
+                .monospacedDigit()
+                .padding(.horizontal, 10)
+                .frame(height: 44)
+                .background(.ultraThinMaterial, in: Capsule())
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func restSeconds(at now: Date) -> Int {
+        max(0, Int(now.timeIntervalSince(restStart ?? now)))
+    }
+
+    private func clock(_ seconds: Int) -> String {
+        String(format: "%d:%02d", seconds / 60, seconds % 60)
     }
 
     // MARK: - Current sets
@@ -394,6 +469,7 @@ struct LogView: View {
         focus = nil
         restStart = Date()   // start resting the moment a set lands
         setAdded += 1
+        if let plan, sets.count < plan.count { prefill(plan[sets.count]) }
     }
 
     /// Row label for a logged set: "82.5 kg", "BW +5 kg" or "Bodyweight".
@@ -409,6 +485,7 @@ struct LogView: View {
         sets = ex.sets
         isBodyweight = ex.sets.first?.isBodyweight ?? false
         weightText = ""; addedText = ""; repsText = ""
+        plan = nil
         restStart = nil
     }
 
@@ -421,6 +498,7 @@ struct LogView: View {
         // keeps the record either way.
         if result != .failed {
             name = ""; sets = []; weightText = ""; addedText = ""; repsText = ""; isBodyweight = false
+            plan = nil
             restStart = nil
             focus = nil
             exerciseFinished += 1

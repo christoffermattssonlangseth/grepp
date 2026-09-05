@@ -111,6 +111,72 @@ final class CoachContextTests: XCTestCase {
         XCTAssertEqual(CoachContext.excerpt(from: []).note, "No training logged yet.")
     }
 
+    // MARK: - prescriptions
+
+    private let rxFence = CoachContext.prescriptionFence
+
+    func testPrescriptionIsLiftedOutOfTheProse() {
+        let reply = CoachContext.parseReply("""
+        Next heavy squat, up 2.5 from last week:
+
+        \(rxFence)
+        squat 87.5x5 87.5x5 87.5x5
+        ```
+
+        Stop the third set at 5 even if it moves.
+        """)
+        XCTAssertEqual(reply.prescriptions.count, 1)
+        XCTAssertEqual(reply.prescriptions[0].name, "squat")
+        XCTAssertEqual(reply.prescriptions[0].sets.map(\.token), ["87.5x5", "87.5x5", "87.5x5"])
+        XCTAssertFalse(reply.prose.contains("```"), "the block must not leak into the bubble")
+        XCTAssertTrue(reply.prose.hasPrefix("Next heavy squat"))
+        XCTAssertTrue(reply.prose.hasSuffix("even if it moves."), "prose after the block survives")
+        XCTAssertNil(reply.goals)
+    }
+
+    func testSeveralExercisesAcrossSeveralBlocks() {
+        let reply = CoachContext.parseReply("""
+        \(rxFence)
+        squat 87.5x5 87.5x5 87.5x5
+        ```
+        then
+
+        \(rxFence)
+        chin-ups bwx6 bwx6 bw+5x4
+        deadlift 100x5
+        ```
+        """)
+        XCTAssertEqual(reply.prescriptions.map(\.name), ["squat", "chin-ups", "deadlift"])
+        XCTAssertEqual(reply.prescriptions[1].sets.map(\.token), ["bwx6", "bwx6", "bw+5x4"],
+                       "bodyweight tokens parse through the same path as the log")
+        XCTAssertEqual(reply.prose, "then")
+    }
+
+    func testPrescriptionToleratesADateAndSkipsJunk() {
+        let rx = CoachContext.parsePrescriptions("""
+        2026-09-05 squat 87.5x5
+        bench-press
+        just some words here
+        Deadlift 100x5
+        """)
+        XCTAssertEqual(rx.map(\.name), ["squat", "deadlift"], "a leading date is dropped; junk lines are skipped")
+        XCTAssertEqual(rx[1].name, "deadlift", "names are normalised to the log's lowercase")
+    }
+
+    func testHalfArrivedPrescriptionReadsAsStillWriting() {
+        let reply = CoachContext.parseReply("Do this next:\n\n\(rxFence)\nsqu")
+        XCTAssertEqual(reply.prose, "Do this next:")
+        XCTAssertTrue(reply.prescriptions.isEmpty)
+        XCTAssertTrue(reply.isWritingPrescription)
+    }
+
+    func testPromptTeachesThePrescriptionBlock() {
+        let text = CoachContext.systemPrompt(for: CoachContext.excerpt(from: []))
+        XCTAssertTrue(text.contains(rxFence))
+        XCTAssertTrue(text.contains("exactly as they appear in the log"), "names must match for the handoff")
+        XCTAssertTrue(text.contains("next session only"))
+    }
+
     // MARK: - chat rendering
 
     func testHeadingsBecomeBoldForTheChatBubble() {

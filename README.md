@@ -49,7 +49,10 @@ You get numbers back. An actual answer, from the screenshot above:
 > on 09-01. Eight-rep work isn't supposed to end in a 14.
 
 The prescription first, then the numbers it rests on — and a straight "the log
-doesn't show that" when it can't support one.
+doesn't show that" when it can't support one. When it prescribes your next
+session, each exercise comes as a card with a **Log** button: one tap opens the
+Session tab with the lift and the first set filled in, the plan shown as a
+target, and each set you land prefilling the next.
 
 The format **is** the data: greppable, diffable, readable by any model. Your
 history stays portable and outlives the app — usable by tools that don't exist

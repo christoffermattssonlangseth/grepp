@@ -183,6 +183,19 @@ enum CoachContext {
         two after the prescription, not before it. Size each jump from the increments \
         this lifter has been making, not a textbook default.
 
+        When you prescribe the very next session, also put each exercise in a fenced \
+        block tagged exactly `prescription`, one line per exercise in the log's own \
+        format without the date, so the app can offer to log it in one tap:
+
+        \(prescriptionFence)
+        squat 87.5x5 87.5x5 87.5x5
+        ```
+
+        Use exercise names exactly as they appear in the log — the app matches on \
+        them. Blocks are for the next session only: for a plan spanning several \
+        sessions, block the first and describe the rest in prose. Your reasoning \
+        stays outside the blocks.
+
         CALL STALLS. When a lift's top set hasn't moved in three or more sessions, say \
         so and prescribe a specific way out — hold the load and add a rep, cut ~10% and \
         build back, or swap the movement — rather than repeating the same jump that \
@@ -332,40 +345,98 @@ enum CoachContext {
     """
     }
 
-    /// One reply, split into what to show and what to offer saving.
+    /// An exercise the coach has prescribed, ready to be handed to the Log tab.
+    struct Prescription: Equatable {
+        var name: String
+        var sets: [WorkSet]
+    }
+
+    /// The fence a prescription arrives in. Its body is the log's own line format
+    /// minus the date — `squat 87.5x5 87.5x5 87.5x5` — so there is no second
+    /// format for the model to learn or the app to parse.
+    static let prescriptionFence = "```prescription"
+
+    /// One reply, split into what to show and what to offer acting on.
     struct Reply: Equatable {
-        /// The conversational part, without the file block.
+        /// The conversational part, with every block lifted out.
         var prose: String
         /// A complete goals file, once the coach has closed the fence.
         var goals: String?
-        /// The fence is open but not yet closed — the file is still streaming in.
+        /// The goals fence is open but not yet closed — still streaming in.
         var isWritingGoals: Bool
+        /// Exercises the coach prescribed, each one a "log this" away.
+        var prescriptions: [Prescription]
+        /// A prescription fence is open but not yet closed.
+        var isWritingPrescription: Bool
 
-        init(prose: String, goals: String? = nil, isWritingGoals: Bool = false) {
+        init(prose: String,
+             goals: String? = nil,
+             isWritingGoals: Bool = false,
+             prescriptions: [Prescription] = [],
+             isWritingPrescription: Bool = false) {
             self.prose = prose
             self.goals = goals
             self.isWritingGoals = isWritingGoals
+            self.prescriptions = prescriptions
+            self.isWritingPrescription = isWritingPrescription
         }
     }
 
-    /// Pull a proposed goals file out of a reply, tolerating a half-arrived one.
+    /// Lift the blocks out of a reply, tolerating half-arrived ones.
     ///
     /// Called on every streamed chunk, so a partial block has to read as "still
     /// writing" rather than as prose with a stray fence in it.
     static func parseReply(_ text: String) -> Reply {
-        guard let fence = text.range(of: goalsFence) else {
-            return Reply(prose: text)
+        var remaining = text
+        var prescriptions: [Prescription] = []
+        var writingPrescription = false
+
+        // Every complete prescription block, in order; an unclosed one ends the text.
+        while let open = remaining.range(of: prescriptionFence) {
+            let after = remaining[open.upperBound...]
+            guard let close = after.range(of: "```") else {
+                remaining = String(remaining[..<open.lowerBound])
+                writingPrescription = true
+                break
+            }
+            prescriptions += parsePrescriptions(String(after[..<close.lowerBound]))
+            remaining.removeSubrange(open.lowerBound..<close.upperBound)
         }
-        let prose = String(text[text.startIndex..<fence.lowerBound])
+
+        guard let fence = remaining.range(of: goalsFence) else {
+            return Reply(prose: remaining.trimmingCharacters(in: .whitespacesAndNewlines),
+                         prescriptions: prescriptions,
+                         isWritingPrescription: writingPrescription)
+        }
+        let prose = String(remaining[..<fence.lowerBound])
             .trimmingCharacters(in: .whitespacesAndNewlines)
-        let rest = text[fence.upperBound...]
+        let rest = remaining[fence.upperBound...]
 
         guard let close = rest.range(of: "```") else {
-            return Reply(prose: prose, isWritingGoals: true)
+            return Reply(prose: prose, isWritingGoals: true,
+                         prescriptions: prescriptions, isWritingPrescription: writingPrescription)
         }
-        let goals = String(rest[rest.startIndex..<close.lowerBound])
+        let goals = String(rest[..<close.lowerBound])
             .trimmingCharacters(in: .whitespacesAndNewlines)
-        return Reply(prose: prose, goals: goals.isEmpty ? nil : goals)
+        return Reply(prose: prose, goals: goals.isEmpty ? nil : goals,
+                     prescriptions: prescriptions, isWritingPrescription: writingPrescription)
+    }
+
+    /// One prescription per line: `name token token…`. A leading date is tolerated
+    /// and dropped, since the model has the dated format in front of it all day.
+    /// Lines that don't parse are skipped rather than failing the block.
+    static func parsePrescriptions(_ body: String) -> [Prescription] {
+        body.split(separator: "\n").compactMap { line -> Prescription? in
+            var tokens = line.trimmingCharacters(in: .whitespaces)
+                .split(separator: " ").map(String.init)
+            if let first = tokens.first, Session.dateFormatter.date(from: first) != nil {
+                tokens.removeFirst()
+            }
+            guard tokens.count >= 2 else { return nil }
+            let sets = tokens[1...].compactMap { WorkoutParser.parseSet($0) }
+            guard !sets.isEmpty else { return nil }
+            return Prescription(name: tokens[0].lowercased(), sets: sets)
+        }
     }
 
     /// Reshape a reply into markdown a chat bubble can actually render.

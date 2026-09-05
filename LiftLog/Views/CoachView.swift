@@ -199,6 +199,9 @@ struct CoachView: View {
             if reply.isWritingGoals {
                 Label("writing your goals…", systemImage: "square.and.pencil")
                     .font(.caption).foregroundStyle(.secondary)
+            } else if reply.isWritingPrescription {
+                Label("writing a prescription…", systemImage: "square.and.pencil")
+                    .font(.caption).foregroundStyle(.secondary)
             } else if message.isStreaming {
                 ProgressView().controlSize(.small)
             }
@@ -210,6 +213,34 @@ struct CoachView: View {
         if let goals = reply.goals {
             goalsCard(goals)
         }
+
+        // Each prescribed exercise is one tap from the Log tab — the advice
+        // becoming the next set is the loop closing.
+        ForEach(Array(reply.prescriptions.enumerated()), id: \.offset) { _, rx in
+            prescriptionCard(rx)
+        }
+    }
+
+    private func prescriptionCard(_ rx: CoachContext.Prescription) -> some View {
+        HStack(spacing: 12) {
+            VStack(alignment: .leading, spacing: 3) {
+                Text(Theme.readableName(rx.name))
+                    .font(.subheadline.weight(.bold))
+                Text(rx.sets.map(\.token).joined(separator: "  "))
+                    .font(.system(.footnote, design: .monospaced))
+                    .foregroundStyle(.secondary)
+            }
+            Spacer()
+            Button {
+                store.requestLog(ExerciseEntry(name: rx.name, sets: rx.sets))
+            } label: {
+                Label("Log", systemImage: "plus.circle.fill")
+                    .font(.subheadline.weight(.bold))
+            }
+            .buttonStyle(.borderedProminent)
+            .tint(Theme.accent)
+        }
+        .panel(cornerRadius: 14)
     }
 
     /// A goals file the coach has written, with the one button that commits it.

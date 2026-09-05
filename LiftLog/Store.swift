@@ -65,6 +65,15 @@ final class Store: ObservableObject {
         selectedTab = 0
     }
 
+    /// A prescription from Coach handed to the Log tab: an exercise and the sets
+    /// to do, which Log loads as a target and fills in as you complete them.
+    @Published var prescriptionRequest: ExerciseEntry?
+
+    func requestLog(_ entry: ExerciseEntry) {
+        prescriptionRequest = entry
+        selectedTab = 0
+    }
+
     /// An "open Your brief" request handed from Settings to the Coach tab, which
     /// consumes it and clears it. Same shape as `editRequest`: the brief is
     /// configured from Settings, but it belongs to Coach, which is where it's used.

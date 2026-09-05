@@ -215,7 +215,21 @@ struct CoachView: View {
         }
 
         // Each prescribed exercise is one tap from the Log tab — the advice
-        // becoming the next set is the loop closing.
+        // becoming the next set is the loop closing. Two or more and there's a
+        // single button for the lot, which Log works through in order.
+        if reply.prescriptions.count >= 2 {
+            Button {
+                store.requestLog(reply.prescriptions.map { ExerciseEntry(name: $0.name, sets: $0.sets) })
+            } label: {
+                Label("Log the session · \(reply.prescriptions.count) exercises",
+                      systemImage: "list.bullet.rectangle.portrait")
+                    .font(.subheadline.weight(.bold))
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 8)
+            }
+            .buttonStyle(.borderedProminent)
+            .tint(Theme.accent)
+        }
         ForEach(Array(reply.prescriptions.enumerated()), id: \.offset) { _, rx in
             prescriptionCard(rx)
         }
@@ -232,7 +246,7 @@ struct CoachView: View {
             }
             Spacer()
             Button {
-                store.requestLog(ExerciseEntry(name: rx.name, sets: rx.sets))
+                store.requestLog([ExerciseEntry(name: rx.name, sets: rx.sets)])
             } label: {
                 Label("Log", systemImage: "plus.circle.fill")
                     .font(.subheadline.weight(.bold))

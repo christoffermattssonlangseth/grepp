@@ -50,9 +50,11 @@ You get numbers back. An actual answer, from the screenshot above:
 
 The prescription first, then the numbers it rests on — and a straight "the log
 doesn't show that" when it can't support one. When it prescribes your next
-session, each exercise comes as a card with a **Log** button: one tap opens the
-Session tab with the lift and the first set filled in, the plan shown as a
-target, and each set you land prefilling the next.
+session, each exercise comes as a card with a **Log** button — or one **Log the
+session** button for all of them. Either way you land on the Session tab with
+the lift and the first set filled in, the plan shown as a target, each set you
+land prefilling the next, and the next exercise loading as you finish the last.
+Every exercise still pushes on its own the moment it's done.
 
 The format **is** the data: greppable, diffable, readable by any model. Your
 history stays portable and outlives the app — usable by tools that don't exist

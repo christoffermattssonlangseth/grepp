@@ -65,12 +65,15 @@ final class Store: ObservableObject {
         selectedTab = 0
     }
 
-    /// A prescription from Coach handed to the Log tab: an exercise and the sets
-    /// to do, which Log loads as a target and fills in as you complete them.
-    @Published var prescriptionRequest: ExerciseEntry?
+    /// Prescriptions from Coach handed to the Log tab, in order: exercises and
+    /// the sets to do. Log loads the first as a target and advances to the next as
+    /// each is finished — a whole session without leaving the tab. Every exercise
+    /// still pushes on its own the moment it's done; only the *navigation* is
+    /// batched, never the saves.
+    @Published var prescriptionRequest: [ExerciseEntry] = []
 
-    func requestLog(_ entry: ExerciseEntry) {
-        prescriptionRequest = entry
+    func requestLog(_ entries: [ExerciseEntry]) {
+        prescriptionRequest = entries
         selectedTab = 0
     }
 

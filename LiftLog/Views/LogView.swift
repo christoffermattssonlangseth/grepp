@@ -21,6 +21,8 @@ struct LogView: View {
     @State private var showingPicker = false
     /// The sets Coach prescribed, shown as a target and used to prefill each next set.
     @State private var plan: [WorkSet]?
+    /// Exercises still to come after this one, when Coach handed over a session.
+    @State private var queue: [ExerciseEntry] = []
     /// How long to rest before the timer says you're due. Persisted: it's a habit.
     @AppStorage("rest_target") private var restTarget = 90
     /// Haptic triggers — bumped on the event, never read.
@@ -58,6 +60,7 @@ struct LogView: View {
                     if restStart != nil { restTimerCard }
                     if !sets.isEmpty { setsCard }
                     finishButton
+                    if !queue.isEmpty { upNext }
                     if !store.status.isEmpty {
                         Text(store.status).font(.footnote).foregroundStyle(.secondary)
                     }
@@ -104,14 +107,22 @@ struct LogView: View {
     /// and the whole plan shows as a target; sets fill in as you actually do them,
     /// each one prefilling the next — 3x5 becomes tap, tap, tap.
     private func applyPrescription() {
-        guard let rx = store.prescriptionRequest else { return }
+        guard let first = store.prescriptionRequest.first else { return }
+        queue = Array(store.prescriptionRequest.dropFirst())
+        store.prescriptionRequest = []
+        restStart = nil
+        load(prescription: first)
+    }
+
+    /// Put a prescribed exercise in the input area. Leaves the rest timer alone on
+    /// purpose: between the last set of one lift and the first of the next you're
+    /// resting too, and the clock that started at that last set should keep going.
+    private func load(prescription rx: ExerciseEntry) {
         name = rx.name
         sets = []
         plan = rx.sets
-        restStart = nil
         isBodyweight = rx.sets.first?.isBodyweight ?? false
         prefill(rx.sets.first)
-        store.prescriptionRequest = nil
     }
 
     private func prefill(_ set: WorkSet?) {
@@ -427,6 +438,25 @@ struct LogView: View {
         .disabled(!canFinish)
     }
 
+    /// The rest of the handed-over session. Dismissable: going off-script is
+    /// allowed, and so is deciding you're done.
+    private var upNext: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "arrow.turn.down.right")
+            Text("next  " + queue.map { Theme.readableName($0.name) }.joined(separator: " · "))
+                .lineLimit(1)
+                .minimumScaleFactor(0.8)
+            Spacer()
+            Button { queue = [] } label: {
+                Image(systemName: "xmark.circle.fill")
+            }
+            .buttonStyle(.plain)
+        }
+        .font(.footnote.weight(.semibold))
+        .foregroundStyle(.secondary)
+        .padding(.horizontal, 4)
+    }
+
     private var finishTitle: String {
         let alreadyLogged = todayExercises.contains { $0.name.caseInsensitiveCompare(name) == .orderedSame }
         return alreadyLogged ? "update exercise" : "finish exercise"
@@ -497,11 +527,16 @@ struct LogView: View {
         // failure leaves the input so the user can retry. Today's session card
         // keeps the record either way.
         if result != .failed {
-            name = ""; sets = []; weightText = ""; addedText = ""; repsText = ""; isBodyweight = false
-            plan = nil
-            restStart = nil
-            focus = nil
             exerciseFinished += 1
+            focus = nil
+            if !queue.isEmpty {
+                // Straight on to the next prescribed lift, fields already filled.
+                load(prescription: queue.removeFirst())
+            } else {
+                name = ""; sets = []; weightText = ""; addedText = ""; repsText = ""; isBodyweight = false
+                plan = nil
+                restStart = nil
+            }
         }
     }
 }

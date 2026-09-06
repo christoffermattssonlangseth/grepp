@@ -18,5 +18,8 @@ struct RestActivityAttributes: ActivityAttributes {
         var end: Date
         /// "87.5 kg × 5" when the plan knows the next set; nil when it doesn't.
         var nextUp: String?
+        /// What the Same-again button would land — the next planned set, else
+        /// the last one — or nil when there's nothing to land.
+        var landLabel: String?
     }
 }

@@ -218,6 +218,7 @@ enum CoachContext {
         recommendation. You are not a doctor; suggest medical advice for pain, never \
         diagnose it.
 
+        \(mode == .coaching ? rememberBrief : "")
         FORMATTING. Your answer renders in a chat bubble, which shows **bold**, \
         *italics*, `code` and dash-led lists — and nothing else. No headings, no \
         tables, no numbered lists. Prose and the occasional short list.
@@ -302,6 +303,31 @@ enum CoachContext {
     /// out of the prose and offer to save it.
     static let goalsFence = "```goals.md"
 
+    /// The fence a note-to-self arrives in. Saved, it lands in coaching.md.
+    static let rememberFence = "```remember"
+
+    /// The heading the saved notes gather under in coaching.md.
+    static let notesHeading = "## Coach's notes"
+
+    private static let rememberBrief = """
+    REMEMBER. Every chat starts from the log and the brief alone; nothing said in \
+    one conversation reaches the next unless it is written down. When you learn \
+    something about this lifter worth keeping — how they respond to a stall, a \
+    preference they state, a constraint, an injury, a thing they've asked you to \
+    stop doing — offer to keep it: one or two lines in a fenced block tagged exactly \
+    `remember`, written as a note to a future you, in the third person, concrete:
+
+    \(rememberFence)
+    Holds the load and adds a rep when squat stalls; a 10% drop-back demoralises him.
+    ```
+
+    The app shows the note with a Remember button; only what they save reaches \
+    the brief, so don't announce that you've remembered anything. Say what you \
+    noticed in a line of prose, then the block. Never repeat what the brief already \
+    says, never store numbers the log already has, and at most one block per \
+    answer — most answers need none.
+
+    
     /// The opening turn of the interview, sent as the lifter's own message.
     static let goalsInterviewRequest = "Help me set my training goals."
 
@@ -448,6 +474,10 @@ enum CoachContext {
         /// The goals fence is open but not yet closed — still streaming in.
         var isWritingGoals: Bool
         /// Exercises the coach prescribed, each one a "log this" away.
+        /// A note the coach wants to keep in coaching.md, awaiting a Remember tap.
+        var memory: String?
+        /// A remember fence is open but not yet closed.
+        var isWritingMemory: Bool
         var prescriptions: [Prescription]
         /// A prescription fence is open but not yet closed.
         var isWritingPrescription: Bool
@@ -455,11 +485,15 @@ enum CoachContext {
         init(prose: String,
              goals: String? = nil,
              isWritingGoals: Bool = false,
+             memory: String? = nil,
+             isWritingMemory: Bool = false,
              prescriptions: [Prescription] = [],
              isWritingPrescription: Bool = false) {
             self.prose = prose
             self.goals = goals
             self.isWritingGoals = isWritingGoals
+            self.memory = memory
+            self.isWritingMemory = isWritingMemory
             self.prescriptions = prescriptions
             self.isWritingPrescription = isWritingPrescription
         }
@@ -486,8 +520,26 @@ enum CoachContext {
             remaining.removeSubrange(open.lowerBound..<close.upperBound)
         }
 
+        // The note to self, same shape: complete blocks lift out, an open one
+        // ends the text. Several blocks (against instructions) join as lines.
+        var memory: [String] = []
+        var writingMemory = false
+        while let open = remaining.range(of: rememberFence) {
+            let after = remaining[open.upperBound...]
+            guard let close = after.range(of: "```") else {
+                remaining = String(remaining[..<open.lowerBound])
+                writingMemory = true
+                break
+            }
+            let note = String(after[..<close.lowerBound]).trimmingCharacters(in: .whitespacesAndNewlines)
+            if !note.isEmpty { memory.append(note) }
+            remaining.removeSubrange(open.lowerBound..<close.upperBound)
+        }
+        let memoryText = memory.isEmpty ? nil : memory.joined(separator: "\n")
+
         guard let fence = remaining.range(of: goalsFence) else {
             return Reply(prose: remaining.trimmingCharacters(in: .whitespacesAndNewlines),
+                         memory: memoryText, isWritingMemory: writingMemory,
                          prescriptions: prescriptions,
                          isWritingPrescription: writingPrescription)
         }
@@ -497,12 +549,44 @@ enum CoachContext {
 
         guard let close = rest.range(of: "```") else {
             return Reply(prose: prose, isWritingGoals: true,
+                         memory: memoryText, isWritingMemory: writingMemory,
                          prescriptions: prescriptions, isWritingPrescription: writingPrescription)
         }
         let goals = String(rest[..<close.lowerBound])
             .trimmingCharacters(in: .whitespacesAndNewlines)
         return Reply(prose: prose, goals: goals.isEmpty ? nil : goals,
+                     memory: memoryText, isWritingMemory: writingMemory,
                      prescriptions: prescriptions, isWritingPrescription: writingPrescription)
+    }
+
+    /// coaching.md with a note added under the coach's own heading, one dated
+    /// bullet per line of the note. The heading is created at the end of the
+    /// file the first time; after that, notes go at the end of that section.
+    /// Everything the lifter wrote themselves is left exactly as it was.
+    static func appendingNote(_ note: String, to coaching: String, on date: Date = Date()) -> String {
+        let day = Session.dateFormatter.string(from: date)
+        let bullets = note.split(separator: "\n")
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+            .filter { !$0.isEmpty }
+            .map { line -> String in
+                let bare = line.hasPrefix("- ") ? String(line.dropFirst(2)) : line
+                return "- \(day): \(bare)"
+            }
+        guard !bullets.isEmpty else { return coaching }
+        let added = bullets.joined(separator: "\n")
+
+        let text = coaching.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let heading = text.range(of: notesHeading) else {
+            return (text.isEmpty ? "" : text + "\n\n") + notesHeading + "\n\n" + added + "\n"
+        }
+        // End of the section: the next heading after ours, or the end of the file.
+        let end = text[heading.upperBound...].range(of: "\n#")?.lowerBound ?? text.endIndex
+        let before = String(text[..<heading.lowerBound])
+        let section = text[heading.lowerBound..<end].trimmingCharacters(in: .whitespacesAndNewlines)
+        let tail = text[end...].trimmingCharacters(in: .whitespacesAndNewlines)
+        var out = before + section + (section == notesHeading ? "\n\n" : "\n") + added + "\n"
+        if !tail.isEmpty { out += "\n" + tail + "\n" }
+        return out
     }
 
     /// One prescription per line: `name token token…`. A leading date is tolerated

@@ -13,6 +13,9 @@ struct CoachView: View {
     /// The exact text last committed, so a revised file offers Save again rather
     /// than staying stuck on "Saved".
     @State private var savedGoalsText: String?
+    @State private var savedMemoryText: String?
+    @State private var savingMemory = false
+    @State private var memoryError: String?
     @State private var saveError: String?
     @State private var showingBrief = false
     /// Bumped per send, so the arrow bounces on fire.
@@ -52,6 +55,8 @@ struct CoachView: View {
                         draft = ""
                         savedGoalsText = nil
                         saveError = nil
+                        savedMemoryText = nil
+                        memoryError = nil
                     } label: {
                         Label("New chat", systemImage: "square.and.pencil")
                     }
@@ -193,6 +198,8 @@ struct CoachView: View {
     private func beginGoalsInterview() {
         savedGoalsText = nil
         saveError = nil
+        savedMemoryText = nil
+        memoryError = nil
         draft = ""
         inputFocused = false
         coach.startGoalsInterview(model: model,
@@ -214,6 +221,9 @@ struct CoachView: View {
             if reply.isWritingGoals {
                 Label("writing your goals…", systemImage: "square.and.pencil")
                     .font(.caption).foregroundStyle(.secondary)
+            } else if reply.isWritingMemory {
+                Label("making a note…", systemImage: "square.and.pencil")
+                    .font(.caption).foregroundStyle(.secondary)
             } else if reply.isWritingPrescription {
                 Label("writing a prescription…", systemImage: "square.and.pencil")
                     .font(.caption).foregroundStyle(.secondary)
@@ -233,6 +243,10 @@ struct CoachView: View {
         // raw fenced block in a chat bubble reads as noise.
         if let goals = reply.goals {
             goalsCard(goals)
+        }
+        // A note the coach wants to keep. Nothing is written until you say so.
+        if let memory = reply.memory {
+            memoryCard(memory)
         }
 
         // Each prescribed exercise is one tap from the Log tab — the advice
@@ -285,6 +299,52 @@ struct CoachView: View {
             .tint(Theme.accent)
         }
         .panel(cornerRadius: 14)
+    }
+
+    /// Something the coach noticed and would like to remember. Remember appends it
+    /// to coaching.md under the coach's own heading — the brief is the memory.
+    private func memoryCard(_ note: String) -> some View {
+        let saved = savedMemoryText == note
+
+        return VStack(alignment: .leading, spacing: 12) {
+            Label("worth remembering", systemImage: "brain")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.secondary)
+
+            Text(note)
+                .font(.footnote)
+                .textSelection(.enabled)
+                .frame(maxWidth: .infinity, alignment: .leading)
+
+            Button {
+                Task {
+                    savingMemory = true
+                    memoryError = nil
+                    if await store.remember(note) == .pushed {
+                        savedMemoryText = note
+                    } else {
+                        memoryError = store.briefStatus
+                    }
+                    savingMemory = false
+                }
+            } label: {
+                HStack(spacing: 8) {
+                    if savingMemory { ProgressView().controlSize(.small) }
+                    Text(saved ? "Remembered in \(store.coachingPath)" : "Remember")
+                        .font(.subheadline.weight(.bold))
+                }
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 10)
+            }
+            .buttonStyle(.borderedProminent)
+            .tint(saved ? Color.secondary : Theme.accent)
+            .disabled(savingMemory || saved)
+
+            if let memoryError {
+                Text(memoryError).font(.caption2).foregroundStyle(.orange)
+            }
+        }
+        .glassCard(cornerRadius: 16)
     }
 
     /// A goals file the coach has written, with the one button that commits it.

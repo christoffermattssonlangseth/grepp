@@ -11,6 +11,11 @@ import WidgetKit
 /// and syncs automatically on the next reconnect.
 @MainActor
 final class Store: ObservableObject {
+    /// The one instance. The app's scene owns it as a StateObject, and the
+    /// lock-screen intent — which the system performs in this process, scene
+    /// or no scene — reaches it here.
+    static let shared = Store()
+
     // Config (token lives in Keychain, everything else in UserDefaults).
     @AppStorage("gh_owner") var owner = ""
     @AppStorage("gh_repo") var repo = ""
@@ -149,6 +154,9 @@ final class Store: ObservableObject {
     /// The exercise being logged right now, persisted so a kill mid-session
     /// costs nothing. Nil when there's nothing worth keeping.
     @Published private(set) var draft: SessionDraft?
+    /// Bumped when the draft was changed from outside the Log screen (the
+    /// lock-screen button), so the screen knows to take it back in.
+    @Published private(set) var draftRevision = 0
 
     /// What Coach prescribed and what became of it, so the next answer can
     /// start from the session as lifted rather than as written.
@@ -221,6 +229,12 @@ final class Store: ObservableObject {
             briefStatus = error.localizedDescription
             return .failed
         }
+    }
+
+    /// Keep a note from the coach: coaching.md with the note appended under the
+    /// coach's heading, pushed like any other brief edit.
+    func remember(_ note: String) async -> CommitResult {
+        await save(CoachContext.appendingNote(note, to: brief.coaching), to: .coaching)
     }
 
     private func cacheKey(for file: BriefFile) -> String {
@@ -455,6 +469,18 @@ final class Store: ObservableObject {
         guard let data = defaults.data(forKey: plansKey),
               let decoded = try? JSONDecoder().decode([PlanRecord].self, from: data) else { return [] }
         return decoded
+    }
+
+    /// The lock-screen button: land the next planned set, or the last one
+    /// again, and restart the rest — straight into the persisted draft, since
+    /// the Log screen may not exist when the system wakes us for this.
+    func sameAgain() {
+        guard var d = draft, let set = d.sameAgainSet else { return }
+        d.sets.append(WorkSet(weight: set.weight, added: set.added, reps: set.reps))
+        d.restStart = Date()
+        saveDraft(d)
+        draftRevision += 1
+        RestSignals.sync(d)
     }
 
     func saveDraft(_ new: SessionDraft?) {

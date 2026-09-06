@@ -1,4 +1,5 @@
 import ActivityKit
+import AppIntents
 import SwiftUI
 import WidgetKit
 
@@ -34,15 +35,10 @@ struct RestActivityWidget: Widget {
                         .padding(.trailing, 4)
                 }
                 DynamicIslandExpandedRegion(.bottom) {
-                    VStack(spacing: 6) {
+                    VStack(spacing: 8) {
                         RestProgress(state: context.state)
                             .tint(Brand.accent)
-                        if let next = context.state.nextUp {
-                            Text("next · \(next)")
-                                .font(.footnote)
-                                .foregroundStyle(.secondary)
-                                .lineLimit(1)
-                        }
+                        SameAgainButton(state: context.state, due: context.isStale)
                     }
                     .padding(.horizontal, 4)
                 }
@@ -125,7 +121,41 @@ private struct RestLockScreenView: View {
             }
             RestProgress(state: state)
                 .tint(due ? Brand.onAccent : Brand.accent)
+            SameAgainButton(state: state, due: due)
         }
         .padding(16)
+    }
+}
+
+/// Lands the next set from the lock screen. The label is the set itself, so
+/// what the tap does is never in doubt. Absent when there's nothing to land.
+private struct SameAgainButton: View {
+    let state: RestActivityAttributes.ContentState
+    let due: Bool
+
+    var body: some View {
+        if let label = state.landLabel {
+            Button(intent: SameAgainIntent()) {
+                HStack(spacing: 6) {
+                    Image(systemName: "plus.circle.fill")
+                    Text(label)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.8)
+                    Spacer(minLength: 0)
+                    Text(state.nextUp == nil ? "same again" : "next")
+                        .font(.caption2.weight(.semibold))
+                        .opacity(0.7)
+                }
+                .font(.subheadline.weight(.bold))
+                .monospacedDigit()
+                .padding(.horizontal, 12)
+                .frame(maxWidth: .infinity)
+                .frame(height: 38)
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(due ? Brand.accent : Brand.onAccent)
+            .background(due ? Brand.onAccent : Brand.accent,
+                        in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+        }
     }
 }

@@ -14,11 +14,11 @@ import Foundation
 /// the Log screen syncs on appear whether or not a rest is running.
 @MainActor
 enum RestLiveActivity {
-    static func sync(start: Date?, target: Int, exercise: String, nextUp: String?) {
+    static func sync(start: Date?, target: Int, exercise: String, nextUp: String?, landLabel: String?) {
         guard let start else { end(); return }
         let end = max(start.addingTimeInterval(TimeInterval(target)), start)
         let state = RestActivityAttributes.ContentState(exercise: exercise, start: start,
-                                                        end: end, nextUp: nextUp)
+                                                        end: end, nextUp: nextUp, landLabel: landLabel)
         let content = ActivityContent(state: state, staleDate: end)
 
         if let current = Activity<RestActivityAttributes>.activities.first(where: { $0.activityState == .active }) {
@@ -36,5 +36,34 @@ enum RestLiveActivity {
         for activity in Activity<RestActivityAttributes>.activities {
             Task { await activity.end(nil, dismissalPolicy: .immediate) }
         }
+    }
+}
+
+/// Everything outside the app that mirrors the rest clock — the Live Activity
+/// and the "rest's up" notification — driven from one place by the draft, so
+/// the Log screen and a lock-screen tap keep them in step the same way.
+@MainActor
+enum RestSignals {
+    /// The rest target, as the Log screen keeps it.
+    static var target: Int {
+        let stored = UserDefaults.standard.integer(forKey: "rest_target")
+        return stored > 0 ? stored : 90
+    }
+
+    static func sync(_ draft: SessionDraft?, target: Int = RestSignals.target) {
+        guard let draft, let start = draft.restStart else {
+            RestLiveActivity.end()
+            RestNotifier.cancel()
+            return
+        }
+        let exercise = Theme.readableName(draft.name)
+        let next = draft.nextPlanned.map { "\($0.loadLabel) × \($0.reps)" }
+        let land = draft.sameAgainSet.map { "\($0.loadLabel) × \($0.reps)" }
+        RestLiveActivity.sync(start: start, target: target, exercise: exercise,
+                              nextUp: next, landLabel: land)
+
+        let remaining = target - Int(Date().timeIntervalSince(start))
+        guard remaining > 0 else { RestNotifier.cancel(); return }
+        RestNotifier.schedule(in: remaining, next: next.map { "\(exercise) · \($0)" })
     }
 }

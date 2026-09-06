@@ -329,6 +329,48 @@ final class CoachContextTests: XCTestCase {
         XCTAssertTrue(text.contains("cannot add to it"), "must not claim it can write the log")
     }
 
+    // MARK: - memory
+
+    func testRememberBlockLiftsOutOfTheProse() {
+        let text = "You hold rather than drop. Worth keeping.\n\n```remember\nHolds the load and adds a rep when squat stalls.\n```\n\nSo next time…"
+        let reply = CoachContext.parseReply(text)
+        XCTAssertEqual(reply.memory, "Holds the load and adds a rep when squat stalls.")
+        XCTAssertFalse(reply.isWritingMemory)
+        XCTAssertFalse(reply.prose.contains("```"), reply.prose)
+        XCTAssertTrue(reply.prose.contains("So next time"), reply.prose)
+    }
+
+    func testHalfArrivedRememberBlockReadsAsWriting() {
+        let reply = CoachContext.parseReply("Noted.\n\n```remember\nHolds the")
+        XCTAssertNil(reply.memory)
+        XCTAssertTrue(reply.isWritingMemory)
+        XCTAssertEqual(reply.prose, "Noted.")
+    }
+
+    func testRememberInstructionOnlyWhileCoaching() {
+        let excerpt = CoachContext.excerpt(from: [session("2026-08-01")])
+        XCTAssertTrue(CoachContext.systemPrompt(for: excerpt).contains("REMEMBER."))
+        XCTAssertFalse(CoachContext.systemPrompt(for: excerpt, mode: .goalsInterview).contains("REMEMBER."))
+    }
+
+    func testAppendingNoteCreatesTheSectionAtTheEnd() {
+        let day = Session.dateFormatter.date(from: "2026-09-06")!
+        XCTAssertEqual(CoachContext.appendingNote("Holds the load.", to: "", on: day),
+                       "## Coach's notes\n\n- 2026-09-06: Holds the load.\n")
+        XCTAssertEqual(CoachContext.appendingNote("Holds the load.", to: "# Coaching\n\nBe blunt.\n", on: day),
+                       "# Coaching\n\nBe blunt.\n\n## Coach's notes\n\n- 2026-09-06: Holds the load.\n")
+    }
+
+    func testAppendingNoteExtendsTheSectionAndLeavesTheRestAlone() {
+        let day = Session.dateFormatter.date(from: "2026-09-06")!
+        let existing = "# Coaching\n\n## Coach's notes\n\n- 2026-09-01: Likes 5s.\n\n## Other\n\nx\n"
+        XCTAssertEqual(CoachContext.appendingNote("A\nB", to: existing, on: day),
+                       "# Coaching\n\n## Coach's notes\n\n- 2026-09-01: Likes 5s.\n- 2026-09-06: A\n- 2026-09-06: B\n\n## Other\n\nx\n")
+        XCTAssertEqual(CoachContext.appendingNote("- A", to: "## Coach's notes\n", on: day),
+                       "## Coach's notes\n\n- 2026-09-06: A\n")
+        XCTAssertEqual(CoachContext.appendingNote("  \n", to: existing, on: day), existing, "nothing to add")
+    }
+
     // MARK: - mid-session
 
     private func draft(name: String = "squat", sets: [String] = [], plan: [String]? = nil,

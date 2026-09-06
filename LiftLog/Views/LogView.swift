@@ -119,6 +119,7 @@ struct LogView: View {
             .onChange(of: currentDraft) { _, draft in store.saveDraft(draft) }
             .onChange(of: restStart) { _, _ in syncRest() }
             .onChange(of: restTarget) { _, _ in syncRest() }
+            .onChange(of: store.draftRevision) { _, _ in takeInOutsideDraft() }
             .onChange(of: store.editRequest) { _, _ in applyEditRequest() }
             .onChange(of: store.prescriptionRequest) { _, _ in applyPrescription() }
         }
@@ -150,6 +151,25 @@ struct LogView: View {
         // Whether or not a rest came back, the lock screen must agree: this is
         // what clears a Live Activity left over from a session that just stopped.
         syncRest()
+    }
+
+    /// A set landed from the lock screen: the draft moved without this screen
+    /// knowing. Take it back in whole, then line up the next set as `land` would.
+    private func takeInOutsideDraft() {
+        guard let d = store.draft else { return }
+        let grew = d.sets.count > sets.count
+        date = d.date
+        name = d.name
+        sets = d.sets
+        isBodyweight = d.isBodyweight
+        plan = d.plan
+        queue = d.queue
+        restStart = d.restStart
+        if grew {
+            if record(at: sets.count - 1) != nil { recordSet += 1 }
+            setAdded += 1
+            if let plan, sets.count < plan.count { prefill(plan[sets.count]) }
+        }
     }
 
     /// Load a prescription from Coach. The first set's numbers go in the fields
@@ -448,27 +468,7 @@ struct LogView: View {
     /// mid-rest and go away when the rest ends. Neither shows in the foreground —
     /// there, the card is the clock.
     private func syncRest() {
-        RestLiveActivity.sync(start: restStart, target: restTarget,
-                              exercise: Theme.readableName(name), nextUp: nextSet)
-        guard let start = restStart else { RestNotifier.cancel(); return }
-        let remaining = restTarget - Int(Date().timeIntervalSince(start))
-        guard remaining > 0 else { RestNotifier.cancel(); return }
-        RestNotifier.schedule(in: remaining, next: nextUp)
-    }
-
-    /// "87.5 kg × 5" — the next set without the lift, for where the lift is
-    /// already on screen.
-    private var nextSet: String? {
-        guard let plan, sets.count < plan.count, !name.isEmpty else { return nil }
-        let next = plan[sets.count]
-        return "\(loadLabel(next)) × \(next.reps)"
-    }
-
-    /// "squat · 87.5 kg × 5" when the plan knows the next set; nil when it doesn't.
-    private var nextUp: String? {
-        guard let plan, sets.count < plan.count, !name.isEmpty else { return nil }
-        let next = plan[sets.count]
-        return "\(Theme.readableName(name)) · \(loadLabel(next)) × \(next.reps)"
+        RestSignals.sync(currentDraft, target: restTarget)
     }
 
     private func restSeconds(at now: Date) -> Int {
@@ -692,11 +692,7 @@ struct LogView: View {
     }
 
     /// Row label for a logged set: "82.5 kg", "BW +5 kg" or "Bodyweight".
-    private func loadLabel(_ set: WorkSet) -> String {
-        if let w = set.weight { return "\(WorkSet.formatWeight(w)) kg" }
-        if let a = set.added, a > 0 { return "BW +\(WorkSet.formatWeight(a)) kg" }
-        return "Bodyweight"
-    }
+    private func loadLabel(_ set: WorkSet) -> String { set.loadLabel }
 
     /// Load an already-logged exercise back into the input area so its sets can be edited.
     private func loadForEditing(_ ex: ExerciseEntry) {

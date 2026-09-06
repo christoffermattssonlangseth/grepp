@@ -97,6 +97,13 @@ still queued and how long you've been resting — none of which is in the log
 until you finish the exercise. That goes as its own uncached block, so the
 log's prompt cache holds across the session.
 
+And it can remember. When it learns something worth keeping across chats — how
+you respond to a stall, a constraint, a thing you've told it to stop doing — it
+offers a note with a **Remember** button. Saved, the note goes into
+`coaching.md` under a *Coach's notes* heading, dated, and is part of the brief
+from then on. Nothing is written until you tap; the brief is the memory, and
+you can edit or delete any note in **Your brief**.
+
 And it remembers what it asked for. When you load a prescription and finish
 the lift, the app keeps the plan next to what you actually did, and the coach
 sees both for the next two weeks: "prescribed 87.5x5 ×3 · did 87.5x5 87.5x5
@@ -180,7 +187,9 @@ logged or stored anywhere else.
   accent and buzzes. Outside the app the same clock runs as a **Live Activity**
   on the lock screen and in the Dynamic Island, counting down without the app
   awake and flipping to READY when the target lands; a notification says so
-  too, and names the next set if the plan knows it.
+  too, and names the next set if the plan knows it. The Live Activity has one
+  button, labelled with the set it lands — the next planned one, or the last
+  one again — so a set goes in and the rest restarts without unlocking the phone.
 - "Today's Session" builds up live. Each finished exercise pushes to GitHub on
   its own — nothing waits on an "end session" tap that a dead phone could swallow.
 - When Coach hands over a session: the plan shows as a target, each set

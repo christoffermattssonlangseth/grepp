@@ -424,6 +424,7 @@ struct CoachView: View {
                    model: model,
                    sessions: store.sessions,
                    brief: store.brief,
+                   draft: store.draft,
                    workspace: store.anthropicWorkspace)
     }
 

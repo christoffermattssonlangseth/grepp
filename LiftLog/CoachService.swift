@@ -158,6 +158,7 @@ final class CoachService: ObservableObject {
               model: CoachModelChoice,
               sessions: [Session],
               brief: CoachContext.Brief,
+              draft: SessionDraft? = nil,
               workspace: String) {
         let trimmed = question.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty, !isResponding else { return }
@@ -180,9 +181,15 @@ final class CoachService: ObservableObject {
         // workout logged mid-conversation is picked up on the next answer.
         let excerpt = CoachContext.excerpt(from: sessions)
         let system = CoachContext.systemPrompt(for: excerpt, brief: brief, mode: mode)
-        // Say when the standing brief is in play — otherwise there's no way to
-        // tell from the answers whether the coaching notes were picked up.
-        contextNote = brief.hasContent ? excerpt.note + " · brief" : excerpt.note
+        // The lift in the lifter's hands right now, which the log doesn't have
+        // yet. Sent as its own uncached block so the log's cache holds.
+        let live = mode == .coaching ? CoachContext.inProgressNote(draft) : nil
+        // Say what's in play — otherwise there's no way to tell from the answers
+        // whether the coaching notes or the live session were picked up.
+        var note = excerpt.note
+        if brief.hasContent { note += " · brief" }
+        if live != nil { note += " · mid-session" }
+        contextNote = note
 
         messages.append(CoachMessage(role: .you, text: trimmed))
         let reply = CoachMessage(role: .coach, text: "", isStreaming: true, model: model)
@@ -194,7 +201,7 @@ final class CoachService: ObservableObject {
 
         task = Task { [weak self] in
             do {
-                for try await event in service.stream(system: system, turns: turns) {
+                for try await event in service.stream(system: system, live: live, turns: turns) {
                     guard let self, !Task.isCancelled else { return }
                     switch event {
                     case .text(let chunk): self.append(chunk, to: reply.id)

@@ -82,11 +82,15 @@ struct ClaudeService {
     /// Stream one answer. Text arrives as **chunks** of new text, not the whole
     /// answer so far — the caller appends. Usage arrives as the API reports it:
     /// input counts at the start, the output count at the end.
-    func stream(system: String, turns: [Turn]) -> AsyncThrowingStream<Event, Error> {
+    ///
+    /// `live` is a second system block that is *not* cached: what's true right
+    /// now and different next time (the set landed a minute ago). It goes after
+    /// the cached block, so the log's cache prefix survives it changing.
+    func stream(system: String, live: String? = nil, turns: [Turn]) -> AsyncThrowingStream<Event, Error> {
         AsyncThrowingStream { continuation in
             let task = Task {
                 do {
-                    try await send(system: system, turns: turns) { continuation.yield($0) }
+                    try await send(system: system, live: live, turns: turns) { continuation.yield($0) }
                     continuation.finish()
                 } catch {
                     continuation.finish(throwing: error)
@@ -96,7 +100,7 @@ struct ClaudeService {
         }
     }
 
-    private func send(system: String, turns: [Turn], onEvent: (Event) -> Void) async throws {
+    private func send(system: String, live: String?, turns: [Turn], onEvent: (Event) -> Void) async throws {
         guard !apiKey.isEmpty else { throw ClaudeError.missingKey }
 
         var request = URLRequest(url: Self.endpoint)
@@ -110,7 +114,7 @@ struct ClaudeService {
         if !workspace.isEmpty {
             request.setValue(workspace, forHTTPHeaderField: "anthropic-workspace-id")
         }
-        request.httpBody = try JSONSerialization.data(withJSONObject: body(system: system, turns: turns))
+        request.httpBody = try JSONSerialization.data(withJSONObject: body(system: system, live: live, turns: turns))
 
         let (bytes, response) = try await URLSession.shared.bytes(for: request)
         guard let http = response as? HTTPURLResponse else { throw ClaudeError.notHTTP }
@@ -173,23 +177,33 @@ struct ClaudeService {
         }
     }
 
-    private func body(system: String, turns: [Turn]) -> [String: Any] {
+    private func body(system: String, live: String?, turns: [Turn]) -> [String: Any] {
         [
             "model": model.apiID,
             "max_tokens": Self.maxTokens,
             "stream": true,
-            // The system prompt is an array of blocks so the training log can carry
-            // cache_control: it's byte-identical across every turn of a conversation,
-            // so caching makes follow-up questions markedly cheaper. A log shorter
-            // than the model's minimum cacheable prefix simply isn't cached — no
-            // error, no benefit.
-            "system": [[
-                "type": "text",
-                "text": system,
-                "cache_control": ["type": "ephemeral"],
-            ]],
+            "system": Self.systemBlocks(system: system, live: live),
             "messages": Self.alternating(turns).map { ["role": $0.role.rawValue, "content": $0.text] },
         ]
+    }
+
+    /// The system prompt is an array of blocks so the training log can carry
+    /// cache_control: it's byte-identical across every turn of a conversation,
+    /// so caching makes follow-up questions markedly cheaper. A log shorter
+    /// than the model's minimum cacheable prefix simply isn't cached — no
+    /// error, no benefit. The live block, when there is one, follows *without*
+    /// a cache marker: it changes with every set, and a cache breakpoint only
+    /// covers what comes before it.
+    static func systemBlocks(system: String, live: String?) -> [[String: Any]] {
+        var blocks: [[String: Any]] = [[
+            "type": "text",
+            "text": system,
+            "cache_control": ["type": "ephemeral"],
+        ]]
+        if let live, !live.isEmpty {
+            blocks.append(["type": "text", "text": live])
+        }
+        return blocks
     }
 
     /// The API requires roles to strictly alternate. They normally do, but a

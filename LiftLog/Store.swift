@@ -1,6 +1,7 @@
 import Foundation
 import SwiftUI
 import Combine
+import WidgetKit
 
 /// App-wide state: config, the loaded sessions, and sync with GitHub.
 ///
@@ -34,7 +35,9 @@ final class Store: ObservableObject {
     /// service — never in UserDefaults, and never in source (this repo is public).
     @Published var anthropicKey: String = CoachCredentials.stored ?? ""
 
-    @Published private(set) var sessions: [Session] = []
+    @Published private(set) var sessions: [Session] = [] {
+        didSet { publishWidgetSnapshot() }
+    }
     @Published private(set) var fileSHA: String?
     @Published var status: String = ""
     @Published var isBusy = false
@@ -262,6 +265,19 @@ final class Store: ObservableObject {
             }
         }
         return result
+    }
+
+    /// Hand the home screen widget the latest session. Only when it changed:
+    /// a reload per parse would be noise, and sessions re-parse on every load.
+    private func publishWidgetSnapshot() {
+        let snapshot = sessions.max(by: { $0.date < $1.date }).map { last in
+            WidgetSnapshot(day: last.dateString, lines: last.exercises.map {
+                WidgetSnapshot.Line(name: $0.name, sets: $0.sets.map(\.token).joined(separator: " "))
+            })
+        }
+        guard snapshot != WidgetSnapshot.load() else { return }
+        WidgetSnapshot.save(snapshot)
+        WidgetCenter.shared.reloadTimelines(ofKind: WidgetSnapshot.kind)
     }
 
     // MARK: - Load

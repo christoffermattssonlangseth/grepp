@@ -22,13 +22,90 @@ enum Analytics {
         case oneRepMax = "Est. 1RM"  // derived, for comparing across rep schemes
         case addedLoad = "Added load" // extra load on a bodyweight lift (bw+X), where weight progresses
         case maxReps = "Max reps"    // for bodyweight lifts, where reps are the progression
+        case volume = "Volume"       // kg lifted in the session: weight × reps, summed
         var id: String { rawValue }
 
         var unit: String {
             switch self {
-            case .topSet, .oneRepMax, .addedLoad: return "kg"
+            case .topSet, .oneRepMax, .addedLoad, .volume: return "kg"
             case .maxReps: return "reps"
             }
+        }
+    }
+
+    // MARK: - Tonnage
+
+    /// Kilograms moved in a set: the load times the reps. On a bodyweight lift
+    /// only the added load counts — the log doesn't know what you weigh, and a
+    /// made-up number would swamp the real ones.
+    static func tonnage(of set: WorkSet) -> Double {
+        (set.weight ?? set.added ?? 0) * Double(set.reps)
+    }
+
+    static func tonnage(of exercise: ExerciseEntry) -> Double {
+        exercise.sets.reduce(0) { $0 + tonnage(of: $1) }
+    }
+
+    static func tonnage(of session: Session) -> Double {
+        session.exercises.reduce(0) { $0 + tonnage(of: $1) }
+    }
+
+    // MARK: - Training days
+
+    /// One calendar day on the weeks grid.
+    struct TrainingDay: Equatable, Identifiable {
+        var id: String { key }
+        /// The day as the log keys it: yyyy-MM-dd.
+        let key: String
+        /// Local midnight.
+        let date: Date
+        /// Kilograms moved that day; nil when nothing was logged.
+        let tonnage: Double?
+        var trained: Bool { tonnage != nil }
+    }
+
+    /// Seven days, Monday first. A day in the future is nil.
+    struct TrainingWeek: Equatable, Identifiable {
+        var id: Date { start }
+        let start: Date
+        let days: [TrainingDay?]
+
+        var sessions: Int { days.compactMap { $0 }.filter(\.trained).count }
+        var tonnage: Double { days.compactMap { $0?.tonnage }.reduce(0, +) }
+    }
+
+    /// The last `weeks` weeks ending on `today`'s week, oldest first, each
+    /// aligned Monday to Sunday. Days are matched on the log's own date key so
+    /// a session logged as 2026-09-04 lands on 4 September wherever the phone is.
+    static func weekGrid(weeks: Int, endingOn today: Date = Date(),
+                         calendar: Calendar = .current, in sessions: [Session]) -> [TrainingWeek] {
+        guard weeks > 0 else { return [] }
+        var tonnageByDay: [String: Double] = [:]
+        for session in sessions {
+            tonnageByDay[session.dateString, default: 0] += tonnage(of: session)
+        }
+
+        let keyFormatter = DateFormatter()
+        keyFormatter.locale = Locale(identifier: "en_US_POSIX")
+        keyFormatter.timeZone = calendar.timeZone
+        keyFormatter.dateFormat = "yyyy-MM-dd"
+
+        let todayStart = calendar.startOfDay(for: today)
+        // Calendar weekdays run Sunday = 1 … Saturday = 7; a gym week starts Monday.
+        let mondayOffset = (calendar.component(.weekday, from: todayStart) + 5) % 7
+        guard let thisMonday = calendar.date(byAdding: .day, value: -mondayOffset, to: todayStart)
+        else { return [] }
+
+        return (0..<weeks).reversed().compactMap { back -> TrainingWeek? in
+            guard let monday = calendar.date(byAdding: .day, value: -7 * back, to: thisMonday)
+            else { return nil }
+            let days = (0..<7).map { offset -> TrainingDay? in
+                guard let date = calendar.date(byAdding: .day, value: offset, to: monday),
+                      date <= todayStart else { return nil }
+                let key = keyFormatter.string(from: date)
+                return TrainingDay(key: key, date: date, tonnage: tonnageByDay[key])
+            }
+            return TrainingWeek(start: monday, days: days)
         }
     }
 
@@ -86,7 +163,7 @@ enum Analytics {
     /// weight (intensity); bodyweight lifts progress by reps — or by added load once
     /// you start hanging plates on (bw+X), which stays continuous from pure bodyweight.
     static func availableMetrics(_ name: String, in sessions: [Session]) -> [Metric] {
-        guard isBodyweight(name, in: sessions) else { return [.topSet, .oneRepMax] }
+        guard isBodyweight(name, in: sessions) else { return [.topSet, .oneRepMax, .volume] }
         return hasAddedLoad(name, in: sessions) ? [.addedLoad, .maxReps] : [.maxReps]
     }
 
@@ -110,6 +187,9 @@ enum Analytics {
                 value = ex.sets.map { $0.added ?? 0 }.max()
             case .maxReps:
                 value = ex.sets.map { Double($0.reps) }.max()
+            case .volume:
+                let total = tonnage(of: ex)
+                value = total > 0 ? total : nil
             }
             return value.map { TrendPoint(date: session.date, value: $0) }
         }

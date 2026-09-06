@@ -22,7 +22,7 @@ final class AnalyticsTests: XCTestCase {
 
     func testAvailableMetricsByExerciseType() {
         let weighted = [session("2026-08-01", "squat", [WorkSet(weight: 80, added: nil, reps: 8)])]
-        XCTAssertEqual(Analytics.availableMetrics("squat", in: weighted), [.topSet, .oneRepMax])
+        XCTAssertEqual(Analytics.availableMetrics("squat", in: weighted), [.topSet, .oneRepMax, .volume])
 
         let pureBW = [session("2026-08-01", "chin-ups", [WorkSet(weight: nil, added: nil, reps: 6)])]
         XCTAssertEqual(Analytics.availableMetrics("chin-ups", in: pureBW), [.maxReps])
@@ -112,6 +112,75 @@ final class AnalyticsTests: XCTestCase {
         let single = [session("2026-08-01", "squat", [WorkSet(weight: 80, added: nil, reps: 5)])]
         let series = Analytics.series("squat", metric: .topSet, in: single)
         XCTAssertNil(Analytics.change(series))
+    }
+
+    // MARK: - tonnage
+
+    func testTonnageIsLoadTimesRepsAndBodyweightCountsAsZero() {
+        let squat = ExerciseEntry(name: "squat", sets: [
+            WorkSet(weight: 80, added: nil, reps: 5),
+            WorkSet(weight: 82.5, added: nil, reps: 4),
+        ])
+        XCTAssertEqual(Analytics.tonnage(of: squat), 400 + 330)
+
+        let chins = ExerciseEntry(name: "chin-ups", sets: [
+            WorkSet(weight: nil, added: nil, reps: 8),   // the body isn't in the log
+            WorkSet(weight: nil, added: 5, reps: 6),
+        ])
+        XCTAssertEqual(Analytics.tonnage(of: chins), 30)
+
+        let session = Session(date: date("2026-08-01"), exercises: [squat, chins])
+        XCTAssertEqual(Analytics.tonnage(of: session), 760)
+    }
+
+    func testVolumeSeriesSumsTheSessionAndSkipsEmptyOnes() {
+        let sessions = [
+            session("2026-08-01", "squat", [WorkSet(weight: 80, added: nil, reps: 5),
+                                            WorkSet(weight: 80, added: nil, reps: 5)]),
+            session("2026-08-08", "squat", [WorkSet(weight: 85, added: nil, reps: 5)]),
+        ]
+        let series = Analytics.series("squat", metric: .volume, in: sessions)
+        XCTAssertEqual(series.map(\.value), [800, 425])
+    }
+
+    // MARK: - weeks grid
+
+    private var utc: Calendar {
+        var c = Calendar(identifier: .gregorian)
+        c.timeZone = TimeZone(identifier: "UTC")!
+        return c
+    }
+
+    func testWeekGridAlignsMondayFirstAndBlanksTheFuture() {
+        // Wednesday 2 September 2026. The week is Mon 31 Aug … Sun 6 Sep.
+        let today = date("2026-09-02")
+        let sessions = [
+            session("2026-09-01", "squat", [WorkSet(weight: 80, added: nil, reps: 5)]),
+            session("2026-08-27", "bench", [WorkSet(weight: 60, added: nil, reps: 5)]),
+        ]
+        let weeks = Analytics.weekGrid(weeks: 2, endingOn: today, calendar: utc, in: sessions)
+        XCTAssertEqual(weeks.count, 2)
+
+        let this = weeks[1]
+        XCTAssertEqual(this.start, date("2026-08-31"))
+        XCTAssertEqual(this.days.map { $0?.key }, ["2026-08-31", "2026-09-01", "2026-09-02", nil, nil, nil, nil])
+        XCTAssertEqual(this.days.map { $0?.trained }, [false, true, false, nil, nil, nil, nil])
+        XCTAssertEqual(this.sessions, 1)
+        XCTAssertEqual(this.tonnage, 400)
+
+        let last = weeks[0]
+        XCTAssertEqual(last.start, date("2026-08-24"))
+        XCTAssertEqual(last.days.compactMap { $0 }.count, 7, "a past week is fully populated")
+        XCTAssertEqual(last.days[3]?.key, "2026-08-27")   // Thursday
+        XCTAssertEqual(last.days[3]?.tonnage, 300)
+        XCTAssertEqual(last.sessions, 1)
+    }
+
+    func testWeekGridOnASundayFillsTheWholeWeek() {
+        let weeks = Analytics.weekGrid(weeks: 1, endingOn: date("2026-09-06"), calendar: utc, in: [])
+        XCTAssertEqual(weeks[0].start, date("2026-08-31"))
+        XCTAssertEqual(weeks[0].days.compactMap { $0 }.count, 7)
+        XCTAssertEqual(weeks[0].sessions, 0)
     }
 
     func testEpleyOneRepMax() {

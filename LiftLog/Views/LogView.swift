@@ -117,8 +117,8 @@ struct LogView: View {
             // Everything in flight, saved on every change — one equatable value,
             // so it's one modifier rather than one per field.
             .onChange(of: currentDraft) { _, draft in store.saveDraft(draft) }
-            .onChange(of: restStart) { _, _ in syncRestNotification() }
-            .onChange(of: restTarget) { _, _ in syncRestNotification() }
+            .onChange(of: restStart) { _, _ in syncRest() }
+            .onChange(of: restTarget) { _, _ in syncRest() }
             .onChange(of: store.editRequest) { _, _ in applyEditRequest() }
             .onChange(of: store.prescriptionRequest) { _, _ in applyPrescription() }
         }
@@ -147,6 +147,9 @@ struct LogView: View {
         plan = d.plan
         queue = d.queue
         if let start = d.restStart, Date().timeIntervalSince(start) < 30 * 60 { restStart = start }
+        // Whether or not a rest came back, the lock screen must agree: this is
+        // what clears a Live Activity left over from a session that just stopped.
+        syncRest()
     }
 
     /// Load a prescription from Coach. The first set's numbers go in the fields
@@ -438,14 +441,26 @@ struct LogView: View {
         .buttonStyle(.plain)
     }
 
-    /// Keep the "rest's up" notification in step with the clock: set for when
-    /// the target lands, moved if the target changes mid-rest, cancelled when the
-    /// rest ends. It only ever shows when the phone is locked or you're elsewhere.
-    private func syncRestNotification() {
+    /// Keep the world outside the app in step with the clock: the "rest's up"
+    /// notification set for when the target lands, and the Live Activity that
+    /// shows the countdown on the lock screen. Both move if the target changes
+    /// mid-rest and go away when the rest ends. Neither shows in the foreground —
+    /// there, the card is the clock.
+    private func syncRest() {
+        RestLiveActivity.sync(start: restStart, target: restTarget,
+                              exercise: Theme.readableName(name), nextUp: nextSet)
         guard let start = restStart else { RestNotifier.cancel(); return }
         let remaining = restTarget - Int(Date().timeIntervalSince(start))
         guard remaining > 0 else { RestNotifier.cancel(); return }
         RestNotifier.schedule(in: remaining, next: nextUp)
+    }
+
+    /// "87.5 kg × 5" — the next set without the lift, for where the lift is
+    /// already on screen.
+    private var nextSet: String? {
+        guard let plan, sets.count < plan.count, !name.isEmpty else { return nil }
+        let next = plan[sets.count]
+        return "\(loadLabel(next)) × \(next.reps)"
     }
 
     /// "squat · 87.5 kg × 5" when the plan knows the next set; nil when it doesn't.

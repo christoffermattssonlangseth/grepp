@@ -329,6 +329,53 @@ final class CoachContextTests: XCTestCase {
         XCTAssertTrue(text.contains("cannot add to it"), "must not claim it can write the log")
     }
 
+    // MARK: - mid-session
+
+    private func draft(name: String = "squat", sets: [String] = [], plan: [String]? = nil,
+                       queue: [String] = [], date: String = "2026-09-06", rest: Date? = nil) -> SessionDraft {
+        let parse: (String) -> WorkSet = { WorkoutParser.parseSet($0)! }
+        return SessionDraft(date: Session.dateFormatter.date(from: date)!, name: name,
+                            sets: sets.map(parse), isBodyweight: false,
+                            weightText: "", addedText: "", repsText: "",
+                            plan: plan?.map(parse),
+                            queue: queue.map { ExerciseEntry(name: $0, sets: []) },
+                            restStart: rest)
+    }
+
+    func testNoNoteWithNothingInHand() {
+        XCTAssertNil(CoachContext.inProgressNote(nil))
+        XCTAssertNil(CoachContext.inProgressNote(draft(name: "")))
+    }
+
+    func testNoteCarriesLandedSetsPlanAndQueue() {
+        let now = Session.dateFormatter.date(from: "2026-09-06")!.addingTimeInterval(10 * 3600)
+        let d = draft(sets: ["87.5x5", "87.5x5"], plan: ["87.5x5", "87.5x5", "87.5x5"],
+                      queue: ["bench", "chin-ups"], rest: now.addingTimeInterval(-80))
+        let note = CoachContext.inProgressNote(d, now: now)!
+        XCTAssertTrue(note.hasPrefix("RIGHT NOW."), note)
+        XCTAssertTrue(note.contains("today, 2026-09-06"), note)
+        XCTAssertTrue(note.contains("squat — landed so far: 87.5x5 87.5x5"), note)
+        XCTAssertTrue(note.contains("planned: 87.5x5 87.5x5 87.5x5 (1 to go)"), note)
+        XCTAssertTrue(note.contains("Still to come this session: bench, chin-ups."), note)
+        XCTAssertTrue(note.contains("landed 1 min 20 s ago"), note)
+        XCTAssertTrue(note.contains("not in the log yet"), note)
+    }
+
+    func testNoteSaysWhenNothingHasLandedAndTheDateIsNotToday() {
+        let now = Session.dateFormatter.date(from: "2026-09-06")!
+        let note = CoachContext.inProgressNote(draft(date: "2026-09-05"), now: now)!
+        XCTAssertTrue(note.contains("under 2026-09-05, not today's date"), note)
+        XCTAssertTrue(note.contains("squat — nothing landed yet"), note)
+        XCTAssertFalse(note.contains("planned"), note)
+        XCTAssertFalse(note.contains("Still to come"), note)
+    }
+
+    func testStaleRestIsNotReported() {
+        let now = Date()
+        let note = CoachContext.inProgressNote(draft(sets: ["100x5"], rest: now.addingTimeInterval(-3600)), now: now)!
+        XCTAssertFalse(note.contains("ago"), note)
+    }
+
     func testSystemPromptHoldsBlocksWhenTheSessionIsOver() {
         // "I'm done for today" should get a review and a prose look-ahead, not a
         // set of one-tap cards that would land on top of today's real session.

@@ -363,6 +363,50 @@ enum CoachContext {
     static let prescriptionFence = "```prescription"
 
     /// One reply, split into what to show and what to offer acting on.
+    // MARK: - Mid-session
+
+    /// What the lifter is doing *right now*, for a question asked between sets.
+    ///
+    /// The log only gets an exercise when it's finished, so mid-lift the sets
+    /// already landed, the plan and the queue exist nowhere the coach can see
+    /// them. This puts them in front of it. Nil when there's nothing in hand —
+    /// no lift chosen, nothing landed, nothing queued.
+    static func inProgressNote(_ draft: SessionDraft?, now: Date = Date()) -> String? {
+        guard let draft, !draft.isEmpty else { return nil }
+
+        var lines: [String] = []
+        let day = Session.dateFormatter.string(from: draft.date)
+        let today = Session.dateFormatter.string(from: now)
+        let when = day == today ? "today, \(day)" : "under \(day), not today's date"
+        lines.append("RIGHT NOW. The lifter is mid-session (\(when)). This is the lift in " +
+                     "their hands; it is not in the log yet and won't be until they finish it:")
+
+        if !draft.name.isEmpty {
+            var line = draft.name
+            line += draft.sets.isEmpty ? " — nothing landed yet"
+                                       : " — landed so far: " + draft.sets.map(\.token).joined(separator: " ")
+            if let plan = draft.plan, !plan.isEmpty {
+                let left = max(0, plan.count - draft.sets.count)
+                line += " · planned: " + plan.map(\.token).joined(separator: " ")
+                line += left == 0 ? " (plan complete)" : " (\(left) to go)"
+            }
+            lines.append(line)
+        }
+        if !draft.queue.isEmpty {
+            lines.append("Still to come this session: " + draft.queue.map(\.name).joined(separator: ", ") + ".")
+        }
+        if let start = draft.restStart {
+            let rest = Int(now.timeIntervalSince(start))
+            if rest >= 0 && rest < 30 * 60 {
+                lines.append("The last set landed \(rest / 60) min \(rest % 60) s ago; they are resting now.")
+            }
+        }
+        lines.append("Read \"this set\", \"the last set\" and \"next set\" against these numbers, " +
+                     "and count them into today alongside whatever the log already has for the " +
+                     "date. Keep the answer short enough to read between sets.")
+        return lines.joined(separator: "\n")
+    }
+
     struct Reply: Equatable {
         /// The conversational part, with every block lifted out.
         var prose: String

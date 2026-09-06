@@ -91,6 +91,12 @@ on a few years of history. It calls the
 [Messages API](https://platform.claude.com/docs/en/api/messages/create) directly
 over HTTPS, so there's no SDK or extra package to install.
 
+It also sees the lift in your hands. Between sets, "should I go up for the last
+one?" is answered against the sets you landed a minute ago, the plan, what's
+still queued and how long you've been resting — none of which is in the log
+until you finish the exercise. That goes as its own uncached block, so the
+log's prompt cache holds across the session.
+
 ### Teach it who you are
 
 Two optional files beside your log, both plain Markdown with no schema:

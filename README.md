@@ -137,6 +137,12 @@ logged or stored anywhere else.
 - Open **`LiftLog.xcodeproj`** in Xcode.
 - Source lives in `LiftLog/` (an Xcode 16 synchronized folder, so files in it
   are part of the target automatically — just add new files there).
+  `LiftLogWidgets/` is the widget extension (the Live Activity and the home
+  screen widget) and `Shared/` is the handful of files both targets compile.
+- The two targets talk through the App Group `group.CML.LiftLog`, declared in
+  each target's `.entitlements`. Automatic signing registers it; if Xcode
+  complains about the group the first time, open **Signing & Capabilities** for
+  each target and it will offer to fix it.
 - The whole palette is `Theme.accent`; the app icon is drawn from it by
   `Scripts/make-icon.py` (needs `pillow`), so a re-skin is one constant and one
   re-run rather than an edited PNG.
@@ -158,8 +164,10 @@ logged or stored anywhere else.
   gets a **PR** badge and a heavier buzz.
 - A rest timer that starts on every set and fills toward a target you pick
   (1:00 / 1:30 / 2:00 / 3:00). When you're due the whole card flips to the
-  accent and buzzes; if the phone's locked or you're in another app, a
-  notification says so — and names the next set if the plan knows it.
+  accent and buzzes. Outside the app the same clock runs as a **Live Activity**
+  on the lock screen and in the Dynamic Island, counting down without the app
+  awake and flipping to READY when the target lands; a notification says so
+  too, and names the next set if the plan knows it.
 - "Today's Session" builds up live. Each finished exercise pushes to GitHub on
   its own — nothing waits on an "end session" tap that a dead phone could swallow.
 - When Coach hands over a session: the plan shows as a target, each set
@@ -168,10 +176,13 @@ logged or stored anywhere else.
 **History** — every session, newest first. Pull to refresh. Tap an exercise to
 edit it, swipe to delete; both push like any other change.
 
-**Trends** — a progression chart per lift: top-set weight, Est. 1RM, or added
-load / max reps for bodyweight lifts, with short-term (3-week) and all-time
-change tiles. Drag along the line to read a session off it. Drawn so it can
-never show a peak you didn't lift.
+**Trends** — a progression chart per lift: top-set weight, Est. 1RM or volume
+(kg × reps over the session), or added load / max reps for bodyweight lifts,
+with short-term (3-week) and all-time change tiles. Drag along the line to
+read a session off it. Drawn so it can never show a peak you didn't lift.
+Below it, **training days**: every day of the last months as a dot, Monday to
+Sunday, deeper the more you moved, so a missed week is a blank column you can
+see without asking. With sessions and kilos this week and per week.
 
 **Coach** — a chat with Claude that has your `training.md` in front of it. Ask
 "what session should I do today" and get loads and rep schemes cited from your
@@ -181,6 +192,11 @@ session** once you've already trained today). Teach it who you are with
 
 **Settings** — the GitHub repo and token, the Claude key, your bar and plates,
 and the offline sync queue.
+
+**Home screen widget** — *Last session*: how many days ago, which day, and
+the lifts with their sets (small shows each lift's last set, medium shows them
+all). It reads a snapshot the app leaves in the App Group, never the log or
+the token, and re-renders at midnight so "2 days ago" stays true.
 
 ## Tests
 The pure-logic layer (parsing, serialization, analytics) lives in `LiftLog/Core`
@@ -194,8 +210,9 @@ swift test
 The same files compile into the iOS target via Xcode's synchronized folder, so
 `swift test` exercises the exact production code. Coverage: `training.md`
 parse/serialize round-trips, the `bw` / `bw+5` bodyweight tokens, malformed-line
-handling, the Trends analytics (top-set, Est. 1RM, added-load series, change
-tiles), and the Coach context builder — how much log gets sent, how the brief is
+handling, the Trends analytics (top-set, Est. 1RM, volume and added-load
+series, change tiles, tonnage, the Monday-first weeks grid), and the Coach
+context builder — how much log gets sent, how the brief is
 assembled, and that what reaches the model still round-trips through the parser.
 
 ## GitHub token

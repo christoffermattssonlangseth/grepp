@@ -34,6 +34,11 @@ struct TrendsView: View {
     private var recent: TrendChange? { Analytics.change(series, sinceDays: 21) }
     private var allTime: TrendChange? { Analytics.change(series) }
 
+    /// Half a year of weeks; the grid shows as many of the newest as fit.
+    private var weeks: [Analytics.TrainingWeek] {
+        Analytics.weekGrid(weeks: 26, in: store.sessions)
+    }
+
     var body: some View {
         NavigationStack {
             ScrollView {
@@ -53,6 +58,7 @@ struct TrendsView: View {
                         if availableMetrics.count > 1 { metricPicker }
                         chartCard
                         statsRow
+                        weeksCard
                     }
                     .padding()
                 }
@@ -198,6 +204,51 @@ struct TrendsView: View {
         }
     }
 
+    // MARK: - Weeks
+
+    /// Every day of the last few months as a dot: filled when you trained,
+    /// deeper the more you moved. A missed week is a blank column, visible
+    /// without asking anyone.
+    private var weeksCard: some View {
+        let thisWeek = weeks.last
+        let lastFour = weeks.suffix(4)
+        let perWeek = lastFour.isEmpty ? 0 : Double(lastFour.map(\.sessions).reduce(0, +)) / Double(lastFour.count)
+        let count = thisWeek?.sessions ?? 0
+
+        return PanelBox {
+            VStack(alignment: .leading, spacing: 12) {
+                Text("training days")
+                    .font(.caption).foregroundStyle(.secondary)
+                TrainingGrid(weeks: weeks)
+                HStack(alignment: .firstTextBaseline) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("this week").font(.caption2).foregroundStyle(.tertiary)
+                        Text(count == 1 ? "1 session" : "\(count) sessions")
+                            .font(.subheadline.weight(.bold))
+                            .contentTransition(.numericText())
+                        Text(kilos(thisWeek?.tonnage ?? 0))
+                            .font(.caption).foregroundStyle(.secondary).monospacedDigit()
+                    }
+                    Spacer()
+                    VStack(alignment: .trailing, spacing: 2) {
+                        Text("last 4 weeks").font(.caption2).foregroundStyle(.tertiary)
+                        Text(String(format: "%.1f / week", perWeek))
+                            .font(.subheadline.weight(.bold))
+                            .monospacedDigit()
+                        Text(kilos(lastFour.map(\.tonnage).reduce(0, +)))
+                            .font(.caption).foregroundStyle(.secondary).monospacedDigit()
+                    }
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
+
+    /// "8 340 kg" — grouped the way the phone's locale groups.
+    private func kilos(_ value: Double) -> String {
+        value.formatted(.number.precision(.fractionLength(0))) + " kg"
+    }
+
     // MARK: - Helpers
 
     private func formatted(_ v: Double) -> String {
@@ -230,6 +281,67 @@ struct TrendsView: View {
 
     private func clampMetric() {
         if !availableMetrics.contains(metric) { metric = availableMetrics.first ?? .topSet }
+    }
+}
+
+/// Columns are weeks, oldest on the left; rows are Monday down to Sunday.
+/// Sized to the width it's given — a wider phone simply shows more weeks.
+private struct TrainingGrid: View {
+    let weeks: [Analytics.TrainingWeek]
+
+    private let dot: CGFloat = 12
+    private let gap: CGFloat = 4
+    private let labelWidth: CGFloat = 16
+    private let rowLabels = ["M", "", "W", "", "F", "", ""]
+
+    var body: some View {
+        GeometryReader { geo in
+            let fit = Int((geo.size.width - labelWidth + gap) / (dot + gap))
+            let shown = Array(weeks.suffix(max(1, fit)))
+            let heaviest = shown.flatMap(\.days).compactMap { $0?.tonnage }.max() ?? 0
+            let today = shown.last?.days.compactMap { $0 }.last?.key
+
+            HStack(alignment: .top, spacing: gap) {
+                VStack(spacing: gap) {
+                    ForEach(0..<7, id: \.self) { row in
+                        Text(rowLabels[row])
+                            .font(.system(size: 9, weight: .bold))
+                            .foregroundStyle(.tertiary)
+                            .frame(width: labelWidth - gap, height: dot)
+                    }
+                }
+                ForEach(shown) { week in
+                    VStack(spacing: gap) {
+                        ForEach(0..<7, id: \.self) { row in
+                            cell(week.days[row], heaviest: heaviest, isToday: week.days[row]?.key == today)
+                        }
+                    }
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .trailing)
+        }
+        .frame(height: 7 * dot + 6 * gap)
+    }
+
+    private func cell(_ day: Analytics.TrainingDay?, heaviest: Double, isToday: Bool) -> some View {
+        RoundedRectangle(cornerRadius: 3, style: .continuous)
+            .fill(fill(day, heaviest: heaviest))
+            .overlay {
+                if isToday {
+                    RoundedRectangle(cornerRadius: 3, style: .continuous)
+                        .strokeBorder(Theme.accent, lineWidth: 1.5)
+                }
+            }
+            .frame(width: dot, height: dot)
+    }
+
+    /// Blank for the future, faint for a rest day, accent for a session — the
+    /// heavier the day, the deeper the accent. A bodyweight-only day still shows.
+    private func fill(_ day: Analytics.TrainingDay?, heaviest: Double) -> Color {
+        guard let day else { return .clear }
+        guard let tonnage = day.tonnage else { return Color.secondary.opacity(0.14) }
+        let intensity = heaviest > 0 ? tonnage / heaviest : 1
+        return Theme.accent.opacity(0.4 + 0.6 * intensity)
     }
 }
 

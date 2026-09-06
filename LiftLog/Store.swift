@@ -143,15 +143,21 @@ final class Store: ObservableObject {
     private let goalsCacheKey = "gh_goals_cache"
     private let pendingKey = "gh_pending"
     private let draftKey = "session_draft"
+    private let plansKey = "plan_records"
     private var defaults: UserDefaults { .standard }
 
     /// The exercise being logged right now, persisted so a kill mid-session
     /// costs nothing. Nil when there's nothing worth keeping.
     @Published private(set) var draft: SessionDraft?
 
+    /// What Coach prescribed and what became of it, so the next answer can
+    /// start from the session as lifted rather than as written.
+    @Published private(set) var plans: [PlanRecord] = []
+
     init() {
         pending = loadPending()
         draft = loadDraft()
+        plans = loadPlans()
         brief = CoachContext.Brief(coaching: defaults.string(forKey: coachingCacheKey) ?? "",
                                    goals: defaults.string(forKey: goalsCacheKey) ?? "")
         // Show cached content + any queued writes immediately, before the network load.
@@ -427,6 +433,28 @@ final class Store: ObservableObject {
     private func cacheContent(_ content: String) { defaults.set(content, forKey: cacheKey) }
     private func cachedSessions() -> [Session] {
         WorkoutParser.parse(defaults.string(forKey: cacheKey) ?? "")
+    }
+
+    /// A prescription was loaded into the Log tab.
+    func recordPlan(_ entries: [ExerciseEntry], on date: Date) {
+        plans.prescribe(entries, on: date)
+        savePlans()
+    }
+
+    /// A planned lift was finished under `date`.
+    func completePlan(_ entry: ExerciseEntry, on date: Date) {
+        plans.complete(entry, on: date)
+        savePlans()
+    }
+
+    private func savePlans() {
+        plans.prune(before: Date().addingTimeInterval(-30 * 86_400))
+        defaults.set(try? JSONEncoder().encode(plans), forKey: plansKey)
+    }
+    private func loadPlans() -> [PlanRecord] {
+        guard let data = defaults.data(forKey: plansKey),
+              let decoded = try? JSONDecoder().decode([PlanRecord].self, from: data) else { return [] }
+        return decoded
     }
 
     func saveDraft(_ new: SessionDraft?) {

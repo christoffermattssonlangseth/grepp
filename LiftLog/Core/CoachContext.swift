@@ -407,6 +407,39 @@ enum CoachContext {
         return lines.joined(separator: "\n")
     }
 
+    /// What the coach prescribed and what the log shows became of it, for the
+    /// last two weeks. Nil when nothing was prescribed in that time.
+    static func planReview(_ records: [PlanRecord], now: Date = Date()) -> String? {
+        let cutoff = now.addingTimeInterval(-14 * 86_400)
+        let recent = records
+            .filter { ($0.done ?? $0.prescribed) >= cutoff }
+            .sorted { ($0.done ?? $0.prescribed) < ($1.done ?? $1.prescribed) }
+        guard !recent.isEmpty else { return nil }
+
+        var lines = ["PRESCRIBED VS DONE. What you prescribed recently, and what the log shows:"]
+        for record in recent {
+            let planned = record.plan.map(\.token).joined(separator: " ")
+            if let done = record.done {
+                let did = record.sets.map(\.token).joined(separator: " ")
+                let verdict = record.verdict ?? "as prescribed"
+                lines.append("\(Session.dateFormatter.string(from: done)) \(record.name) — prescribed \(planned) · did \(did) (\(verdict))")
+            } else {
+                lines.append("\(record.name) — prescribed \(planned) on \(Session.dateFormatter.string(from: record.prescribed)) · not done yet")
+            }
+        }
+        lines.append("Build the next prescription on what was done, not on what was planned. A " +
+                     "lift that came up short or was skipped is a question to ask, not a failure " +
+                     "to note; a lift that went heavier than asked is a fact to keep.")
+        return lines.joined(separator: "\n")
+    }
+
+    /// Everything that's true right now and different next time: the lift in
+    /// hand and the recent plans. Sent uncached, after the log.
+    static func liveNote(draft: SessionDraft?, plans: [PlanRecord], now: Date = Date()) -> String? {
+        let parts = [inProgressNote(draft, now: now), planReview(plans, now: now)].compactMap { $0 }
+        return parts.isEmpty ? nil : parts.joined(separator: "\n\n")
+    }
+
     struct Reply: Equatable {
         /// The conversational part, with every block lifted out.
         var prose: String

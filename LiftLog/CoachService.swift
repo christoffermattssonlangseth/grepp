@@ -159,6 +159,7 @@ final class CoachService: ObservableObject {
               sessions: [Session],
               brief: CoachContext.Brief,
               draft: SessionDraft? = nil,
+              plans: [PlanRecord] = [],
               workspace: String) {
         let trimmed = question.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty, !isResponding else { return }
@@ -182,13 +183,14 @@ final class CoachService: ObservableObject {
         let excerpt = CoachContext.excerpt(from: sessions)
         let system = CoachContext.systemPrompt(for: excerpt, brief: brief, mode: mode)
         // The lift in the lifter's hands right now, which the log doesn't have
-        // yet. Sent as its own uncached block so the log's cache holds.
-        let live = mode == .coaching ? CoachContext.inProgressNote(draft) : nil
+        // yet, and how recent prescriptions went. Sent as its own uncached block
+        // so the log's cache holds.
+        let live = mode == .coaching ? CoachContext.liveNote(draft: draft, plans: plans) : nil
         // Say what's in play — otherwise there's no way to tell from the answers
         // whether the coaching notes or the live session were picked up.
         var note = excerpt.note
         if brief.hasContent { note += " · brief" }
-        if live != nil { note += " · mid-session" }
+        if draft.map({ !$0.isEmpty }) ?? false { note += " · mid-session" }
         contextNote = note
 
         messages.append(CoachMessage(role: .you, text: trimmed))

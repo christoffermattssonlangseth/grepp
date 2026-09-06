@@ -97,6 +97,13 @@ still queued and how long you've been resting — none of which is in the log
 until you finish the exercise. That goes as its own uncached block, so the
 log's prompt cache holds across the session.
 
+And it remembers what it asked for. When you load a prescription and finish
+the lift, the app keeps the plan next to what you actually did, and the coach
+sees both for the next two weeks: "prescribed 87.5x5 ×3 · did 87.5x5 87.5x5
+87.5x4 (1 rep short)", or "not done yet". The next prescription starts from
+the session as lifted, not as written. Nothing about this touches
+`training.md`; the log stays what you did.
+
 ### Teach it who you are
 
 Two optional files beside your log, both plain Markdown with no schema:
@@ -217,8 +224,8 @@ The same files compile into the iOS target via Xcode's synchronized folder, so
 `swift test` exercises the exact production code. Coverage: `training.md`
 parse/serialize round-trips, the `bw` / `bw+5` bodyweight tokens, malformed-line
 handling, the Trends analytics (top-set, Est. 1RM, volume and added-load
-series, change tiles, tonnage, the Monday-first weeks grid), and the Coach
-context builder — how much log gets sent, how the brief is
+series, change tiles, tonnage, the Monday-first weeks grid), the plan-versus-done
+verdicts, and the Coach context builder — how much log gets sent, how the brief is
 assembled, and that what reaches the model still round-trips through the parser.
 
 ## GitHub token

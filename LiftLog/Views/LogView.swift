@@ -157,6 +157,7 @@ struct LogView: View {
     /// each one prefilling the next — 3x5 becomes tap, tap, tap.
     private func applyPrescription() {
         guard let first = store.prescriptionRequest.first else { return }
+        store.recordPlan(store.prescriptionRequest, on: date)
         queue = Array(store.prescriptionRequest.dropFirst())
         store.prescriptionRequest = []
         restStart = nil
@@ -715,6 +716,7 @@ struct LogView: View {
         // failure leaves the input so the user can retry. Today's session card
         // keeps the record either way.
         if result != .failed {
+            if plan != nil { store.completePlan(entry, on: date) }
             exerciseFinished += 1
             focus = nil
             if !queue.isEmpty {

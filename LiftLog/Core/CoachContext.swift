@@ -327,7 +327,8 @@ enum CoachContext {
     says, never store numbers the log already has, and at most one block per \
     answer — most answers need none.
 
-    
+    """
+
     /// The opening turn of the interview, sent as the lifter's own message.
     static let goalsInterviewRequest = "Help me set my training goals."
 

@@ -33,6 +33,9 @@ struct ClaudeService {
         var cacheRead = 0
         var cacheWrite = 0
         var output = 0
+        /// Web searches the answer ran, billed per search on top of tokens.
+        /// Optional so chats saved before this existed still decode.
+        var searches: Int?
     }
 
     /// What the stream yields: text as it arrives, and usage as the API reports it.
@@ -185,6 +188,121 @@ struct ClaudeService {
             "system": Self.systemBlocks(system: system, live: live),
             "messages": Self.alternating(turns).map { ["role": $0.role.rawValue, "content": $0.text] },
         ]
+    }
+
+    // MARK: - Lookup
+
+    /// One answer with the web at hand, not streamed.
+    struct LookupResult {
+        var text: String
+        /// Pages the answer drew on: title and URL, in order of first use.
+        var sources: [(title: String, url: String)]
+        var usage: Usage
+    }
+
+    /// Where the coach may read: journals, indexes, preprint servers, DOI
+    /// resolution. A search that can't leave these can't cite a blog.
+    static let researchDomains = [
+        "doi.org", "pubmed.ncbi.nlm.nih.gov", "pmc.ncbi.nlm.nih.gov", "europepmc.org",
+        "link.springer.com", "journals.lww.com", "tandfonline.com", "sciencedirect.com",
+        "onlinelibrary.wiley.com", "nature.com", "frontiersin.org", "mdpi.com", "bjsm.bmj.com",
+        "journals.physiology.org", "academic.oup.com", "journals.sagepub.com", "cambridge.org",
+        "journals.humankinetics.com", "jssm.org", "sportrxiv.org", "osf.io", "biorxiv.org",
+        "medrxiv.org", "semanticscholar.org", "researchgate.net",
+    ]
+
+    /// Answer with web search and fetch available, the whole reply at once.
+    ///
+    /// Not streamed, because the API can pause a long search turn and ask for
+    /// the assistant's blocks back verbatim — search results included, in the
+    /// encrypted form they arrive in — which only works with the whole message
+    /// in hand. The text that comes out is stored like any other answer; later
+    /// turns carry the text only, so nothing encrypted has to be kept.
+    func lookup(system: String, live: String?, turns: [Turn]) async throws -> LookupResult {
+        guard !apiKey.isEmpty else { throw ClaudeError.missingKey }
+
+        var messages: [[String: Any]] = Self.alternating(turns).map { ["role": $0.role.rawValue, "content": $0.text] }
+        var text = ""
+        var sources: [(title: String, url: String)] = []
+        var usage = Usage(searches: 0)
+
+        // A paused turn hands back its blocks and continues on the next request.
+        for _ in 0..<4 {
+            var body = body(system: system, live: live, turns: [])
+            body["stream"] = false
+            body["messages"] = messages
+            body["tools"] = [
+                ["type": "web_search_20250305", "name": "web_search", "max_uses": 4,
+                 "allowed_domains": Self.researchDomains],
+                ["type": "web_fetch_20250910", "name": "web_fetch", "max_uses": 4,
+                 "allowed_domains": Self.researchDomains,
+                 "citations": ["enabled": true], "max_content_tokens": 30_000],
+            ]
+            let reply = try await post(body)
+
+            let content = reply["content"] as? [[String: Any]] ?? []
+            for block in content {
+                switch block["type"] as? String {
+                case "text":
+                    text += block["text"] as? String ?? ""
+                    for citation in block["citations"] as? [[String: Any]] ?? [] {
+                        if let url = citation["url"] as? String {
+                            Self.note(source: (citation["title"] as? String ?? url, url), into: &sources)
+                        }
+                    }
+                case "web_fetch_tool_result":
+                    if let result = block["content"] as? [String: Any], let url = result["url"] as? String {
+                        let title = (result["content"] as? [String: Any])?["title"] as? String ?? url
+                        Self.note(source: (title, url), into: &sources)
+                    }
+                default:
+                    continue
+                }
+            }
+            if let u = reply["usage"] as? [String: Any] {
+                usage.input += u["input_tokens"] as? Int ?? 0
+                usage.cacheRead += u["cache_read_input_tokens"] as? Int ?? 0
+                usage.cacheWrite += u["cache_creation_input_tokens"] as? Int ?? 0
+                usage.output += u["output_tokens"] as? Int ?? 0
+                let tools = u["server_tool_use"] as? [String: Any]
+                usage.searches = (usage.searches ?? 0) + (tools?["web_search_requests"] as? Int ?? 0)
+            }
+
+            guard reply["stop_reason"] as? String == "pause_turn" else { break }
+            messages.append(["role": "assistant", "content": content])
+        }
+        return LookupResult(text: text, sources: sources, usage: usage)
+    }
+
+    private static func note(source: (title: String, url: String), into list: inout [(title: String, url: String)]) {
+        guard !list.contains(where: { $0.url == source.url }) else { return }
+        list.append(source)
+    }
+
+    /// One plain request/response against the endpoint, same headers as the stream.
+    private func post(_ body: [String: Any]) async throws -> [String: Any] {
+        var request = URLRequest(url: Self.endpoint)
+        request.httpMethod = "POST"
+        request.timeoutInterval = 180   // a search turn takes as long as it takes
+        request.setValue(apiKey, forHTTPHeaderField: "x-api-key")
+        request.setValue(Self.apiVersion, forHTTPHeaderField: "anthropic-version")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        let workspace = workspaceID.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !workspace.isEmpty {
+            request.setValue(workspace, forHTTPHeaderField: "anthropic-workspace-id")
+        }
+        request.httpBody = try JSONSerialization.data(withJSONObject: body)
+
+        let (data, response) = try await URLSession.shared.data(for: request)
+        guard let http = response as? HTTPURLResponse else { throw ClaudeError.notHTTP }
+        guard (200..<300).contains(http.statusCode) else {
+            let reason = Self.reason(fromErrorBody: String(decoding: data, as: UTF8.self))
+            if http.statusCode == 400, reason.contains("anthropic-workspace-id") {
+                throw ClaudeError.missingWorkspace
+            }
+            throw ClaudeError.api(status: http.statusCode, message: reason)
+        }
+        return (try? JSONSerialization.jsonObject(with: data) as? [String: Any]) ?? [:]
     }
 
     /// The system prompt is an array of blocks so the training log can carry

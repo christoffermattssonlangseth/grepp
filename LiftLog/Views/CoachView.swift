@@ -207,7 +207,8 @@ struct CoachView: View {
                   : dollars >= 0.01 ? String(format: "~%.0f¢", dollars * 100)
                   : String(format: "~%.1f¢", dollars * 100)
         let cached = u.cacheRead > 0 ? " · \(k(u.cacheRead)) cached" : ""
-        return "\(k(u.input + u.cacheRead + u.cacheWrite)) in\(cached) · \(k(u.output)) out · \(money)"
+        let searched = (u.searches ?? 0) > 0 ? " · \(u.searches ?? 0) \(u.searches == 1 ? "search" : "searches")" : ""
+        return "\(k(u.input + u.cacheRead + u.cacheWrite)) in\(cached) · \(k(u.output)) out\(searched) · \(money)"
     }
 
     private func k(_ n: Int) -> String {
@@ -255,6 +256,9 @@ struct CoachView: View {
                     .font(.caption).foregroundStyle(.secondary)
             } else if reply.isWritingPrescription {
                 Label("writing a prescription…", systemImage: "square.and.pencil")
+                    .font(.caption).foregroundStyle(.secondary)
+            } else if message.isStreaming, message.isLookup == true {
+                Label("reading the paper…", systemImage: "magnifyingglass")
                     .font(.caption).foregroundStyle(.secondary)
             } else if message.isStreaming {
                 ProgressView().controlSize(.small)

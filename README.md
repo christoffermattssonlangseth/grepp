@@ -106,7 +106,12 @@ muscle grew more muscle than fewer than five. — Schoenfeld 2017, J Sports Sci.
 doi:…`. The coach reads them with the brief, cites the tag when an answer rests
 on one, and the tag in the answer is a link to the entry. Hand it a paper — an
 abstract, a DOI, a title — and it writes the entry for you, with an **Add to
-evidence** button; you never wrangle a PDF. The list lives behind **Evidence**
+evidence** button; you never wrangle a PDF. A message with a DOI or a link in
+it, or "look up …", gives the coach the web for that one answer: search and
+fetch, restricted to journals, PubMed, preprint servers and DOI links, so it
+reads the paper rather than remembering it, and the answer ends with the pages
+it read. Searches cost a cent each on top of tokens, and the cost line says
+how many ran. The list lives behind **Evidence**
 in the Coach toolbar, each entry a tap from the paper. There's a starter in
 [`docs/research-seed.md`](docs/research-seed.md), written from the model's
 memory of the literature and meant to be checked and pruned, not trusted.

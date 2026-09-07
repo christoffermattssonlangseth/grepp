@@ -437,6 +437,19 @@ final class CoachContextTests: XCTestCase {
         XCTAssertTrue(brief.hasContent)
     }
 
+    func testLookupIsSpottedFromADOIALinkOrTheWords() {
+        XCTAssertEqual(CoachContext.lookupTarget(in: "Can you add this to the findings: DOI: 10.1007/s40279-022-01784-y")?.url,
+                       "https://doi.org/10.1007/s40279-022-01784-y")
+        XCTAssertEqual(CoachContext.lookupTarget(in: "see 10.1519/JSC.0000000000002200.")?.url,
+                       "https://doi.org/10.1519/JSC.0000000000002200", "trailing full stop dropped")
+        XCTAssertEqual(CoachContext.lookupTarget(in: "read https://pubmed.ncbi.nlm.nih.gov/12345/ please"),
+                       CoachContext.LookupTarget(url: nil))
+        XCTAssertEqual(CoachContext.lookupTarget(in: "Look up the Refalo failure meta-analysis"),
+                       CoachContext.LookupTarget(url: nil))
+        XCTAssertNil(CoachContext.lookupTarget(in: "What should I squat today?"))
+        XCTAssertNil(CoachContext.lookupTarget(in: "I did 10.5 reps at 100"), "a decimal is not a DOI")
+    }
+
     // MARK: - mid-session
 
     private func draft(name: String = "squat", sets: [String] = [], plan: [String]? = nil,

@@ -345,7 +345,48 @@ enum CoachContext {
     out rather than guess one. Say in a line what it changes about how you'd coach \
     them, then the block. The app numbers the entry when they save it.
 
+    Given only a DOI or a title and no way to read the paper, don't write the entry \
+    from memory: say which paper you take it to be, if you recognise it, and ask for \
+    the abstract. The goals.md and remember blocks are for the goals file and for \
+    notes about the lifter — never park a reference in either.
+
     """
+
+    /// Bolted onto the live block when the lifter's message carries a paper to
+    /// look up. The request has web search and fetch for this one answer.
+    static let lookupBrief = """
+    LOOKUP. For this answer only you can search the web and fetch pages, limited to \
+    journals, PubMed, preprint servers and DOI links. The lifter wants a paper written \
+    up as evidence. Resolve the DOI or find the paper, read the abstract — and the \
+    results if a page has them — and write the entry in a `research` block from \
+    what you read, nothing from memory. Give the source as the authors, year and \
+    journal as the page states them, with the DOI. Then, in a few lines, what it \
+    found and what it changes about how you'd coach this lifter. If you can't reach \
+    the paper, say what you tried and ask for the abstract instead.
+    """
+
+    /// What a message is asking to be looked up, if anything: a DOI, a link, or
+    /// the words. `url` is the DOI resolved to a link the fetch tool may follow —
+    /// it can only fetch what the lifter's own message contains.
+    struct LookupTarget: Equatable {
+        var url: String?
+    }
+
+    static func lookupTarget(in message: String) -> LookupTarget? {
+        let doi = try! NSRegularExpression(pattern: "\\b(10\\.\\d{4,9}/[^\\s\"'<>)\\]]+)")
+        let whole = NSRange(message.startIndex..., in: message)
+        if let m = doi.firstMatch(in: message, range: whole), let r = Range(m.range(at: 1), in: message) {
+            let found = String(message[r]).trimmingCharacters(in: CharacterSet(charactersIn: ".,;"))
+            return LookupTarget(url: "https://doi.org/\(found)")
+        }
+        if message.range(of: "https?://", options: .regularExpression) != nil {
+            return LookupTarget(url: nil)
+        }
+        let lowered = message.lowercased()
+        let asks = ["look up", "lookup", "find the paper", "find this paper", "search for the paper",
+                    "search the literature", "what does the research say", "what does the evidence say"]
+        return asks.contains { lowered.contains($0) } ? LookupTarget(url: nil) : nil
+    }
 
     /// The heading the saved notes gather under in coaching.md.
     static let notesHeading = "## Coach's notes"

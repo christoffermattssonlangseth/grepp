@@ -35,10 +35,14 @@ enum CoachContext {
     struct Brief: Equatable {
         var coaching = ""
         var goals = ""
+        /// Findings the lifter has chosen to programme from, tagged [R1], [R2]…
+        var research = ""
 
         static let none = Brief()
 
-        var isEmpty: Bool { trimmed(coaching).text.isEmpty && trimmed(goals).text.isEmpty }
+        var isEmpty: Bool {
+            trimmed(coaching).text.isEmpty && trimmed(goals).text.isEmpty && trimmed(research).text.isEmpty
+        }
 
         /// True when either file has content — for "the brief landed" UI.
         var hasContent: Bool { !isEmpty }
@@ -218,6 +222,7 @@ enum CoachContext {
         recommendation. You are not a doctor; suggest medical advice for pain, never \
         diagnose it.
 
+        \(mode == .coaching ? rememberBrief + "\n" + researchBrief : "")
         FORMATTING. Your answer renders in a chat bubble, which shows **bold**, \
         *italics*, `code` and dash-led lists — and nothing else. No headings, no \
         tables, no numbered lists. Prose and the occasional short list.
@@ -238,9 +243,9 @@ enum CoachContext {
     private static func standingBrief(_ brief: Brief) -> String {
         let notes = trimmed(brief.coaching)
         let goals = trimmed(brief.goals)
-        guard !notes.text.isEmpty || !goals.text.isEmpty else { return "" }
+        guard !notes.text.isEmpty || !goals.text.isEmpty || !trimmed(brief.research).text.isEmpty else { return "" }
 
-        let truncation = (notes.truncated || goals.truncated)
+        let truncation = (notes.truncated || goals.truncated || trimmed(brief.research).truncated)
             ? " Some of what follows was long enough to be cut off part-way; say so if an answer seems to need the missing part."
             : ""
 
@@ -285,6 +290,23 @@ enum CoachContext {
             """
         }
 
+        let research = trimmed(brief.research)
+        if !research.text.isEmpty {
+            block += """
+            YOUR EVIDENCE BRIEF. Findings this lifter has chosen to programme from, each \
+            tagged. Where one bears on an answer, cite the tag inline, like [R3] — the \
+            app turns it into a link. Prefer these over your general knowledge where the \
+            two differ, and say when a question falls outside them rather than stretching \
+            one to cover it.
+
+            <evidence>
+            \(research.text)
+            </evidence>
+
+
+            """
+        }
+
         return block
     }
 
@@ -301,6 +323,93 @@ enum CoachContext {
     /// The fence the coach wraps a finished goals file in, so the app can lift it
     /// out of the prose and offer to save it.
     static let goalsFence = "```goals.md"
+
+    /// The fence a note-to-self arrives in. Saved, it lands in coaching.md.
+    static let rememberFence = "```remember"
+
+    /// The fence an evidence entry arrives in. Saved, it lands in research.md.
+    static let researchFence = "```research"
+
+    private static let researchBrief = """
+    EVIDENCE. When the lifter hands you a paper — an abstract, a DOI, a title, a \
+    finding they want kept — write it as an evidence entry in a fenced block tagged \
+    exactly `research`, one line per finding: the claim in one sentence with its \
+    numbers, then " — " and the source (first author, year, journal), then "doi:" \
+    and the DOI only if you know it for certain:
+
+    \(researchFence)
+    Ten or more weekly sets per muscle grew more muscle than fewer than five. — Schoenfeld 2017, J Sports Sci. doi:10.1080/02640414.2016.1210197
+    ```
+
+    Only what the source actually shows; never invent a citation, and leave the DOI \
+    out rather than guess one. Say in a line what it changes about how you'd coach \
+    them, then the block. The app numbers the entry when they save it.
+
+    Given only a DOI or a title and no way to read the paper, don't write the entry \
+    from memory: say which paper you take it to be, if you recognise it, and ask for \
+    the abstract. The goals.md and remember blocks are for the goals file and for \
+    notes about the lifter — never park a reference in either.
+
+    """
+
+    /// Bolted onto the live block when the lifter's message carries a paper to
+    /// look up. The request has web search and fetch for this one answer.
+    static let lookupBrief = """
+    LOOKUP. For this answer only you can search the web and fetch pages, limited to \
+    journals, PubMed, preprint servers and DOI links. The lifter wants a paper written \
+    up as evidence. Resolve the DOI or find the paper, read the abstract — and the \
+    results if a page has them — and write the entry in a `research` block from \
+    what you read, nothing from memory. Give the source as the authors, year and \
+    journal as the page states them, with the DOI. Then, in a few lines, what it \
+    found and what it changes about how you'd coach this lifter. If you can't reach \
+    the paper, say what you tried and ask for the abstract instead.
+    """
+
+    /// What a message is asking to be looked up, if anything: a DOI, a link, or
+    /// the words. `url` is the DOI resolved to a link the fetch tool may follow —
+    /// it can only fetch what the lifter's own message contains.
+    struct LookupTarget: Equatable {
+        var url: String?
+    }
+
+    static func lookupTarget(in message: String) -> LookupTarget? {
+        let doi = try! NSRegularExpression(pattern: "\\b(10\\.\\d{4,9}/[^\\s\"'<>)\\]]+)")
+        let whole = NSRange(message.startIndex..., in: message)
+        if let m = doi.firstMatch(in: message, range: whole), let r = Range(m.range(at: 1), in: message) {
+            let found = String(message[r]).trimmingCharacters(in: CharacterSet(charactersIn: ".,;"))
+            return LookupTarget(url: "https://doi.org/\(found)")
+        }
+        if message.range(of: "https?://", options: .regularExpression) != nil {
+            return LookupTarget(url: nil)
+        }
+        let lowered = message.lowercased()
+        let asks = ["look up", "lookup", "find the paper", "find this paper", "search for the paper",
+                    "search the literature", "what does the research say", "what does the evidence say"]
+        return asks.contains { lowered.contains($0) } ? LookupTarget(url: nil) : nil
+    }
+
+    /// The heading the saved notes gather under in coaching.md.
+    static let notesHeading = "## Coach's notes"
+
+    private static let rememberBrief = """
+    REMEMBER. Every chat starts from the log and the brief alone; nothing said in \
+    one conversation reaches the next unless it is written down. When you learn \
+    something about this lifter worth keeping — how they respond to a stall, a \
+    preference they state, a constraint, an injury, a thing they've asked you to \
+    stop doing — offer to keep it: one or two lines in a fenced block tagged exactly \
+    `remember`, written as a note to a future you, in the third person, concrete:
+
+    \(rememberFence)
+    Holds the load and adds a rep when squat stalls; a 10% drop-back demoralises him.
+    ```
+
+    The app shows the note with a Remember button; only what they save reaches \
+    the brief, so don't announce that you've remembered anything. Say what you \
+    noticed in a line of prose, then the block. Never repeat what the brief already \
+    says, never store numbers the log already has, and at most one block per \
+    answer — most answers need none.
+
+    """
 
     /// The opening turn of the interview, sent as the lifter's own message.
     static let goalsInterviewRequest = "Help me set my training goals."
@@ -363,6 +472,117 @@ enum CoachContext {
     static let prescriptionFence = "```prescription"
 
     /// One reply, split into what to show and what to offer acting on.
+    // MARK: - Mid-session
+
+    /// What the lifter is doing *right now*, for a question asked between sets.
+    ///
+    /// The log only gets an exercise when it's finished, so mid-lift the sets
+    /// already landed, the plan and the queue exist nowhere the coach can see
+    /// them. This puts them in front of it. Nil when there's nothing in hand —
+    /// no lift chosen, nothing landed, nothing queued.
+    static func inProgressNote(_ draft: SessionDraft?, now: Date = Date()) -> String? {
+        guard let draft, !draft.isEmpty else { return nil }
+
+        var lines: [String] = []
+        let day = Session.dateFormatter.string(from: draft.date)
+        let today = Session.dateFormatter.string(from: now)
+        let when = day == today ? "today, \(day)" : "under \(day), not today's date"
+        lines.append("RIGHT NOW. The lifter is mid-session (\(when)). This is the lift in " +
+                     "their hands; it is not in the log yet and won't be until they finish it:")
+
+        if !draft.name.isEmpty {
+            var line = draft.name
+            line += draft.sets.isEmpty ? " — nothing landed yet"
+                                       : " — landed so far: " + draft.sets.map(\.token).joined(separator: " ")
+            if let plan = draft.plan, !plan.isEmpty {
+                let left = max(0, plan.count - draft.sets.count)
+                line += " · planned: " + plan.map(\.token).joined(separator: " ")
+                line += left == 0 ? " (plan complete)" : " (\(left) to go)"
+            }
+            lines.append(line)
+        }
+        if !draft.queue.isEmpty {
+            lines.append("Still to come this session: " + draft.queue.map(\.name).joined(separator: ", ") + ".")
+        }
+        if let start = draft.restStart {
+            let rest = Int(now.timeIntervalSince(start))
+            if rest >= 0 && rest < 30 * 60 {
+                lines.append("The last set landed \(rest / 60) min \(rest % 60) s ago; they are resting now.")
+            }
+        }
+        lines.append("Read \"this set\", \"the last set\" and \"next set\" against these numbers, " +
+                     "and count them into today alongside whatever the log already has for the " +
+                     "date. Keep the answer short enough to read between sets.")
+        return lines.joined(separator: "\n")
+    }
+
+    /// What the coach prescribed and what the log shows became of it, for the
+    /// last two weeks. Nil when nothing was prescribed in that time.
+    static func planReview(_ records: [PlanRecord], now: Date = Date()) -> String? {
+        let cutoff = now.addingTimeInterval(-14 * 86_400)
+        let recent = records
+            .filter { ($0.done ?? $0.prescribed) >= cutoff }
+            .sorted { ($0.done ?? $0.prescribed) < ($1.done ?? $1.prescribed) }
+        guard !recent.isEmpty else { return nil }
+
+        var lines = ["PRESCRIBED VS DONE. What you prescribed recently, and what the log shows:"]
+        for record in recent {
+            let planned = record.plan.map(\.token).joined(separator: " ")
+            if let done = record.done {
+                let did = record.sets.map(\.token).joined(separator: " ")
+                let verdict = record.verdict ?? "as prescribed"
+                lines.append("\(Session.dateFormatter.string(from: done)) \(record.name) — prescribed \(planned) · did \(did) (\(verdict))")
+            } else {
+                lines.append("\(record.name) — prescribed \(planned) on \(Session.dateFormatter.string(from: record.prescribed)) · not done yet")
+            }
+        }
+        lines.append("Build the next prescription on what was done, not on what was planned. A " +
+                     "lift that came up short or was skipped is a question to ask, not a failure " +
+                     "to note; a lift that went heavier than asked is a fact to keep.")
+        return lines.joined(separator: "\n")
+    }
+
+    /// Weekly sets per muscle, oldest week first, the way a programme is
+    /// written and reviewed. Nil when nothing has been counted.
+    static func muscleReview(weekly: [MuscleMap.Credits], unmapped: [String]) -> String? {
+        let groups = MuscleGroup.ordered.filter { g in weekly.contains { ($0[g] ?? 0) > 0 } }
+        guard !groups.isEmpty else { return nil }
+
+        let labels = weekly.indices.map { i -> String in
+            let back = weekly.count - 1 - i
+            return back == 0 ? "this week" : (back == 1 ? "last week" : "\(back) weeks ago")
+        }
+        var lines = ["SETS PER MUSCLE. Working sets a week, counted by the app from the log (a " +
+                     "compound counts fully for its prime mover and half for what it also " +
+                     "trains; every logged set is a working set). Columns: " +
+                     labels.joined(separator: " · ") + "."]
+        for group in groups {
+            let cells = weekly.map { week -> String in
+                let n = week[group] ?? 0
+                return n == n.rounded() ? String(Int(n)) : String(format: "%.1f", n)
+            }
+            lines.append("\(group.rawValue): " + cells.joined(separator: " · "))
+        }
+        if !unmapped.isEmpty {
+            lines.append("Not counted anywhere (the app doesn't know these lifts): " +
+                         unmapped.joined(separator: ", ") + ".")
+        }
+        lines.append("Judge volume in sets per muscle per week, never in kilos moved. Say when a " +
+                     "muscle is getting little or nothing, and when the balance has drifted.")
+        return lines.joined(separator: "\n")
+    }
+
+    /// Everything that's true right now and different next time: the lift in
+    /// hand, the recent plans, and this month's sets. Sent uncached, after the log.
+    static func liveNote(draft: SessionDraft?, plans: [PlanRecord],
+                         weeklySets: [MuscleMap.Credits] = [], unmapped: [String] = [],
+                         now: Date = Date()) -> String? {
+        let parts = [inProgressNote(draft, now: now),
+                     planReview(plans, now: now),
+                     muscleReview(weekly: weeklySets, unmapped: unmapped)].compactMap { $0 }
+        return parts.isEmpty ? nil : parts.joined(separator: "\n\n")
+    }
+
     struct Reply: Equatable {
         /// The conversational part, with every block lifted out.
         var prose: String
@@ -371,6 +591,14 @@ enum CoachContext {
         /// The goals fence is open but not yet closed — still streaming in.
         var isWritingGoals: Bool
         /// Exercises the coach prescribed, each one a "log this" away.
+        /// A note the coach wants to keep in coaching.md, awaiting a Remember tap.
+        var memory: String?
+        /// A remember fence is open but not yet closed.
+        var isWritingMemory: Bool
+        /// Evidence entries the coach has written, one per line, awaiting a save.
+        var research: String?
+        /// A research fence is open but not yet closed.
+        var isWritingResearch: Bool
         var prescriptions: [Prescription]
         /// A prescription fence is open but not yet closed.
         var isWritingPrescription: Bool
@@ -378,11 +606,19 @@ enum CoachContext {
         init(prose: String,
              goals: String? = nil,
              isWritingGoals: Bool = false,
+             memory: String? = nil,
+             isWritingMemory: Bool = false,
+             research: String? = nil,
+             isWritingResearch: Bool = false,
              prescriptions: [Prescription] = [],
              isWritingPrescription: Bool = false) {
             self.prose = prose
             self.goals = goals
             self.isWritingGoals = isWritingGoals
+            self.memory = memory
+            self.isWritingMemory = isWritingMemory
+            self.research = research
+            self.isWritingResearch = isWritingResearch
             self.prescriptions = prescriptions
             self.isWritingPrescription = isWritingPrescription
         }
@@ -409,8 +645,15 @@ enum CoachContext {
             remaining.removeSubrange(open.lowerBound..<close.upperBound)
         }
 
+        // The note to self and the evidence entries, same shape: complete blocks
+        // lift out, an open one ends the text. Several blocks join as lines.
+        let (memoryText, writingMemory) = lift(rememberFence, from: &remaining)
+        let (researchText, writingResearch) = lift(researchFence, from: &remaining)
+
         guard let fence = remaining.range(of: goalsFence) else {
             return Reply(prose: remaining.trimmingCharacters(in: .whitespacesAndNewlines),
+                         memory: memoryText, isWritingMemory: writingMemory,
+                         research: researchText, isWritingResearch: writingResearch,
                          prescriptions: prescriptions,
                          isWritingPrescription: writingPrescription)
         }
@@ -420,12 +663,136 @@ enum CoachContext {
 
         guard let close = rest.range(of: "```") else {
             return Reply(prose: prose, isWritingGoals: true,
+                         memory: memoryText, isWritingMemory: writingMemory,
+                         research: researchText, isWritingResearch: writingResearch,
                          prescriptions: prescriptions, isWritingPrescription: writingPrescription)
         }
         let goals = String(rest[..<close.lowerBound])
             .trimmingCharacters(in: .whitespacesAndNewlines)
         return Reply(prose: prose, goals: goals.isEmpty ? nil : goals,
+                     memory: memoryText, isWritingMemory: writingMemory,
+                     research: researchText, isWritingResearch: writingResearch,
                      prescriptions: prescriptions, isWritingPrescription: writingPrescription)
+    }
+
+    /// Pull every complete block behind `fence` out of the text, joined by
+    /// newlines; an unclosed one is cut off and reported as still being written.
+    private static func lift(_ fence: String, from text: inout String) -> (String?, Bool) {
+        var found: [String] = []
+        while let open = text.range(of: fence) {
+            let after = text[open.upperBound...]
+            guard let close = after.range(of: "```") else {
+                text = String(text[..<open.lowerBound])
+                return (found.isEmpty ? nil : found.joined(separator: "\n"), true)
+            }
+            let body = String(after[..<close.lowerBound]).trimmingCharacters(in: .whitespacesAndNewlines)
+            if !body.isEmpty { found.append(body) }
+            text.removeSubrange(open.lowerBound..<close.upperBound)
+        }
+        return (found.isEmpty ? nil : found.joined(separator: "\n"), false)
+    }
+
+    // MARK: - Evidence
+
+    /// One finding in research.md: `- [R3] claim — source doi:…`.
+    struct ResearchEntry: Equatable, Identifiable {
+        var id: String { tag }
+        let tag: String      // "R3"
+        let claim: String
+        let source: String   // may be empty
+        let doi: String?
+
+        var url: URL? { doi.flatMap { URL(string: "https://doi.org/\($0)") } }
+    }
+
+    /// The tagged bullets of research.md, in file order. Anything else in the
+    /// file — headings, prose, untagged bullets — is left for the human reader.
+    static func parseResearch(_ markdown: String) -> [ResearchEntry] {
+        let bullet = try! NSRegularExpression(pattern: "^\\s*[-*]\\s*\\[(R\\d+)\\]\\s*(.+)$")
+        let doiPattern = try! NSRegularExpression(pattern: "(?:doi:\\s*|https?://doi\\.org/)(10\\.\\S+?)[.,;)]?(?=\\s|$)")
+        return markdown.split(separator: "\n").compactMap { rawLine -> ResearchEntry? in
+            let line = String(rawLine)
+            let whole = NSRange(line.startIndex..., in: line)
+            guard let m = bullet.firstMatch(in: line, range: whole),
+                  let tagRange = Range(m.range(at: 1), in: line),
+                  let bodyRange = Range(m.range(at: 2), in: line) else { return nil }
+            let body = String(line[bodyRange]).trimmingCharacters(in: .whitespaces)
+
+            var doi: String?
+            var rest = body
+            if let d = doiPattern.firstMatch(in: body, range: NSRange(body.startIndex..., in: body)),
+               let doiRange = Range(d.range(at: 1), in: body), let full = Range(d.range, in: body) {
+                doi = String(body[doiRange])
+                rest.removeSubrange(full)
+            }
+            let parts = rest.components(separatedBy: " — ")
+            let claim = parts[0].trimmingCharacters(in: .whitespaces)
+            let source = parts.dropFirst().joined(separator: " — ")
+                .trimmingCharacters(in: .whitespaces)
+                .trimmingCharacters(in: CharacterSet(charactersIn: ".,; "))
+            return ResearchEntry(tag: String(line[tagRange]), claim: claim, source: source, doi: doi)
+        }
+    }
+
+    /// research.md with the coach's entries added at the end, each given the
+    /// next free [R#] tag. A first entry starts the file with a heading.
+    static func appendingResearch(_ body: String, to research: String) -> String {
+        let lines = body.split(separator: "\n")
+            .map { line -> String in
+                var s = line.trimmingCharacters(in: .whitespaces)
+                if s.hasPrefix("- ") || s.hasPrefix("* ") { s = String(s.dropFirst(2)) }
+                // A tag the model added anyway is dropped: the app numbers entries.
+                if let close = s.range(of: "] "), s.hasPrefix("[R"),
+                   Int(s[s.index(s.startIndex, offsetBy: 2)..<close.lowerBound]) != nil {
+                    s = String(s[close.upperBound...])
+                }
+                return s
+            }
+            .filter { !$0.isEmpty }
+        guard !lines.isEmpty else { return research }
+
+        var next = (parseResearch(research).compactMap { Int($0.tag.dropFirst()) }.max() ?? 0) + 1
+        var bullets: [String] = []
+        for line in lines {
+            bullets.append("- [R\(next)] \(line)")
+            next += 1
+        }
+        let text = research.trimmingCharacters(in: .whitespacesAndNewlines)
+        if text.isEmpty {
+            return "# Evidence\n\nFindings the coach programmes from. One per line; the tag is how it cites them.\n\n"
+                + bullets.joined(separator: "\n") + "\n"
+        }
+        return text + "\n" + bullets.joined(separator: "\n") + "\n"
+    }
+
+    /// coaching.md with a note added under the coach's own heading, one dated
+    /// bullet per line of the note. The heading is created at the end of the
+    /// file the first time; after that, notes go at the end of that section.
+    /// Everything the lifter wrote themselves is left exactly as it was.
+    static func appendingNote(_ note: String, to coaching: String, on date: Date = Date()) -> String {
+        let day = Session.dateFormatter.string(from: date)
+        let bullets = note.split(separator: "\n")
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+            .filter { !$0.isEmpty }
+            .map { line -> String in
+                let bare = line.hasPrefix("- ") ? String(line.dropFirst(2)) : line
+                return "- \(day): \(bare)"
+            }
+        guard !bullets.isEmpty else { return coaching }
+        let added = bullets.joined(separator: "\n")
+
+        let text = coaching.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let heading = text.range(of: notesHeading) else {
+            return (text.isEmpty ? "" : text + "\n\n") + notesHeading + "\n\n" + added + "\n"
+        }
+        // End of the section: the next heading after ours, or the end of the file.
+        let end = text[heading.upperBound...].range(of: "\n#")?.lowerBound ?? text.endIndex
+        let before = String(text[..<heading.lowerBound])
+        let section = text[heading.lowerBound..<end].trimmingCharacters(in: .whitespacesAndNewlines)
+        let tail = text[end...].trimmingCharacters(in: .whitespacesAndNewlines)
+        var out = before + section + (section == notesHeading ? "\n\n" : "\n") + added + "\n"
+        if !tail.isEmpty { out += "\n" + tail + "\n" }
+        return out
     }
 
     /// One prescription per line: `name token token…`. A leading date is tolerated
@@ -471,7 +838,20 @@ enum CoachContext {
                 out.append(line)
             }
         }
-        return out.joined(separator: "\n")
+        return linkingEvidence(out.joined(separator: "\n"))
+    }
+
+    /// The scheme the app answers for an evidence tag tapped in a bubble.
+    static let evidenceScheme = "liftlog"
+
+    /// `[R3]` becomes a tappable link to that entry. A tag already inside a
+    /// markdown link is left alone.
+    static func linkingEvidence(_ text: String) -> String {
+        let tag = try! NSRegularExpression(pattern: "\\[(R\\d+)\\](?!\\()")
+        let ns = NSMutableString(string: text)
+        tag.replaceMatches(in: ns, range: NSRange(location: 0, length: ns.length),
+                           withTemplate: "[$1](\(evidenceScheme)://evidence/$1)")
+        return ns as String
     }
 
     /// Starter questions offered on an empty Coach screen. Weighted towards "what

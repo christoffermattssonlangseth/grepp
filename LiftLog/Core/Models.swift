@@ -28,6 +28,13 @@ struct WorkSet: Identifiable, Equatable, Codable {
         return "\(load)x\(reps)"
     }
 
+    /// The load as a person says it: "87.5 kg", "BW +5 kg", "Bodyweight".
+    var loadLabel: String {
+        if let weight { return "\(WorkSet.formatWeight(weight)) kg" }
+        if let added, added > 0 { return "BW +\(WorkSet.formatWeight(added)) kg" }
+        return "Bodyweight"
+    }
+
     static func formatWeight(_ w: Double) -> String {
         if w == w.rounded() { return String(Int(w)) }
         // Gym plates step in fractions of a kg; one decimal is plenty and keeps the

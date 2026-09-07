@@ -12,9 +12,19 @@ struct CoachView: View {
     @State private var savingGoals = false
     /// The exact text last committed, so a revised file offers Save again rather
     /// than staying stuck on "Saved".
+    @AppStorage("muscle_map") private var muscleMap = MuscleMap()
     @State private var savedGoalsText: String?
+    @State private var savedMemoryText: String?
+    @State private var savingMemory = false
+    @State private var memoryError: String?
     @State private var saveError: String?
     @State private var showingBrief = false
+    @State private var showingEvidence = false
+    /// The entry to scroll to when Evidence opens from a tapped tag.
+    @State private var evidenceTag: String?
+    @State private var savedResearchText: String?
+    @State private var savingResearch = false
+    @State private var researchError: String?
     /// Bumped per send, so the arrow bounces on fire.
     @State private var sent = 0
     @FocusState private var inputFocused: Bool
@@ -34,6 +44,17 @@ struct CoachView: View {
             // been built — TabView makes its pages lazily.
             .onChange(of: store.briefRequest) { _, _ in consumeBriefRequest() }
             .onAppear(perform: consumeBriefRequest)
+            .sheet(isPresented: $showingEvidence) {
+                EvidenceView(focus: evidenceTag)
+                    .environmentObject(store)
+            }
+            // A tapped [R3] in a bubble opens the evidence at that entry.
+            .environment(\.openURL, OpenURLAction { url in
+                guard url.scheme == CoachContext.evidenceScheme else { return .systemAction }
+                evidenceTag = url.lastPathComponent
+                showingEvidence = true
+                return .handled
+            })
             .sheet(isPresented: $showingBrief) {
                 BriefView {
                     // The sheet is already dismissing; start the interview behind it.
@@ -46,12 +67,21 @@ struct CoachView: View {
                         Label("Your brief", systemImage: "person.text.rectangle")
                     }
                 }
+                ToolbarItem(placement: .topBarLeading) {
+                    Button { evidenceTag = nil; showingEvidence = true } label: {
+                        Label("Evidence", systemImage: "books.vertical")
+                    }
+                }
                 ToolbarItem(placement: .topBarTrailing) {
                     Button {
                         coach.reset()
                         draft = ""
                         savedGoalsText = nil
                         saveError = nil
+                        savedMemoryText = nil
+                        memoryError = nil
+                        savedResearchText = nil
+                        researchError = nil
                     } label: {
                         Label("New chat", systemImage: "square.and.pencil")
                     }
@@ -177,7 +207,8 @@ struct CoachView: View {
                   : dollars >= 0.01 ? String(format: "~%.0f¢", dollars * 100)
                   : String(format: "~%.1f¢", dollars * 100)
         let cached = u.cacheRead > 0 ? " · \(k(u.cacheRead)) cached" : ""
-        return "\(k(u.input + u.cacheRead + u.cacheWrite)) in\(cached) · \(k(u.output)) out · \(money)"
+        let searched = (u.searches ?? 0) > 0 ? " · \(u.searches ?? 0) \(u.searches == 1 ? "search" : "searches")" : ""
+        return "\(k(u.input + u.cacheRead + u.cacheWrite)) in\(cached) · \(k(u.output)) out\(searched) · \(money)"
     }
 
     private func k(_ n: Int) -> String {
@@ -193,11 +224,14 @@ struct CoachView: View {
     private func beginGoalsInterview() {
         savedGoalsText = nil
         saveError = nil
+        savedMemoryText = nil
+        memoryError = nil
         draft = ""
         inputFocused = false
         coach.startGoalsInterview(model: model,
                                   sessions: store.sessions,
                                   brief: store.brief,
+                                  muscleMap: muscleMap,
                                   workspace: store.anthropicWorkspace)
     }
 
@@ -214,8 +248,17 @@ struct CoachView: View {
             if reply.isWritingGoals {
                 Label("writing your goals…", systemImage: "square.and.pencil")
                     .font(.caption).foregroundStyle(.secondary)
+            } else if reply.isWritingMemory {
+                Label("making a note…", systemImage: "square.and.pencil")
+                    .font(.caption).foregroundStyle(.secondary)
+            } else if reply.isWritingResearch {
+                Label("writing an evidence entry…", systemImage: "square.and.pencil")
+                    .font(.caption).foregroundStyle(.secondary)
             } else if reply.isWritingPrescription {
                 Label("writing a prescription…", systemImage: "square.and.pencil")
+                    .font(.caption).foregroundStyle(.secondary)
+            } else if message.isStreaming, message.isLookup == true {
+                Label("reading the paper…", systemImage: "magnifyingglass")
                     .font(.caption).foregroundStyle(.secondary)
             } else if message.isStreaming {
                 ProgressView().controlSize(.small)
@@ -233,6 +276,14 @@ struct CoachView: View {
         // raw fenced block in a chat bubble reads as noise.
         if let goals = reply.goals {
             goalsCard(goals)
+        }
+        // A note the coach wants to keep. Nothing is written until you say so.
+        if let memory = reply.memory {
+            memoryCard(memory)
+        }
+        // Evidence the coach has written up from a paper you gave it.
+        if let research = reply.research {
+            researchCard(research)
         }
 
         // Each prescribed exercise is one tap from the Log tab — the advice
@@ -285,6 +336,101 @@ struct CoachView: View {
             .tint(Theme.accent)
         }
         .panel(cornerRadius: 14)
+    }
+
+    /// Findings the coach has written up. Saving numbers them and appends them to
+    /// research.md, where they become part of the brief and citable by tag.
+    private func researchCard(_ entries: String) -> some View {
+        let saved = savedResearchText == entries
+        let lines = entries.split(separator: "\n").map(String.init)
+
+        return VStack(alignment: .leading, spacing: 12) {
+            Label(lines.count == 1 ? "evidence entry" : "\(lines.count) evidence entries", systemImage: "books.vertical")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.secondary)
+
+            ForEach(Array(lines.enumerated()), id: \.offset) { _, line in
+                Text(line)
+                    .font(.footnote)
+                    .textSelection(.enabled)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+
+            Button {
+                Task {
+                    savingResearch = true
+                    researchError = nil
+                    if await store.addResearch(entries) == .pushed {
+                        savedResearchText = entries
+                    } else {
+                        researchError = store.briefStatus
+                    }
+                    savingResearch = false
+                }
+            } label: {
+                HStack(spacing: 8) {
+                    if savingResearch { ProgressView().controlSize(.small) }
+                    Text(saved ? "Added to \(store.researchPath)" : "Add to evidence")
+                        .font(.subheadline.weight(.bold))
+                }
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 10)
+            }
+            .buttonStyle(.borderedProminent)
+            .tint(saved ? Color.secondary : Theme.accent)
+            .disabled(savingResearch || saved)
+
+            if let researchError {
+                Text(researchError).font(.caption2).foregroundStyle(.orange)
+            }
+        }
+        .glassCard(cornerRadius: 16)
+    }
+
+    /// Something the coach noticed and would like to remember. Remember appends it
+    /// to coaching.md under the coach's own heading — the brief is the memory.
+    private func memoryCard(_ note: String) -> some View {
+        let saved = savedMemoryText == note
+
+        return VStack(alignment: .leading, spacing: 12) {
+            Label("worth remembering", systemImage: "brain")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.secondary)
+
+            Text(note)
+                .font(.footnote)
+                .textSelection(.enabled)
+                .frame(maxWidth: .infinity, alignment: .leading)
+
+            Button {
+                Task {
+                    savingMemory = true
+                    memoryError = nil
+                    if await store.remember(note) == .pushed {
+                        savedMemoryText = note
+                    } else {
+                        memoryError = store.briefStatus
+                    }
+                    savingMemory = false
+                }
+            } label: {
+                HStack(spacing: 8) {
+                    if savingMemory { ProgressView().controlSize(.small) }
+                    Text(saved ? "Remembered in \(store.coachingPath)" : "Remember")
+                        .font(.subheadline.weight(.bold))
+                }
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 10)
+            }
+            .buttonStyle(.borderedProminent)
+            .tint(saved ? Color.secondary : Theme.accent)
+            .disabled(savingMemory || saved)
+
+            if let memoryError {
+                Text(memoryError).font(.caption2).foregroundStyle(.orange)
+            }
+        }
+        .glassCard(cornerRadius: 16)
     }
 
     /// A goals file the coach has written, with the one button that commits it.
@@ -424,6 +570,9 @@ struct CoachView: View {
                    model: model,
                    sessions: store.sessions,
                    brief: store.brief,
+                   draft: store.draft,
+                   plans: store.plans,
+                   muscleMap: muscleMap,
                    workspace: store.anthropicWorkspace)
     }
 

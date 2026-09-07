@@ -5,6 +5,13 @@ struct SettingsView: View {
     @EnvironmentObject var store: Store
     @AppStorage("coach_show_cost") private var showCost = true
     @AppStorage("bar_weight") private var barWeight: Double = 20
+    @AppStorage("muscle_map") private var muscleMap = MuscleMap()
+    @StateObject private var strava = StravaService.shared
+    @State private var stravaError: String?
+    @State private var stravaID = ""
+    @State private var stravaSecret = ""
+    @State private var backfillStatus: String?
+    @State private var backfilling = false
     @AppStorage("plate_inventory") private var inventory = PlateInventory.standard
 
     var body: some View {
@@ -58,6 +65,23 @@ struct SettingsView: View {
                 }
                 .listRowBackground(Rectangle().fill(.regularMaterial))
 
+                Section("Muscles") {
+                    let unmapped = muscleMap.unmapped(in: store.sessions)
+                    let assigned = store.knownExercises.filter { muscleMap.isOverridden($0) }
+                    if unmapped.isEmpty && assigned.isEmpty {
+                        Text("Every lift in your log is counted. A new one the app doesn't know will show up here.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    ForEach(unmapped + assigned, id: \.self) { name in
+                        muscleRow(name)
+                    }
+                    Text("Sets per muscle in Trends and for the coach. A lift counts fully for the first muscle and half for the second. Lifts the app already knows — squat, bench, chin-ups and the rest — need nothing here.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                .listRowBackground(Rectangle().fill(.regularMaterial))
+
                 Section("Coach") {
                     SecureField("sk-ant-… (Claude API key)", text: $store.anthropicKey)
                         .textInputAutocapitalization(.never)
@@ -73,6 +97,7 @@ struct SettingsView: View {
 
                     labeled("coaching file", text: $store.coachingPath, placeholder: "coaching.md")
                     labeled("goals file", text: $store.goalsPath, placeholder: "goals.md")
+                    labeled("evidence file", text: $store.researchPath, placeholder: "research.md")
                     Text(coachingHint)
                         .font(.caption)
                         .foregroundStyle(.secondary)
@@ -93,6 +118,104 @@ struct SettingsView: View {
                     """)
                         .font(.caption)
                         .foregroundStyle(.secondary)
+                }
+                .listRowBackground(Rectangle().fill(.regularMaterial))
+
+                Section("Strava") {
+                    if let athlete = strava.athlete {
+                        HStack {
+                            Text("Connected as \(athlete)")
+                            Spacer()
+                            Button("Disconnect", role: .destructive) { strava.disconnect() }
+                                .font(.subheadline)
+                        }
+                        Text("A **Post to Strava** button sits under today's session. It posts the day as a Weight Training activity with your lines in the description; press it again after another lift and it updates the same activity. History shows which days are on Strava, with a post button for the ones that aren't.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                        let unposted = store.sessions.filter { store.stravaActivity(on: $0.date) == nil }
+                        if !unposted.isEmpty {
+                            Button {
+                                backfillStatus = "Starting…"
+                                Task { await backfill(unposted.sorted { $0.date < $1.date }) }
+                            } label: {
+                                HStack(spacing: 8) {
+                                    if backfilling { ProgressView().controlSize(.small) }
+                                    Text(unposted.count == 1 ? "Post the 1 session not on Strava"
+                                                             : "Post the \(unposted.count) sessions not on Strava")
+                                        .font(.subheadline.weight(.bold))
+                                }
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, 8)
+                                .contentShape(Rectangle())
+                            }
+                            .buttonStyle(.borderedProminent)
+                            .tint(Theme.strava)
+                            .disabled(backfilling)
+                            Text("Older days have no clock, so they go up as an hour from noon. Days posted before the app kept track will be posted again — delete the doubles on Strava.")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        } else {
+                            Text("Every logged day is on Strava.")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                        if let backfillStatus {
+                            Text(backfillStatus).font(.caption2).foregroundStyle(.secondary)
+                        }
+                    } else {
+                        // Keys first, then the one button: fill the two fields
+                        // and Connect saves them and signs in, in one tap.
+                        let keysTyped = !stravaID.trimmingCharacters(in: .whitespaces).isEmpty
+                                     && !stravaSecret.trimmingCharacters(in: .whitespaces).isEmpty
+                        if !strava.isConfigured {
+                            Text("From your own Strava API app: create one at strava.com/settings/api (any name; set **localhost** as the Authorization Callback Domain) and copy its Client ID and Client Secret from that page. Both go in the Keychain, never in the repo.")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                            labeled("client ID", text: $stravaID, placeholder: "123456")
+                            HStack {
+                                Text("client secret").frame(width: 90, alignment: .leading)
+                                SecureField("paste it here", text: $stravaSecret)
+                                    .textInputAutocapitalization(.never)
+                                    .autocorrectionDisabled()
+                                    .multilineTextAlignment(.trailing)
+                            }
+                        }
+                        Button {
+                            Task {
+                                stravaError = nil
+                                if !strava.isConfigured { strava.storeCredentials(id: stravaID, secret: stravaSecret) }
+                                do {
+                                    try await strava.connect()
+                                    stravaSecret = ""
+                                } catch {
+                                    stravaError = error.localizedDescription
+                                }
+                            }
+                        } label: {
+                            HStack(spacing: 8) {
+                                if strava.isBusy { ProgressView().controlSize(.small) }
+                                Text("Connect with Strava")
+                                    .font(.subheadline.weight(.bold))
+                            }
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 8)
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .tint(Theme.strava)
+                        .disabled(strava.isBusy || !(strava.isConfigured || keysTyped))
+                        if strava.isConfigured {
+                            Button("Forget Strava keys", role: .destructive) {
+                                strava.storeCredentials(id: "", secret: "")
+                            }
+                            .font(.subheadline)
+                        }
+                    }
+                    if let stravaError {
+                        Text(stravaError).font(.caption2).foregroundStyle(.orange)
+                    }
+                    Text("Powered by Strava")
+                        .font(.caption2)
+                        .foregroundStyle(.tertiary)
                 }
                 .listRowBackground(Rectangle().fill(.regularMaterial))
 
@@ -139,7 +262,20 @@ struct SettingsView: View {
                 }
                 .listRowBackground(Color.clear)
             }
-            .dismissesKeyboardOnTap()
+            // Not the tap-anywhere dismisser the other screens use: on a Form,
+            // a tap gesture on the container eats the taps meant for the buttons
+            // in its rows. Drag to dismiss, or the Done above the keyboard.
+            .scrollDismissesKeyboard(.interactively)
+            .toolbar {
+                ToolbarItemGroup(placement: .keyboard) {
+                    Spacer()
+                    Button("Done") {
+                        UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder),
+                                                        to: nil, from: nil, for: nil)
+                    }
+                    .font(.body.weight(.semibold))
+                }
+            }
             .scrollContentBackground(.hidden)
             .background(Theme.backgroundView)
             .navigationTitle("Settings")
@@ -149,11 +285,89 @@ struct SettingsView: View {
     /// Whether the coaching notes were found, and what to do about it.
     private var coachingHint: LocalizedStringKey {
         let found = [store.brief.coaching.isEmpty ? nil : store.coachingPath,
-                     store.brief.goals.isEmpty ? nil : store.goalsPath].compactMap { $0 }
+                     store.brief.goals.isEmpty ? nil : store.goalsPath,
+                     store.brief.research.isEmpty ? nil : store.researchPath].compactMap { $0 }
         if found.isEmpty {
             return "Neither file found. Commit them beside your log — **\(store.coachingPath)** for how you like to train and what to work around, **\(store.goalsPath)** for what you're aiming at — and they become the coach's standing brief."
         }
         return "Loaded \(found.joined(separator: " and ")). Edit them in your repo, then reload below."
+    }
+
+    /// Post every day not yet on Strava, oldest first, one at a time — Strava
+    /// rate-limits, and a pause between posts keeps well under it.
+    private func backfill(_ sessions: [Session]) async {
+        backfilling = true
+        defer { backfilling = false }
+        var posted = 0
+        var skipped: [String] = []
+        for (i, session) in sessions.enumerated() {
+            backfillStatus = "Posting \(i + 1) of \(sessions.count) — \(session.dateString)…"
+            do {
+                try await StravaPoster.post(session, store: store, strava: strava)
+                posted += 1
+            } catch StravaService.StravaError.api(let status, _) where status == 409 {
+                // Strava has that day full at every hour tried: skip it, carry on.
+                skipped.append(session.dateString)
+            } catch {
+                backfillStatus = "Stopped at \(session.dateString) after \(posted) posted: \(error.localizedDescription)"
+                return
+            }
+            try? await Task.sleep(for: .milliseconds(600))
+        }
+        var summary = "Posted \(posted) \(posted == 1 ? "session" : "sessions") ✓"
+        if !skipped.isEmpty {
+            summary += " Skipped \(skipped.count) that Strava already had something at: " + skipped.joined(separator: ", ")
+        }
+        backfillStatus = summary
+    }
+
+    /// One unknown lift: pick what it's for, and optionally what it also trains.
+    private func muscleRow(_ name: String) -> some View {
+        let groups = muscleMap.groups(for: name) ?? []
+        return HStack {
+            Text(Theme.readableName(name))
+                .lineLimit(1)
+                .minimumScaleFactor(0.8)
+            Spacer()
+            musclePicker(current: groups.first, title: "muscle") { picked in
+                var next = groups
+                if let picked {
+                    next = [picked] + groups.dropFirst().filter { $0 != picked }
+                } else {
+                    next = []
+                }
+                muscleMap.set(next, for: name)
+            }
+            if let primary = groups.first {
+                musclePicker(current: groups.dropFirst().first, title: "+ half") { picked in
+                    muscleMap.set(picked.map { [primary, $0] } ?? [primary], for: name)
+                }
+            }
+        }
+    }
+
+    private func musclePicker(current: MuscleGroup?, title: String,
+                              onPick: @escaping (MuscleGroup?) -> Void) -> some View {
+        Menu {
+            ForEach(MuscleGroup.ordered) { group in
+                Button {
+                    onPick(group)
+                } label: {
+                    if group == current { Label(group.rawValue, systemImage: "checkmark") }
+                    else { Text(group.rawValue) }
+                }
+            }
+            if current != nil {
+                Divider()
+                Button("none", role: .destructive) { onPick(nil) }
+            }
+        } label: {
+            Text(current?.rawValue ?? title)
+                .font(.subheadline.weight(current == nil ? .regular : .semibold))
+                .foregroundStyle(current == nil ? Color.secondary : Theme.accent)
+                .padding(.horizontal, 10).padding(.vertical, 6)
+                .background(.ultraThinMaterial, in: Capsule())
+        }
     }
 
     /// A binding into one plate size's count. Writing replaces the whole inventory

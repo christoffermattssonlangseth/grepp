@@ -329,6 +329,174 @@ final class CoachContextTests: XCTestCase {
         XCTAssertTrue(text.contains("cannot add to it"), "must not claim it can write the log")
     }
 
+    // MARK: - memory
+
+    func testRememberBlockLiftsOutOfTheProse() {
+        let text = "You hold rather than drop. Worth keeping.\n\n```remember\nHolds the load and adds a rep when squat stalls.\n```\n\nSo next time…"
+        let reply = CoachContext.parseReply(text)
+        XCTAssertEqual(reply.memory, "Holds the load and adds a rep when squat stalls.")
+        XCTAssertFalse(reply.isWritingMemory)
+        XCTAssertFalse(reply.prose.contains("```"), reply.prose)
+        XCTAssertTrue(reply.prose.contains("So next time"), reply.prose)
+    }
+
+    func testHalfArrivedRememberBlockReadsAsWriting() {
+        let reply = CoachContext.parseReply("Noted.\n\n```remember\nHolds the")
+        XCTAssertNil(reply.memory)
+        XCTAssertTrue(reply.isWritingMemory)
+        XCTAssertEqual(reply.prose, "Noted.")
+    }
+
+    func testRememberInstructionOnlyWhileCoaching() {
+        let excerpt = CoachContext.excerpt(from: [session("2026-08-01")])
+        XCTAssertTrue(CoachContext.systemPrompt(for: excerpt).contains("REMEMBER."))
+        XCTAssertFalse(CoachContext.systemPrompt(for: excerpt, mode: .goalsInterview).contains("REMEMBER."))
+    }
+
+    func testAppendingNoteCreatesTheSectionAtTheEnd() {
+        let day = Session.dateFormatter.date(from: "2026-09-06")!
+        XCTAssertEqual(CoachContext.appendingNote("Holds the load.", to: "", on: day),
+                       "## Coach's notes\n\n- 2026-09-06: Holds the load.\n")
+        XCTAssertEqual(CoachContext.appendingNote("Holds the load.", to: "# Coaching\n\nBe blunt.\n", on: day),
+                       "# Coaching\n\nBe blunt.\n\n## Coach's notes\n\n- 2026-09-06: Holds the load.\n")
+    }
+
+    func testAppendingNoteExtendsTheSectionAndLeavesTheRestAlone() {
+        let day = Session.dateFormatter.date(from: "2026-09-06")!
+        let existing = "# Coaching\n\n## Coach's notes\n\n- 2026-09-01: Likes 5s.\n\n## Other\n\nx\n"
+        XCTAssertEqual(CoachContext.appendingNote("A\nB", to: existing, on: day),
+                       "# Coaching\n\n## Coach's notes\n\n- 2026-09-01: Likes 5s.\n- 2026-09-06: A\n- 2026-09-06: B\n\n## Other\n\nx\n")
+        XCTAssertEqual(CoachContext.appendingNote("- A", to: "## Coach's notes\n", on: day),
+                       "## Coach's notes\n\n- 2026-09-06: A\n")
+        XCTAssertEqual(CoachContext.appendingNote("  \n", to: existing, on: day), existing, "nothing to add")
+    }
+
+    // MARK: - evidence
+
+    private let seed = """
+    # Evidence
+
+    Findings the coach programmes from.
+
+    - [R1] Ten or more weekly sets per muscle grew more muscle than fewer than five. — Schoenfeld 2017, J Sports Sci. doi:10.1080/02640414.2016.1210197
+    - [R2] Three-minute rests beat one-minute rests for strength and size. — Schoenfeld et al. 2016, J Strength Cond Res.
+    - a plain bullet the human wrote, not an entry
+    * [R7] Frequency matters mainly as a way to fit volume in — Grgic 2018, Sports Med https://doi.org/10.1007/s40279-018-0872-x
+    """
+
+    func testResearchEntriesParseWithTagClaimSourceAndDOI() {
+        let entries = CoachContext.parseResearch(seed)
+        XCTAssertEqual(entries.map(\.tag), ["R1", "R2", "R7"])
+        XCTAssertEqual(entries[0].claim, "Ten or more weekly sets per muscle grew more muscle than fewer than five.")
+        XCTAssertEqual(entries[0].source, "Schoenfeld 2017, J Sports Sci")
+        XCTAssertEqual(entries[0].doi, "10.1080/02640414.2016.1210197")
+        XCTAssertEqual(entries[0].url?.absoluteString, "https://doi.org/10.1080/02640414.2016.1210197")
+        XCTAssertNil(entries[1].doi)
+        XCTAssertEqual(entries[1].source, "Schoenfeld et al. 2016, J Strength Cond Res")
+        XCTAssertEqual(entries[2].doi, "10.1007/s40279-018-0872-x", "a doi.org URL counts too")
+        XCTAssertEqual(entries[2].source, "Grgic 2018, Sports Med")
+    }
+
+    func testAppendingResearchNumbersFromTheHighestTag() {
+        let added = CoachContext.appendingResearch(
+            "Failure adds nothing for strength. — Refalo 2023, Sports Med\n- [R1] Low loads grow muscle too. — Schoenfeld 2017",
+            to: seed)
+        let entries = CoachContext.parseResearch(added)
+        XCTAssertEqual(entries.map(\.tag), ["R1", "R2", "R7", "R8", "R9"])
+        XCTAssertEqual(entries[3].claim, "Failure adds nothing for strength.")
+        XCTAssertEqual(entries[4].claim, "Low loads grow muscle too.", "the model's own tag is dropped and renumbered")
+        XCTAssertTrue(added.hasPrefix("# Evidence"), "the human's file is left in place")
+    }
+
+    func testAppendingResearchStartsAFile() {
+        let text = CoachContext.appendingResearch("A claim. — Someone 2020", to: "")
+        XCTAssertTrue(text.hasPrefix("# Evidence\n"), text)
+        XCTAssertEqual(CoachContext.parseResearch(text).map(\.tag), ["R1"])
+        XCTAssertEqual(CoachContext.appendingResearch("  \n", to: seed), seed, "nothing to add")
+    }
+
+    func testResearchBlockLiftsOutAndTagsBecomeLinks() {
+        let reply = CoachContext.parseReply("Worth keeping, per [R1].\n\n```research\nA claim. — Someone 2020\nAnother. — Else 2021\n```")
+        XCTAssertEqual(reply.research, "A claim. — Someone 2020\nAnother. — Else 2021")
+        XCTAssertFalse(reply.isWritingResearch)
+        XCTAssertEqual(reply.prose, "Worth keeping, per [R1].")
+        XCTAssertTrue(CoachContext.parseReply("```research\nA cl").isWritingResearch)
+
+        let md = CoachContext.chatMarkdown("Per [R1] and [R12], not [R3](liftlog://evidence/R3) twice.")
+        XCTAssertEqual(md, "Per [R1](liftlog://evidence/R1) and [R12](liftlog://evidence/R12), not [R3](liftlog://evidence/R3) twice.")
+    }
+
+    func testEvidenceBriefIsFedAndInstructed() {
+        let excerpt = CoachContext.excerpt(from: [session("2026-08-01")])
+        let brief = CoachContext.Brief(research: seed)
+        let text = CoachContext.systemPrompt(for: excerpt, brief: brief)
+        XCTAssertTrue(text.contains("<evidence>"), text)
+        XCTAssertTrue(text.contains("[R7] Frequency matters"), text)
+        XCTAssertTrue(text.contains("EVIDENCE. When the lifter hands you a paper"), text)
+        XCTAssertFalse(CoachContext.systemPrompt(for: excerpt, mode: .goalsInterview).contains("EVIDENCE. When"))
+        XCTAssertTrue(brief.hasContent)
+    }
+
+    func testLookupIsSpottedFromADOIALinkOrTheWords() {
+        XCTAssertEqual(CoachContext.lookupTarget(in: "Can you add this to the findings: DOI: 10.1007/s40279-022-01784-y")?.url,
+                       "https://doi.org/10.1007/s40279-022-01784-y")
+        XCTAssertEqual(CoachContext.lookupTarget(in: "see 10.1519/JSC.0000000000002200.")?.url,
+                       "https://doi.org/10.1519/JSC.0000000000002200", "trailing full stop dropped")
+        XCTAssertEqual(CoachContext.lookupTarget(in: "read https://pubmed.ncbi.nlm.nih.gov/12345/ please"),
+                       CoachContext.LookupTarget(url: nil))
+        XCTAssertEqual(CoachContext.lookupTarget(in: "Look up the Refalo failure meta-analysis"),
+                       CoachContext.LookupTarget(url: nil))
+        XCTAssertNil(CoachContext.lookupTarget(in: "What should I squat today?"))
+        XCTAssertNil(CoachContext.lookupTarget(in: "I did 10.5 reps at 100"), "a decimal is not a DOI")
+    }
+
+    // MARK: - mid-session
+
+    private func draft(name: String = "squat", sets: [String] = [], plan: [String]? = nil,
+                       queue: [String] = [], date: String = "2026-09-06", rest: Date? = nil) -> SessionDraft {
+        let parse: (String) -> WorkSet = { WorkoutParser.parseSet($0)! }
+        return SessionDraft(date: Session.dateFormatter.date(from: date)!, name: name,
+                            sets: sets.map(parse), isBodyweight: false,
+                            weightText: "", addedText: "", repsText: "",
+                            plan: plan?.map(parse),
+                            queue: queue.map { ExerciseEntry(name: $0, sets: []) },
+                            restStart: rest)
+    }
+
+    func testNoNoteWithNothingInHand() {
+        XCTAssertNil(CoachContext.inProgressNote(nil))
+        XCTAssertNil(CoachContext.inProgressNote(draft(name: "")))
+    }
+
+    func testNoteCarriesLandedSetsPlanAndQueue() {
+        let now = Session.dateFormatter.date(from: "2026-09-06")!.addingTimeInterval(10 * 3600)
+        let d = draft(sets: ["87.5x5", "87.5x5"], plan: ["87.5x5", "87.5x5", "87.5x5"],
+                      queue: ["bench", "chin-ups"], rest: now.addingTimeInterval(-80))
+        let note = CoachContext.inProgressNote(d, now: now)!
+        XCTAssertTrue(note.hasPrefix("RIGHT NOW."), note)
+        XCTAssertTrue(note.contains("today, 2026-09-06"), note)
+        XCTAssertTrue(note.contains("squat — landed so far: 87.5x5 87.5x5"), note)
+        XCTAssertTrue(note.contains("planned: 87.5x5 87.5x5 87.5x5 (1 to go)"), note)
+        XCTAssertTrue(note.contains("Still to come this session: bench, chin-ups."), note)
+        XCTAssertTrue(note.contains("landed 1 min 20 s ago"), note)
+        XCTAssertTrue(note.contains("not in the log yet"), note)
+    }
+
+    func testNoteSaysWhenNothingHasLandedAndTheDateIsNotToday() {
+        let now = Session.dateFormatter.date(from: "2026-09-06")!
+        let note = CoachContext.inProgressNote(draft(date: "2026-09-05"), now: now)!
+        XCTAssertTrue(note.contains("under 2026-09-05, not today's date"), note)
+        XCTAssertTrue(note.contains("squat — nothing landed yet"), note)
+        XCTAssertFalse(note.contains("planned"), note)
+        XCTAssertFalse(note.contains("Still to come"), note)
+    }
+
+    func testStaleRestIsNotReported() {
+        let now = Date()
+        let note = CoachContext.inProgressNote(draft(sets: ["100x5"], rest: now.addingTimeInterval(-3600)), now: now)!
+        XCTAssertFalse(note.contains("ago"), note)
+    }
+
     func testSystemPromptHoldsBlocksWhenTheSessionIsOver() {
         // "I'm done for today" should get a review and a prose look-ahead, not a
         // set of one-tap cards that would land on top of today's real session.

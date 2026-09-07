@@ -442,29 +442,32 @@ struct LogView: View {
                             .font(.caption.weight(.heavy)).tracking(2)
                             .foregroundStyle(due ? Theme.onAccent : Color.secondary)
                         Text(clock(elapsed))
-                            .font(.system(size: 56, weight: .heavy))
+                            .font(.system(size: 52, weight: .heavy))
                             .fontWidth(.condensed)
                             .monospacedDigit()
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.6)
+                            .layoutPriority(1)
                             .foregroundStyle(due ? Theme.onAccent : Theme.accent)
                             // Digits roll over rather than snap — 0:59 to 1:00
                             // reads like a stopwatch, not a re-render.
                             .contentTransition(.numericText())
                             .animation(.snappy, value: elapsed)
                     }
-                    Spacer()
+                    Spacer(minLength: 8)
                     restTargetMenu
                     Button { restStart = Date() } label: {
                         Image(systemName: "arrow.counterclockwise")
-                            .font(.title3.weight(.bold))
-                            .frame(width: 44, height: 44)
+                            .font(.body.weight(.bold))
+                            .frame(width: 40, height: 40)
                             .background(.ultraThinMaterial, in: Circle())
                     }
                     .buttonStyle(.plain)
                     Button { restStart = nil } label: {
                         Image(systemName: "xmark")
-                            .font(.subheadline.weight(.bold))
+                            .font(.footnote.weight(.bold))
                             .foregroundStyle(.secondary)
-                            .frame(width: 44, height: 44)
+                            .frame(width: 40, height: 40)
                             .background(.ultraThinMaterial, in: Circle())
                     }
                     .buttonStyle(.plain)
@@ -710,6 +713,8 @@ struct LogView: View {
             Label {
                 Text(text)
                     .font(.system(.footnote, design: .monospaced).weight(.semibold))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.75)
             } icon: {
                 Image(systemName: "circlebadge.2.fill")
             }

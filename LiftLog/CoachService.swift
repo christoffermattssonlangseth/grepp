@@ -160,7 +160,7 @@ final class CoachService: ObservableObject {
               brief: CoachContext.Brief,
               draft: SessionDraft? = nil,
               plans: [PlanRecord] = [],
-              muscleMap: MuscleMap = MuscleMap(),
+              muscleMap: MuscleMap,
               workspace: String) {
         let trimmed = question.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty, !isResponding else { return }

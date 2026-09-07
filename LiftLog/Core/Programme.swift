@@ -31,8 +31,10 @@ struct Programme: Equatable {
 
     var isEmpty: Bool { days.isEmpty }
 
-    /// Every bullet under a `##` heading that starts with a lift name. Prose
-    /// between days is skipped; a `#` title becomes the programme's name.
+    /// Days are headings after the title, or bold lines on their own; lifts are
+    /// bullets or numbered lines with a set scheme in them. Written to be lenient:
+    /// the coach's output drifts (`### Day 1`, `**Day A**`, `- Squat: 3 x 5`),
+    /// and a saved file that shows as empty is worse than a generous read.
     static func parse(_ markdown: String) -> Programme {
         var title = ""
         var days: [Day] = []
@@ -47,19 +49,76 @@ struct Programme: Equatable {
 
         for raw in markdown.split(separator: "\n", omittingEmptySubsequences: false) {
             let line = raw.trimmingCharacters(in: .whitespaces)
-            if line.hasPrefix("## ") {
-                closeDay()
-                current = (String(line.dropFirst(3)).trimmingCharacters(in: .whitespaces), [])
-            } else if line.hasPrefix("# ") {
-                if title.isEmpty { title = String(line.dropFirst(2)).trimmingCharacters(in: .whitespaces) }
-            } else if line.hasPrefix("- ") || line.hasPrefix("* "), current != nil {
-                if let exercise = parseExercise(String(line.dropFirst(2))) {
-                    current?.exercises.append(exercise)
+            if line.isEmpty { continue }
+
+            if line.hasPrefix("#") {
+                let text = line.drop { $0 == "#" }.trimmingCharacters(in: .whitespaces)
+                let level = line.prefix { $0 == "#" }.count
+                if level == 1 && title.isEmpty && days.isEmpty && current == nil {
+                    title = text
+                } else if !text.isEmpty {
+                    closeDay()
+                    current = (text, [])
                 }
+                continue
+            }
+            // A bold line on its own is a day too: **Day A — Lower**
+            if line.hasPrefix("**"), line.hasSuffix("**"), line.count > 4, !line.dropFirst(2).dropLast(2).contains("**") {
+                closeDay()
+                current = (String(line.dropFirst(2).dropLast(2)).trimmingCharacters(in: .whitespaces), [])
+                continue
+            }
+
+            if let body = listItem(line), let exercise = parseExercise(body) {
+                if current == nil { current = ("Session", []) }
+                current?.exercises.append(exercise)
             }
         }
         closeDay()
         return Programme(title: title, days: days)
+    }
+
+    /// The text of a `- `, `* ` or `1. ` line; nil for anything else.
+    private static func listItem(_ line: String) -> String? {
+        if line.hasPrefix("- ") || line.hasPrefix("* ") || line.hasPrefix("• ") {
+            return String(line.dropFirst(2))
+        }
+        if let dot = line.firstIndex(of: "."), Int(line[..<dot]) != nil, line[dot...].hasPrefix(". ") {
+            return String(line[line.index(dot, offsetBy: 2)...])
+        }
+        return nil
+    }
+
+    /// The set scheme in a line: `3x5`, `3 x 8–10`, `4×AMRAP`, `2 x max`.
+    private static let scheme = try! NSRegularExpression(
+        pattern: "(\\d+)\\s*[x×]\\s*(\\d+(?:\\s*[-–]\\s*\\d+)?\\+?|amrap|max)",
+        options: [.caseInsensitive])
+
+    /// `squat 3x5 — add 2.5 kg when all sets hit` → name, scheme, note. Also
+    /// `Squat: 3 x 5`, `**Bench press** 3x8-10 (add 2.5 kg)`, `squat 3x5 @ 90 kg`.
+    static func parseExercise(_ text: String) -> Exercise? {
+        let clean = text.replacingOccurrences(of: "**", with: "")
+        let whole = NSRange(clean.startIndex..., in: clean)
+        guard let m = scheme.firstMatch(in: clean, range: whole),
+              let range = Range(m.range, in: clean),
+              let setsRange = Range(m.range(at: 1), in: clean),
+              let repsRange = Range(m.range(at: 2), in: clean) else { return nil }
+
+        let name = clean[..<range.lowerBound]
+            .trimmingCharacters(in: .whitespaces)
+            .trimmingCharacters(in: CharacterSet(charactersIn: ":—–-,"))
+            .trimmingCharacters(in: .whitespaces)
+            .lowercased()
+            .replacingOccurrences(of: " ", with: "-")
+        guard !name.isEmpty, name.first!.isLetter else { return nil }
+
+        let reps = clean[repsRange].replacingOccurrences(of: " ", with: "").uppercased()
+        let normalised = "\(clean[setsRange])x\(reps == "MAX" ? "AMRAP" : reps)"
+        let note = clean[range.upperBound...]
+            .trimmingCharacters(in: .whitespaces)
+            .trimmingCharacters(in: CharacterSet(charactersIn: ":—–-,("))
+            .trimmingCharacters(in: CharacterSet(charactersIn: ") "))
+        return Exercise(name: name, scheme: normalised, note: note)
     }
 
     // MARK: - Against the log
@@ -96,19 +155,4 @@ struct Programme: Equatable {
         return nil
     }
 
-    /// `squat 3x5 — add 2.5 kg when all sets hit` → name, scheme, note.
-    static func parseExercise(_ text: String) -> Exercise? {
-        let parts = text.components(separatedBy: " — ")
-        let head = parts[0].trimmingCharacters(in: .whitespaces)
-        let note = parts.dropFirst().joined(separator: " — ").trimmingCharacters(in: .whitespaces)
-        var tokens = head.split(separator: " ").map(String.init)
-        guard tokens.count >= 2 else { return nil }
-        let scheme = tokens.removeLast()
-        // A scheme has an "x" with something on both sides: 3x5, 3x8-10, 3xAMRAP.
-        guard let x = scheme.lowercased().firstIndex(of: "x"),
-              x != scheme.startIndex, scheme.index(after: x) != scheme.endIndex,
-              Int(scheme[..<x]) != nil else { return nil }
-        let name = tokens.joined(separator: " ").lowercased().replacingOccurrences(of: " ", with: "-")
-        return Exercise(name: name, scheme: scheme, note: note)
-    }
 }

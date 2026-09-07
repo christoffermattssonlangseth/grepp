@@ -72,7 +72,6 @@ struct LogView: View {
                     sectionLabel("add exercise")
                     exerciseCard
                     addSetCard
-                    if restStart != nil { restTimerCard }
                     if !sets.isEmpty { setsCard }
                     finishButton
                     if !queue.isEmpty { upNext }
@@ -83,6 +82,17 @@ struct LogView: View {
                 .padding()
             }
             .dismissesKeyboardOnTap()
+            // The rest clock is pinned, not scrolled: between sets it's the one
+            // thing on the screen you look at, and it must never be a swipe away.
+            .safeAreaInset(edge: .bottom) {
+                if restStart != nil {
+                    restTimerCard
+                        .padding(.horizontal)
+                        .padding(.bottom, 6)
+                        .transition(.move(edge: .bottom).combined(with: .opacity))
+                }
+            }
+            .animation(.snappy, value: restStart != nil)
             .background(Theme.backgroundView)
             .navigationTitle("Session")
             .sheet(isPresented: $showingPicker) {

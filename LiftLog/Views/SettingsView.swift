@@ -123,6 +123,7 @@ struct SettingsView: View {
                     labeled("coaching file", text: $store.coachingPath, placeholder: "coaching.md")
                     labeled("goals file", text: $store.goalsPath, placeholder: "goals.md")
                     labeled("evidence file", text: $store.researchPath, placeholder: "research.md")
+                    labeled("programme file", text: $store.programPath, placeholder: "program.md")
                     Text(coachingHint)
                         .font(.caption)
                         .foregroundStyle(.secondary)

@@ -230,6 +230,7 @@ struct CoachView: View {
         coach.startGoalsInterview(model: model,
                                   sessions: store.sessions,
                                   brief: store.brief,
+                                  muscleMap: muscleMap,
                                   workspace: store.anthropicWorkspace)
     }
 

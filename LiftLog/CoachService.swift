@@ -126,11 +126,12 @@ final class CoachService: ObservableObject {
     func startGoalsInterview(model: CoachModelChoice,
                              sessions: [Session],
                              brief: CoachContext.Brief,
+                             muscleMap: MuscleMap,
                              workspace: String) {
         reset()
         mode = .goalsInterview
         send(CoachContext.goalsInterviewRequest,
-             model: model, sessions: sessions, brief: brief, workspace: workspace)
+             model: model, sessions: sessions, brief: brief, muscleMap: muscleMap, workspace: workspace)
     }
 
     /// Start over. The next question rebuilds the log context from scratch.

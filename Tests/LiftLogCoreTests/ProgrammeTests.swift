@@ -66,3 +66,41 @@ final class ProgrammeTests: XCTestCase {
         XCTAssertFalse(CoachContext.systemPrompt(for: excerpt, mode: .goalsInterview).contains("PROGRAMMES. When"))
     }
 }
+
+extension ProgrammeTests {
+    private func session(_ d: String, _ names: [String]) -> Session {
+        Session(date: Session.dateFormatter.date(from: d)!, exercises: names.map {
+            ExerciseEntry(name: $0, sets: [WorkSet(weight: 80, added: nil, reps: 5)])
+        })
+    }
+
+    func testDueDayIsTheOneAfterTheDayLastDone() {
+        let p = Programme.parse("""
+        ## A
+        - squat 3x5
+        - romanian-deadlift 3x8
+        ## B
+        - bench-press 3x5
+        - chin-ups 3x8
+        ## C
+        - deadlift 3x3
+        - over-head-press 3x8
+        """)
+        XCTAssertEqual(p.dueDayIndex(in: []), 0, "nothing done: start at the top")
+        XCTAssertEqual(p.dueDayIndex(in: [session("2026-09-01", ["squat", "romanian-deadlift"])]), 1)
+        XCTAssertEqual(p.dueDayIndex(in: [session("2026-09-01", ["squat"]),
+                                          session("2026-09-03", ["deadlift", "over-head-press"])]), 0, "after the last day, wrap")
+        XCTAssertEqual(p.dueDayIndex(in: [session("2026-09-01", ["bench-press", "chin-ups"]),
+                                          session("2026-09-03", ["lateral-raise"])]), 2,
+                       "a session matching no day is skipped; B was last")
+        XCTAssertEqual(p.dueDayIndex(in: [session("2026-09-01", ["Squat", "leg-curl"])]), 1, "half the day's lifts is enough, case aside")
+    }
+
+    func testLastDoneFindsTheNewest() {
+        let sessions = [session("2026-09-01", ["squat"]), session("2026-09-04", ["squat", "bench-press"])]
+        let last = Programme.lastDone("Squat", in: sessions)
+        XCTAssertEqual(last?.day, "2026-09-04")
+        XCTAssertEqual(last?.entry.sets.count, 1)
+        XCTAssertNil(Programme.lastDone("deadlift", in: sessions))
+    }
+}

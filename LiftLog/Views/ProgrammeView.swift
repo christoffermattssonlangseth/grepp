@@ -31,8 +31,11 @@ struct ProgrammeView: View {
     }
 
     private var days: some View {
-        List {
-            ForEach(store.programme.days) { day in
+        let programme = store.programme
+        let due = programme.dueDayIndex(in: store.sessions)
+
+        return List {
+            ForEach(Array(programme.days.enumerated()), id: \.element.id) { index, day in
                 Section {
                     ForEach(day.exercises) { ex in
                         VStack(alignment: .leading, spacing: 2) {
@@ -45,6 +48,18 @@ struct ProgrammeView: View {
                             }
                             if !ex.note.isEmpty {
                                 Text(ex.note).font(.caption).foregroundStyle(.tertiary)
+                            }
+                            // Where the lift stands: history, not a prescription.
+                            if let last = Programme.lastDone(ex.name, in: store.sessions) {
+                                Text("last: \(last.entry.sets.map(\.token).joined(separator: " ")) · \(CoachContext.short(last.day))")
+                                    .font(.system(.caption, design: .monospaced))
+                                    .foregroundStyle(.secondary)
+                                    .lineLimit(1)
+                                    .minimumScaleFactor(0.8)
+                            } else {
+                                Text("not logged yet")
+                                    .font(.caption)
+                                    .foregroundStyle(.tertiary)
                             }
                         }
                         .listRowBackground(
@@ -63,10 +78,20 @@ struct ProgrammeView: View {
                             .padding(.vertical, 6)
                     }
                     .buttonStyle(.borderedProminent)
-                    .tint(Theme.accent)
+                    .tint(index == due ? Theme.accent : Color.secondary)
                     .listRowBackground(Color.clear)
                 } header: {
-                    Text(day.title).textCase(nil)
+                    HStack {
+                        Text(day.title).textCase(nil)
+                        if index == due {
+                            Text("next")
+                                .font(.caption2.weight(.heavy)).tracking(1)
+                                .textCase(.uppercase)
+                                .foregroundStyle(Theme.onAccent)
+                                .padding(.horizontal, 6).padding(.vertical, 2)
+                                .background(Theme.accent, in: Capsule())
+                        }
+                    }
                 }
             }
             Section {

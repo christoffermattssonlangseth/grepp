@@ -9,6 +9,9 @@ enum StravaPost {
     /// The Strava sport type for a lifting session.
     static let sportType = "WeightTraining"
 
+    /// The sign-off at the foot of every post. Strava turns the URL into a link.
+    static let signOff = "Tracked with LiftLog — a plain-text lifting log with a Claude coach\nhttps://github.com/christoffermattssonlangseth/liftlog"
+
     /// "Lifting · squat, bench, chin-ups" — the first three lifts, then a count.
     static func name(for session: Session) -> String {
         let names = session.exercises.map { $0.name.replacingOccurrences(of: "-", with: " ") }
@@ -24,7 +27,7 @@ enum StravaPost {
         let sets = session.exercises.reduce(0) { $0 + $1.sets.count }
         var summary = "\(session.exercises.count) \(session.exercises.count == 1 ? "lift" : "lifts") · \(sets) \(sets == 1 ? "set" : "sets")"
         if let elapsed, elapsed >= 60 { summary += " · \(Int(elapsed / 60)) min" }
-        return lines.joined(separator: "\n") + "\n\n" + summary + "\nLogged with LiftLog"
+        return lines.joined(separator: "\n") + "\n\n" + summary + "\n\n" + signOff
     }
 
     /// Seconds the activity lasted. From the first set to the last push when

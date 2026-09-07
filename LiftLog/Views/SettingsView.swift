@@ -298,17 +298,27 @@ struct SettingsView: View {
     private func backfill(_ sessions: [Session]) async {
         backfilling = true
         defer { backfilling = false }
+        var posted = 0
+        var skipped: [String] = []
         for (i, session) in sessions.enumerated() {
             backfillStatus = "Posting \(i + 1) of \(sessions.count) — \(session.dateString)…"
             do {
                 try await StravaPoster.post(session, store: store, strava: strava)
+                posted += 1
+            } catch StravaService.StravaError.api(let status, _) where status == 409 {
+                // Strava has that day full at every hour tried: skip it, carry on.
+                skipped.append(session.dateString)
             } catch {
-                backfillStatus = "Stopped at \(session.dateString): \(error.localizedDescription)"
+                backfillStatus = "Stopped at \(session.dateString) after \(posted) posted: \(error.localizedDescription)"
                 return
             }
             try? await Task.sleep(for: .milliseconds(600))
         }
-        backfillStatus = "Posted \(sessions.count) \(sessions.count == 1 ? "session" : "sessions") ✓"
+        var summary = "Posted \(posted) \(posted == 1 ? "session" : "sessions") ✓"
+        if !skipped.isEmpty {
+            summary += " Skipped \(skipped.count) that Strava already had something at: " + skipped.joined(separator: ", ")
+        }
+        backfillStatus = summary
     }
 
     /// One unknown lift: pick what it's for, and optionally what it also trains.

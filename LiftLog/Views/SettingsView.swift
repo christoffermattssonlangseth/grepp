@@ -131,10 +131,33 @@ struct SettingsView: View {
                             .font(.caption)
                             .foregroundStyle(.secondary)
                     } else {
+                        // Keys first, then the one button: fill the two fields
+                        // and Connect saves them and signs in, in one tap.
+                        let keysTyped = !stravaID.trimmingCharacters(in: .whitespaces).isEmpty
+                                     && !stravaSecret.trimmingCharacters(in: .whitespaces).isEmpty
+                        if !strava.isConfigured {
+                            Text("From your own Strava API app: create one at strava.com/settings/api (any name; set **localhost** as the Authorization Callback Domain) and copy its Client ID and Client Secret from that page. Both go in the Keychain, never in the repo.")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                            labeled("client ID", text: $stravaID, placeholder: "123456")
+                            HStack {
+                                Text("client secret").frame(width: 90, alignment: .leading)
+                                SecureField("paste it here", text: $stravaSecret)
+                                    .textInputAutocapitalization(.never)
+                                    .autocorrectionDisabled()
+                                    .multilineTextAlignment(.trailing)
+                            }
+                        }
                         Button {
                             Task {
                                 stravaError = nil
-                                do { try await strava.connect() } catch { stravaError = error.localizedDescription }
+                                if !strava.isConfigured { strava.storeCredentials(id: stravaID, secret: stravaSecret) }
+                                do {
+                                    try await strava.connect()
+                                    stravaSecret = ""
+                                } catch {
+                                    stravaError = error.localizedDescription
+                                }
                             }
                         } label: {
                             HStack(spacing: 8) {
@@ -147,24 +170,8 @@ struct SettingsView: View {
                         }
                         .buttonStyle(.borderedProminent)
                         .tint(Theme.strava)
-                        .disabled(strava.isBusy || !strava.isConfigured)
-                        if !strava.isConfigured {
-                            labeled("client ID", text: $stravaID, placeholder: "123456")
-                            HStack {
-                                Text("client secret").frame(width: 90, alignment: .leading)
-                                SecureField("paste it here", text: $stravaSecret)
-                                    .multilineTextAlignment(.trailing)
-                            }
-                            Button("Save Strava keys") {
-                                strava.storeCredentials(id: stravaID, secret: stravaSecret)
-                                stravaSecret = ""
-                            }
-                            .disabled(stravaID.trimmingCharacters(in: .whitespaces).isEmpty
-                                      || stravaSecret.trimmingCharacters(in: .whitespaces).isEmpty)
-                            Text("From your own Strava API app: create one at strava.com/settings/api (any name; set **localhost** as the Authorization Callback Domain) and copy its Client ID and Client Secret from that page. Both go in the Keychain, never in the repo.")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                        } else {
+                        .disabled(strava.isBusy || !(strava.isConfigured || keysTyped))
+                        if strava.isConfigured {
                             Button("Forget Strava keys", role: .destructive) {
                                 strava.storeCredentials(id: "", secret: "")
                             }

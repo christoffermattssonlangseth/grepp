@@ -107,6 +107,9 @@ struct CoachView: View {
                 .dismissesKeyboardOnTap()
                 .onChange(of: coach.messages) { _, _ in scroll(proxy) }
                 .onChange(of: coach.errorText) { _, _ in scroll(proxy) }
+                // Coming back to a conversation lands on its latest answer, not
+                // its first question. Without animation: it's where you were.
+                .onAppear { proxy.scrollTo(bottomAnchor, anchor: .bottom) }
             }
             inputBar
         }

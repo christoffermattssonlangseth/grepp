@@ -75,6 +75,9 @@ struct TrendsView: View {
                             if availableMetrics.count > 1 { metricPicker }
                             chartCard
                             statsRow
+                            if let dose = DoseResponse.make(for: exercise, in: store.sessions, map: muscleMap) {
+                                doseCard(dose)
+                            }
                         case .volume:
                             weeksCard
                             musclesCard
@@ -219,6 +222,78 @@ struct TrendsView: View {
                     Text("not enough data").font(.footnote).foregroundStyle(.secondary)
                 }
                 Text(subtitle).font(.caption2).foregroundStyle(.tertiary)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
+
+    // MARK: - Dose and response
+
+    /// The lift's weekly best over the last eight weeks, above the weekly sets
+    /// its main muscle got, on the same weeks — and one sentence naming the lever.
+    private func doseCard(_ dose: DoseResponse) -> some View {
+        PanelBox {
+            VStack(alignment: .leading, spacing: 10) {
+                HStack(alignment: .firstTextBaseline) {
+                    Text("work and result")
+                        .font(.caption).foregroundStyle(.secondary)
+                    Spacer()
+                    Text("\(dose.metric.rawValue.lowercased()) · \(dose.muscle.rawValue) sets")
+                        .font(.caption2).foregroundStyle(.tertiary)
+                }
+
+                // Result: the week's best, where the lift was done.
+                Chart {
+                    ForEach(dose.weeks) { week in
+                        if let best = week.best {
+                            LineMark(x: .value("Week", week.start), y: .value(dose.metric.rawValue, best))
+                                .interpolationMethod(.monotone)
+                                .foregroundStyle(.tint)
+                            PointMark(x: .value("Week", week.start), y: .value(dose.metric.rawValue, best))
+                                .foregroundStyle(.tint)
+                                .symbolSize(30)
+                        }
+                    }
+                }
+                .chartYScale(domain: .automatic(includesZero: false))
+                .chartXAxis(.hidden)
+                .chartYAxis {
+                    AxisMarks(values: .automatic(desiredCount: 3)) {
+                        AxisGridLine()
+                        AxisValueLabel()
+                    }
+                }
+                .frame(height: 90)
+
+                // Work: sets a week for the main muscle, against the band.
+                Chart {
+                    RectangleMark(yStart: .value("low", DoseResponse.band.lowerBound),
+                                  yEnd: .value("high", DoseResponse.band.upperBound))
+                        .foregroundStyle(Theme.accent.opacity(0.12))
+                    ForEach(dose.weeks) { week in
+                        BarMark(x: .value("Week", week.start), y: .value("Sets", week.sets), width: .ratio(0.6))
+                            .foregroundStyle(week.best == nil ? Color.secondary.opacity(0.35) : Theme.accent)
+                            .cornerRadius(3)
+                    }
+                }
+                .chartYScale(domain: 0...max(DoseResponse.band.upperBound + 2, (dose.weeks.map(\.sets).max() ?? 0) + 2))
+                .chartXAxis {
+                    AxisMarks(values: .stride(by: .weekOfYear, count: 2)) {
+                        AxisValueLabel(format: .dateTime.day().month(.abbreviated))
+                    }
+                }
+                .chartYAxis {
+                    AxisMarks(values: [0, 10, 20]) {
+                        AxisGridLine()
+                        AxisValueLabel()
+                    }
+                }
+                .frame(height: 90)
+
+                Text(dose.summary)
+                    .font(.footnote)
+                    .foregroundStyle(.primary)
+                    .fixedSize(horizontal: false, vertical: true)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
         }

@@ -17,6 +17,30 @@ struct SettingsView: View {
     var body: some View {
         NavigationStack {
             Form {
+                Section("Where the log lives") {
+                    Picker("storage", selection: Binding(
+                        get: { store.storage },
+                        set: { store.storage = $0; Task { await store.load() } }
+                    )) {
+                        ForEach(Store.Storage.allCases) { Text($0.title).tag($0) }
+                    }
+                    .pickerStyle(.segmented)
+                    if store.storage == .icloud {
+                        labeled("file", text: $store.path, placeholder: "training.md")
+                        Text(ICloudBackend.isAvailable
+                             ? "In iCloud Drive, in a LiftLog folder you can open from the Files app. Synced by Apple; nothing leaves your account."
+                             : "This phone isn't signed in to iCloud. Sign in, or keep the log in a GitHub repo instead.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    } else {
+                        Text("Every set is a commit to a repo you own. Fill in the repo and a fine-grained token below.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                .listRowBackground(Rectangle().fill(.regularMaterial))
+
+                if store.storage == .github {
                 Section("Repository") {
                     labeled("owner", text: $store.owner, placeholder: "your-username")
                     labeled("repo", text: $store.repo, placeholder: "training")
@@ -24,7 +48,9 @@ struct SettingsView: View {
                     labeled("branch", text: $store.branch, placeholder: "main")
                 }
                 .listRowBackground(Rectangle().fill(.regularMaterial))
+                }
 
+                if store.storage == .github {
                 Section("GitHub token") {
                     SecureField("ghp_… (fine-grained PAT)", text: $store.token)
                         .textInputAutocapitalization(.never)
@@ -35,6 +61,7 @@ struct SettingsView: View {
                         .foregroundStyle(.secondary)
                 }
                 .listRowBackground(Rectangle().fill(.regularMaterial))
+                }
 
                 Section("Gym") {
                     Picker("bar weight", selection: $barWeight) {
@@ -288,9 +315,9 @@ struct SettingsView: View {
                      store.brief.goals.isEmpty ? nil : store.goalsPath,
                      store.brief.research.isEmpty ? nil : store.researchPath].compactMap { $0 }
         if found.isEmpty {
-            return "Neither file found. Commit them beside your log — **\(store.coachingPath)** for how you like to train and what to work around, **\(store.goalsPath)** for what you're aiming at — and they become the coach's standing brief."
+            return "No brief files yet. Write them from Your brief, or put them beside your log — **\(store.coachingPath)** for how you like to train and what to work around, **\(store.goalsPath)** for what you're aiming at — and they become the coach's standing brief."
         }
-        return "Loaded \(found.joined(separator: " and ")). Edit them in your repo, then reload below."
+        return "Loaded \(found.joined(separator: " and ")). Edit them in Your brief or beside the log, then reload below."
     }
 
     /// Post every day not yet on Strava, oldest first, one at a time — Strava

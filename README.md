@@ -208,7 +208,9 @@ never show a peak you didn't lift. Below it, **training days**: every day of
 the last months as a dot, Monday to Sunday, deeper the more sets, so a missed
 week is a blank column you can see without asking. And **sets per muscle per
 week**, six weeks across, the number a programme is written in — a compound
-counts fully for its prime mover and half for what it also trains, every
+counts fully for its prime mover and half for each muscle that also does real
+work in it (bench is chest, half triceps, half front delts; a row is back,
+half biceps, half rear delts), delts are split front / side / rear, and every
 logged set is a working set. Tonnage isn't here on purpose: it rewards a light
 leg press over a heavy triple and says nothing about where the work went.
 Lifts the app doesn't know are assigned once in **Settings ▸ Muscles**;

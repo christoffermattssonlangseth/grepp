@@ -8,6 +8,8 @@ struct SettingsView: View {
     @AppStorage("muscle_map") private var muscleMap = MuscleMap()
     @StateObject private var strava = StravaService.shared
     @State private var stravaError: String?
+    @State private var stravaID = ""
+    @State private var stravaSecret = ""
     @AppStorage("plate_inventory") private var inventory = PlateInventory.standard
 
     var body: some View {
@@ -145,11 +147,28 @@ struct SettingsView: View {
                         }
                         .buttonStyle(.borderedProminent)
                         .tint(Theme.strava)
-                        .disabled(strava.isBusy || !StravaService.isConfigured)
-                        if !StravaService.isConfigured {
-                            Text("Needs a Strava API app: create one at strava.com/settings/api with **localhost** as the Authorization Callback Domain, then put its client ID and secret in the untracked LiftLog/Secrets.plist as STRAVA_CLIENT_ID and STRAVA_CLIENT_SECRET.")
+                        .disabled(strava.isBusy || !strava.isConfigured)
+                        if !strava.isConfigured {
+                            labeled("client ID", text: $stravaID, placeholder: "123456")
+                            HStack {
+                                Text("client secret").frame(width: 90, alignment: .leading)
+                                SecureField("paste it here", text: $stravaSecret)
+                                    .multilineTextAlignment(.trailing)
+                            }
+                            Button("Save Strava keys") {
+                                strava.storeCredentials(id: stravaID, secret: stravaSecret)
+                                stravaSecret = ""
+                            }
+                            .disabled(stravaID.trimmingCharacters(in: .whitespaces).isEmpty
+                                      || stravaSecret.trimmingCharacters(in: .whitespaces).isEmpty)
+                            Text("From your own Strava API app: create one at strava.com/settings/api (any name; set **localhost** as the Authorization Callback Domain) and copy its Client ID and Client Secret from that page. Both go in the Keychain, never in the repo.")
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
+                        } else {
+                            Button("Forget Strava keys", role: .destructive) {
+                                strava.storeCredentials(id: "", secret: "")
+                            }
+                            .font(.subheadline)
                         }
                     }
                     if let stravaError {

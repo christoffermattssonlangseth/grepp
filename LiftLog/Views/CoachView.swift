@@ -12,6 +12,7 @@ struct CoachView: View {
     @State private var savingGoals = false
     /// The exact text last committed, so a revised file offers Save again rather
     /// than staying stuck on "Saved".
+    @AppStorage("muscle_map") private var muscleMap = MuscleMap()
     @State private var savedGoalsText: String?
     @State private var savedMemoryText: String?
     @State private var savingMemory = false
@@ -486,6 +487,7 @@ struct CoachView: View {
                    brief: store.brief,
                    draft: store.draft,
                    plans: store.plans,
+                   muscleMap: muscleMap,
                    workspace: store.anthropicWorkspace)
     }
 

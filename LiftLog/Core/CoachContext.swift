@@ -459,10 +459,44 @@ enum CoachContext {
         return lines.joined(separator: "\n")
     }
 
+    /// Weekly sets per muscle, oldest week first, the way a programme is
+    /// written and reviewed. Nil when nothing has been counted.
+    static func muscleReview(weekly: [MuscleMap.Credits], unmapped: [String]) -> String? {
+        let groups = MuscleGroup.ordered.filter { g in weekly.contains { ($0[g] ?? 0) > 0 } }
+        guard !groups.isEmpty else { return nil }
+
+        let labels = weekly.indices.map { i -> String in
+            let back = weekly.count - 1 - i
+            return back == 0 ? "this week" : (back == 1 ? "last week" : "\(back) weeks ago")
+        }
+        var lines = ["SETS PER MUSCLE. Working sets a week, counted by the app from the log (a " +
+                     "compound counts fully for its prime mover and half for what it also " +
+                     "trains; every logged set is a working set). Columns: " +
+                     labels.joined(separator: " · ") + "."]
+        for group in groups {
+            let cells = weekly.map { week -> String in
+                let n = week[group] ?? 0
+                return n == n.rounded() ? String(Int(n)) : String(format: "%.1f", n)
+            }
+            lines.append("\(group.rawValue): " + cells.joined(separator: " · "))
+        }
+        if !unmapped.isEmpty {
+            lines.append("Not counted anywhere (the app doesn't know these lifts): " +
+                         unmapped.joined(separator: ", ") + ".")
+        }
+        lines.append("Judge volume in sets per muscle per week, never in kilos moved. Say when a " +
+                     "muscle is getting little or nothing, and when the balance has drifted.")
+        return lines.joined(separator: "\n")
+    }
+
     /// Everything that's true right now and different next time: the lift in
-    /// hand and the recent plans. Sent uncached, after the log.
-    static func liveNote(draft: SessionDraft?, plans: [PlanRecord], now: Date = Date()) -> String? {
-        let parts = [inProgressNote(draft, now: now), planReview(plans, now: now)].compactMap { $0 }
+    /// hand, the recent plans, and this month's sets. Sent uncached, after the log.
+    static func liveNote(draft: SessionDraft?, plans: [PlanRecord],
+                         weeklySets: [MuscleMap.Credits] = [], unmapped: [String] = [],
+                         now: Date = Date()) -> String? {
+        let parts = [inProgressNote(draft, now: now),
+                     planReview(plans, now: now),
+                     muscleReview(weekly: weeklySets, unmapped: unmapped)].compactMap { $0 }
         return parts.isEmpty ? nil : parts.joined(separator: "\n\n")
     }
 

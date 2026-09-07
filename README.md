@@ -97,6 +97,9 @@ still queued and how long you've been resting — none of which is in the log
 until you finish the exercise. That goes as its own uncached block, so the
 log's prompt cache holds across the session.
 
+It sees your weekly sets per muscle for the last four weeks too, so "what
+should I do this week" is a balance question, not a guess.
+
 And it can remember. When it learns something worth keeping across chats — how
 you respond to a stall, a constraint, a thing you've told it to stop doing — it
 offers a note with a **Remember** button. Saved, the note goes into
@@ -198,13 +201,19 @@ logged or stored anywhere else.
 **History** — every session, newest first. Pull to refresh. Tap an exercise to
 edit it, swipe to delete; both push like any other change.
 
-**Trends** — a progression chart per lift: top-set weight, Est. 1RM or volume
-(kg × reps over the session), or added load / max reps for bodyweight lifts,
-with short-term (3-week) and all-time change tiles. Drag along the line to
-read a session off it. Drawn so it can never show a peak you didn't lift.
-Below it, **training days**: every day of the last months as a dot, Monday to
-Sunday, deeper the more you moved, so a missed week is a blank column you can
-see without asking. With sessions and kilos this week and per week.
+**Trends** — a progression chart per lift: top-set weight, Est. 1RM, or added
+load / max reps for bodyweight lifts, with short-term (3-week) and all-time
+change tiles. Drag along the line to read a session off it. Drawn so it can
+never show a peak you didn't lift. Below it, **training days**: every day of
+the last months as a dot, Monday to Sunday, deeper the more sets, so a missed
+week is a blank column you can see without asking. And **sets per muscle per
+week**, six weeks across, the number a programme is written in — a compound
+counts fully for its prime mover and half for what it also trains, every
+logged set is a working set. Tonnage isn't here on purpose: it rewards a light
+leg press over a heavy triple and says nothing about where the work went.
+Lifts the app doesn't know are assigned once in **Settings ▸ Muscles**;
+until then they're listed as not counted rather than guessed. History shows
+the same count per workout under each date.
 
 **Coach** — a chat with Claude that has your `training.md` in front of it. Ask
 "what session should I do today" and get loads and rep schemes cited from your
@@ -233,8 +242,8 @@ The same files compile into the iOS target via Xcode's synchronized folder, so
 `swift test` exercises the exact production code. Coverage: `training.md`
 parse/serialize round-trips, the `bw` / `bw+5` bodyweight tokens, malformed-line
 handling, the Trends analytics (top-set, Est. 1RM, volume and added-load
-series, change tiles, tonnage, the Monday-first weeks grid), the plan-versus-done
-verdicts, and the Coach context builder — how much log gets sent, how the brief is
+series, change tiles, the Monday-first weeks grid), the muscle map and its
+set counts, the plan-versus-done verdicts, and the Coach context builder — how much log gets sent, how the brief is
 assembled, and that what reaches the model still round-trips through the parser.
 
 ## GitHub token

@@ -160,6 +160,7 @@ final class CoachService: ObservableObject {
               brief: CoachContext.Brief,
               draft: SessionDraft? = nil,
               plans: [PlanRecord] = [],
+              muscleMap: MuscleMap = MuscleMap(),
               workspace: String) {
         let trimmed = question.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty, !isResponding else { return }
@@ -185,7 +186,11 @@ final class CoachService: ObservableObject {
         // The lift in the lifter's hands right now, which the log doesn't have
         // yet, and how recent prescriptions went. Sent as its own uncached block
         // so the log's cache holds.
-        let live = mode == .coaching ? CoachContext.liveNote(draft: draft, plans: plans) : nil
+        let live = mode == .coaching
+            ? CoachContext.liveNote(draft: draft, plans: plans,
+                                    weeklySets: muscleMap.weeklySets(weeks: 4, in: sessions),
+                                    unmapped: muscleMap.unmapped(in: sessions))
+            : nil
         // Say what's in play — otherwise there's no way to tell from the answers
         // whether the coaching notes or the live session were picked up.
         var note = excerpt.note

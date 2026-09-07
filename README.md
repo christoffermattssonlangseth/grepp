@@ -89,8 +89,8 @@ memory of the literature and meant to be checked, not trusted.
 **Trends.** Two views. *Lift*: a chart per lift (top set, Est. 1RM, or reps
 and added load for bodyweight lifts) with three-week and all-time change, and
 under it **work and result**: the lift's weekly best over the last eight weeks
-above the weekly sets its main muscle got, with one computed sentence naming
-the lever — flat at low volume means add sets, flat inside or above the band
+above its own weekly sets, with every set for its main muscle as a faint bar
+behind, and one computed sentence naming the lever — flat at low volume means add sets, flat inside or above the band
 means volume isn't it. The coach is told to make the same cross before it
 prescribes a way out of a stall.
 *Volume*: a training-days grid, Monday to Sunday, and sets per muscle for the

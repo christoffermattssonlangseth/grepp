@@ -33,6 +33,9 @@ Date, `kebab-case` exercise, then `weightxreps` tokens: `82.5x8` (kg × reps),
 `bwx6` (bodyweight), `bw+5x8` (bodyweight plus 5 kg). The app never writes
 anything else to it.
 
+No exercise images, no videos, no programme library. The numbers are the
+product.
+
 ## What it does
 
 **Log.** Big number pads. A plate calculator under the weight field, worked out

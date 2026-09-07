@@ -371,6 +371,72 @@ final class CoachContextTests: XCTestCase {
         XCTAssertEqual(CoachContext.appendingNote("  \n", to: existing, on: day), existing, "nothing to add")
     }
 
+    // MARK: - evidence
+
+    private let seed = """
+    # Evidence
+
+    Findings the coach programmes from.
+
+    - [R1] Ten or more weekly sets per muscle grew more muscle than fewer than five. — Schoenfeld 2017, J Sports Sci. doi:10.1080/02640414.2016.1210197
+    - [R2] Three-minute rests beat one-minute rests for strength and size. — Schoenfeld et al. 2016, J Strength Cond Res.
+    - a plain bullet the human wrote, not an entry
+    * [R7] Frequency matters mainly as a way to fit volume in — Grgic 2018, Sports Med https://doi.org/10.1007/s40279-018-0872-x
+    """
+
+    func testResearchEntriesParseWithTagClaimSourceAndDOI() {
+        let entries = CoachContext.parseResearch(seed)
+        XCTAssertEqual(entries.map(\.tag), ["R1", "R2", "R7"])
+        XCTAssertEqual(entries[0].claim, "Ten or more weekly sets per muscle grew more muscle than fewer than five.")
+        XCTAssertEqual(entries[0].source, "Schoenfeld 2017, J Sports Sci")
+        XCTAssertEqual(entries[0].doi, "10.1080/02640414.2016.1210197")
+        XCTAssertEqual(entries[0].url?.absoluteString, "https://doi.org/10.1080/02640414.2016.1210197")
+        XCTAssertNil(entries[1].doi)
+        XCTAssertEqual(entries[1].source, "Schoenfeld et al. 2016, J Strength Cond Res")
+        XCTAssertEqual(entries[2].doi, "10.1007/s40279-018-0872-x", "a doi.org URL counts too")
+        XCTAssertEqual(entries[2].source, "Grgic 2018, Sports Med")
+    }
+
+    func testAppendingResearchNumbersFromTheHighestTag() {
+        let added = CoachContext.appendingResearch(
+            "Failure adds nothing for strength. — Refalo 2023, Sports Med\n- [R1] Low loads grow muscle too. — Schoenfeld 2017",
+            to: seed)
+        let entries = CoachContext.parseResearch(added)
+        XCTAssertEqual(entries.map(\.tag), ["R1", "R2", "R7", "R8", "R9"])
+        XCTAssertEqual(entries[3].claim, "Failure adds nothing for strength.")
+        XCTAssertEqual(entries[4].claim, "Low loads grow muscle too.", "the model's own tag is dropped and renumbered")
+        XCTAssertTrue(added.hasPrefix("# Evidence"), "the human's file is left in place")
+    }
+
+    func testAppendingResearchStartsAFile() {
+        let text = CoachContext.appendingResearch("A claim. — Someone 2020", to: "")
+        XCTAssertTrue(text.hasPrefix("# Evidence\n"), text)
+        XCTAssertEqual(CoachContext.parseResearch(text).map(\.tag), ["R1"])
+        XCTAssertEqual(CoachContext.appendingResearch("  \n", to: seed), seed, "nothing to add")
+    }
+
+    func testResearchBlockLiftsOutAndTagsBecomeLinks() {
+        let reply = CoachContext.parseReply("Worth keeping, per [R1].\n\n```research\nA claim. — Someone 2020\nAnother. — Else 2021\n```")
+        XCTAssertEqual(reply.research, "A claim. — Someone 2020\nAnother. — Else 2021")
+        XCTAssertFalse(reply.isWritingResearch)
+        XCTAssertEqual(reply.prose, "Worth keeping, per [R1].")
+        XCTAssertTrue(CoachContext.parseReply("```research\nA cl").isWritingResearch)
+
+        let md = CoachContext.chatMarkdown("Per [R1] and [R12], not [R3](liftlog://evidence/R3) twice.")
+        XCTAssertEqual(md, "Per [R1](liftlog://evidence/R1) and [R12](liftlog://evidence/R12), not [R3](liftlog://evidence/R3) twice.")
+    }
+
+    func testEvidenceBriefIsFedAndInstructed() {
+        let excerpt = CoachContext.excerpt(from: [session("2026-08-01")])
+        let brief = CoachContext.Brief(research: seed)
+        let text = CoachContext.systemPrompt(for: excerpt, brief: brief)
+        XCTAssertTrue(text.contains("<evidence>"), text)
+        XCTAssertTrue(text.contains("[R7] Frequency matters"), text)
+        XCTAssertTrue(text.contains("EVIDENCE. When the lifter hands you a paper"), text)
+        XCTAssertFalse(CoachContext.systemPrompt(for: excerpt, mode: .goalsInterview).contains("EVIDENCE. When"))
+        XCTAssertTrue(brief.hasContent)
+    }
+
     // MARK: - mid-session
 
     private func draft(name: String = "squat", sets: [String] = [], plan: [String]? = nil,

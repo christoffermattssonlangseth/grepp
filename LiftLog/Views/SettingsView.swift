@@ -91,6 +91,7 @@ struct SettingsView: View {
 
                     labeled("coaching file", text: $store.coachingPath, placeholder: "coaching.md")
                     labeled("goals file", text: $store.goalsPath, placeholder: "goals.md")
+                    labeled("evidence file", text: $store.researchPath, placeholder: "research.md")
                     Text(coachingHint)
                         .font(.caption)
                         .foregroundStyle(.secondary)
@@ -167,7 +168,8 @@ struct SettingsView: View {
     /// Whether the coaching notes were found, and what to do about it.
     private var coachingHint: LocalizedStringKey {
         let found = [store.brief.coaching.isEmpty ? nil : store.coachingPath,
-                     store.brief.goals.isEmpty ? nil : store.goalsPath].compactMap { $0 }
+                     store.brief.goals.isEmpty ? nil : store.goalsPath,
+                     store.brief.research.isEmpty ? nil : store.researchPath].compactMap { $0 }
         if found.isEmpty {
             return "Neither file found. Commit them beside your log — **\(store.coachingPath)** for how you like to train and what to work around, **\(store.goalsPath)** for what you're aiming at — and they become the coach's standing brief."
         }

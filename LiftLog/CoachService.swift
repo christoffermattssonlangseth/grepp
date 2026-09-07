@@ -194,7 +194,8 @@ final class CoachService: ObservableObject {
         // Say what's in play — otherwise there's no way to tell from the answers
         // whether the coaching notes or the live session were picked up.
         var note = excerpt.note
-        if brief.hasContent { note += " · brief" }
+        if !brief.coaching.isEmpty || !brief.goals.isEmpty { note += " · brief" }
+        if !brief.research.isEmpty { note += " · evidence" }
         if draft.map({ !$0.isEmpty }) ?? false { note += " · mid-session" }
         contextNote = note
 

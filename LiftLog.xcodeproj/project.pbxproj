@@ -43,6 +43,7 @@
 		7A11B00100000000000000B0 /* Exceptions for "LiftLog" folder in "LiftLog" target */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
+				Info.plist,
 				LiftLog.entitlements,
 			);
 			target = 50E05B603046D548005A67F7 /* LiftLog */;
@@ -382,6 +383,7 @@
 				DEVELOPMENT_TEAM = 7R6QL53THM;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = LiftLog/Info.plist;
 				INFOPLIST_KEY_NSSupportsLiveActivities = YES;
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
@@ -416,6 +418,7 @@
 				DEVELOPMENT_TEAM = 7R6QL53THM;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = LiftLog/Info.plist;
 				INFOPLIST_KEY_NSSupportsLiveActivities = YES;
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;

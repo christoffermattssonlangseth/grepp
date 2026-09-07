@@ -4,11 +4,12 @@
 
 # LiftLog
 
-### An iOS lifting log that lives in your own GitHub repo, with a Claude coach that reads it.
+### An iOS lifting log that lives in a text file you own, with a coach powered by Claude that reads it.
 
-Every set you log becomes a line of text in a repo you control. No server, no
-database, no export: the file is the data, which is why a model can coach from
-it with nothing in between. Ask **Coach** what to squat today and it answers
+Every set you log becomes a line of text in a file you control: in your iCloud
+Drive, where it shows up in the Files app, or in a GitHub repo where every set is
+a commit. No server, no database, no export: the file is the data, which is why
+a model can coach from it with nothing in between. Ask **Coach** what to squat today and it answers
 from your own history, with the loads, the reps and the dates it reasoned from,
 then puts the session on the Log tab with one tap.
 
@@ -89,7 +90,7 @@ first set to the post. Press again and it updates the same activity. History
 offers a post button per day, and Settings posts every day not yet up, oldest
 first. Nothing is read back from Strava.
 
-**Offline.** A save that can't reach GitHub is queued, shown at once, and
+**Offline.** With GitHub, a save that can't reach it is queued, shown at once, and
 replayed on the next successful load or save through the same safe path: every
 save fetches the current file, merges one exercise into it, and writes. The
 lift in progress, the rest clock and the Coach chat survive an app kill.
@@ -99,13 +100,17 @@ lift in progress, the rest clock and the Coach chat survive an app kill.
 **Run it.** Open `LiftLog.xcodeproj`, pick your iPhone, press ▶. First run on a
 phone: enable Developer Mode and trust the developer in iOS Settings.
 `LiftLog/` is the app, `LiftLogWidgets/` the widget extension, `Shared/` what
-both compile; they share the App Group `group.CML.LiftLog`, which automatic
-signing registers (open Signing & Capabilities on each target if it complains).
+both compile. The app needs the App Group `group.CML.LiftLog` and the iCloud
+container `iCloud.CML.LiftLog`, both in its entitlements; automatic signing
+registers them (open Signing & Capabilities on each target if it complains).
 The palette is one constant, `Theme.accent`, and `Scripts/make-icon.py` draws
 the icon from it.
 
-**GitHub.** In Settings, the owner, repo, path and branch of your log, plus a
-fine-grained token with Contents read and write on that repo. Keychain.
+**Where the log lives.** The first run asks: iCloud Drive or a GitHub repo.
+iCloud needs nothing else; the file is `LiftLog/training.md` in the Files app,
+synced by Apple. GitHub takes the owner, repo, path and branch in Settings plus
+a fine-grained token with Contents read and write on that repo, kept in the
+Keychain. Switch either way later in Settings; the format is the same.
 
 **Claude.** A key from the [Claude Console](https://platform.claude.com/),
 pasted into Settings ▸ Coach. Keychain, never in source: this repo is public. A
@@ -120,8 +125,9 @@ the Authorization Callback Domain, paste its client ID and secret into
 Settings ▸ Strava (or `Secrets.plist` as `STRAVA_CLIENT_ID` and
 `STRAVA_CLIENT_SECRET`), and tap Connect. Tokens live in the Keychain.
 
-**Brief files.** Optional. Commit `coaching.md`, `goals.md` and `research.md`
-beside the log, or create them from the app. Paths are in Settings ▸ Coach.
+**Brief files.** Optional. `coaching.md`, `goals.md` and `research.md` sit
+beside the log, wherever it lives; create them from the app or by hand. Paths
+are in Settings ▸ Coach.
 
 ## Tests
 

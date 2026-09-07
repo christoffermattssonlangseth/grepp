@@ -3,7 +3,8 @@ import SwiftUI
 import Combine
 import WidgetKit
 
-/// App-wide state: config, the loaded sessions, and sync with GitHub.
+/// App-wide state: config, the loaded sessions, and sync with wherever the
+/// log lives — a GitHub repo or iCloud Drive, behind one `LogBackend`.
 ///
 /// Offline-first: every write goes through a merge-on-remote push, but if the
 /// network is unreachable the write is queued locally (`pending`) and the file's
@@ -15,6 +16,27 @@ final class Store: ObservableObject {
     /// lock-screen intent — which the system performs in this process, scene
     /// or no scene — reaches it here.
     static let shared = Store()
+
+    /// Where the log lives. Unset on a fresh install, which is what shows the
+    /// first-run choice; a phone that already had a repo configured before this
+    /// existed keeps GitHub without being asked.
+    enum Storage: String, CaseIterable, Identifiable {
+        case icloud, github
+        var id: String { rawValue }
+        var title: String { self == .icloud ? "iCloud Drive" : "GitHub repo" }
+    }
+    @AppStorage("storage") private var storageRaw = ""
+
+    var storage: Storage {
+        get {
+            if let chosen = Storage(rawValue: storageRaw) { return chosen }
+            return owner.isEmpty && repo.isEmpty ? .icloud : .github
+        }
+        set { storageRaw = newValue.rawValue; objectWillChange.send() }
+    }
+
+    /// Nothing chosen and nothing configured: show the first-run choice.
+    var needsSetup: Bool { storageRaw.isEmpty && owner.isEmpty && repo.isEmpty && token.isEmpty }
 
     // Config (token lives in Keychain, everything else in UserDefaults).
     @AppStorage("gh_owner") var owner = ""
@@ -198,9 +220,16 @@ final class Store: ObservableObject {
         CoachCredentials.store(trimmed)
     }
 
-    private var service: GitHubService {
-        GitHubService(owner: owner, repo: repo, path: path, branch: branch, token: token)
+    /// The backend for one file, wherever the log lives. The brief files sit
+    /// beside the log, so they take the same backend with their own path.
+    func backend(for filePath: String) -> any LogBackend {
+        switch storage {
+        case .github: return GitHubService(owner: owner, repo: repo, path: filePath, branch: branch, token: token)
+        case .icloud: return ICloudBackend(path: filePath)
+        }
     }
+
+    private var service: any LogBackend { backend(for: path) }
 
     /// Overwrite one of the brief files — hand-edited, or written by the coach in
     /// an interview.
@@ -221,12 +250,12 @@ final class Store: ObservableObject {
         isBusy = true; briefStatus = "Saving \(path)…"
         defer { isBusy = false }
 
-        let remote = GitHubService(owner: owner, repo: repo, path: path, branch: branch, token: token)
+        let remote = backend(for: path)
         let content = text.hasSuffix("\n") ? text : text + "\n"
         do {
-            // Fetch first for the sha: a nil sha creates the file, a stale one is a 409.
+            // Fetch first for the version: nil creates the file, a stale one is refused.
             let existing = try await remote.fetch()
-            _ = try await remote.put(content: content, sha: existing?.sha, message: "Update \(path) from LiftLog")
+            _ = try await remote.put(content: content, version: existing?.version, message: "Update \(path) from LiftLog")
             switch file {
             case .coaching: brief.coaching = content
             case .goals: brief.goals = content
@@ -284,7 +313,7 @@ final class Store: ObservableObject {
     /// file", which is a real answer and clears any stale cache.
     private func companion(at path: String, cacheKey: String) async -> String? {
         guard !path.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return "" }
-        let file = GitHubService(owner: owner, repo: repo, path: path, branch: branch, token: token)
+        let file = backend(for: path)
         do {
             // fetch() answers nil for a 404 — the file simply isn't there, which is a
             // real answer and clears any stale cache. `try?` can't express that: it
@@ -344,13 +373,13 @@ final class Store: ObservableObject {
     // MARK: - Load
 
     func load() async {
-        guard !isBusy else { return }   // don't overlap with an in-flight save/load
+        guard !isBusy, !needsSetup else { return }   // don't overlap with an in-flight save/load
         isBusy = true; status = "Loading…"
         defer { isBusy = false }
         do {
             if let state = try await service.fetch() {
                 cacheContent(state.content)
-                fileSHA = state.sha
+                fileSHA = state.version
                 // Show queued-but-unsynced writes layered on top of the fresh remote.
                 sessions = WorkoutParser.applying(pending, to: WorkoutParser.parse(state.content))
                 status = "Loaded \(sessions.count) sessions.\(pendingSuffix)"
@@ -401,7 +430,8 @@ final class Store: ObservableObject {
             // A successful reach means we can drain anything queued earlier, too.
             await flushPending()
             sessions = WorkoutParser.applying(pending, to: base)
-            status = pending.isEmpty ? "Pushed ✓" : "Pushed ✓ — \(pending.count) still queued"
+            let done = storage == .github ? "Pushed ✓" : "Saved ✓"
+            status = pending.isEmpty ? done : "\(done) — \(pending.count) still queued"
             return .pushed
         } catch is URLError {
             enqueue(write)
@@ -434,7 +464,7 @@ final class Store: ObservableObject {
                 WorkoutParser.apply(write, to: &base)
 
                 let content = WorkoutParser.serialize(base)
-                fileSHA = try await service.put(content: content, sha: remote?.sha, message: write.message)
+                fileSHA = try await service.put(content: content, version: remote?.version, message: write.message)
                 return base
             } catch let error as GitHubService.GitHubError {
                 if case .badResponse(409, _) = error, attempt < maxAttempts {
@@ -444,6 +474,12 @@ final class Store: ObservableObject {
                     continue
                 }
                 throw error
+            } catch ICloudBackend.ICloudError.stale where attempt < maxAttempts {
+                // Another device wrote first: same retry as a GitHub 409.
+                status = "Syncing… (retry \(attempt))"
+                try? await Task.sleep(nanoseconds: 700_000_000)
+                lastError = ICloudBackend.ICloudError.stale
+                continue
             }
         }
         throw lastError ?? StoreError.unsafeMerge

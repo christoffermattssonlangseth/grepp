@@ -26,10 +26,13 @@ final class DoseResponseTests: XCTestCase {
         XCTAssertEqual(dose.muscle, .quads)
         XCTAssertEqual(dose.metric, .topSet)
         XCTAssertEqual(dose.weeks.count, 8)
-        guard case .progressing(let delta, let sets) = dose.verdict else { return XCTFail("\(dose.verdict)") }
+        guard case .progressing(let delta, let own, let sets) = dose.verdict else { return XCTFail("\(dose.verdict)") }
         XCTAssertEqual(delta, 7.5)
+        XCTAssertEqual(own, 3)
         XCTAssertEqual(sets, 3, "three squat sets a week is three quad sets")
+        XCTAssertEqual(dose.weeks.last { $0.best != nil }?.liftSets, 3)
         XCTAssertTrue(dose.summary.hasPrefix("Progressing: +7.5 kg"), dose.summary)
+        XCTAssertTrue(dose.summary.contains("3 squat sets a week (3 for quads in all)"), dose.summary)
     }
 
     func testFlatAtLowVolumeNamesVolumeAsTheLever() {
@@ -38,9 +41,9 @@ final class DoseResponseTests: XCTestCase {
             day("2026-08-18", squat: 100), day("2026-08-25", squat: 100),
         ]
         let dose = DoseResponse.make(for: "squat", in: sessions, map: MuscleMap(), endingOn: date("2026-09-06"), calendar: utc)!
-        guard case .stalledLow(let weeks, _) = dose.verdict else { return XCTFail("\(dose.verdict)") }
+        guard case .stalledLow(let weeks, _, _) = dose.verdict else { return XCTFail("\(dose.verdict)") }
         XCTAssertEqual(weeks, 3)
-        XCTAssertTrue(dose.summary.contains("Volume is a lever"), dose.summary)
+        XCTAssertTrue(dose.summary.contains("Volume is a lever: another squat set"), dose.summary)
     }
 
     func testFlatInsideTheBandDoesNotAskForMoreSets() {
@@ -51,7 +54,10 @@ final class DoseResponseTests: XCTestCase {
             day("2026-08-18", squat: 100, sets: 8, extra: [press]), day("2026-08-25", squat: 100, sets: 8, extra: [press]),
         ]
         let dose = DoseResponse.make(for: "squat", in: sessions, map: MuscleMap(), endingOn: date("2026-09-06"), calendar: utc)!
-        guard case .stalledMid = dose.verdict else { return XCTFail("\(dose.verdict)") }
+        guard case .stalledMid(_, let own, let all) = dose.verdict else { return XCTFail("\(dose.verdict)") }
+        XCTAssertEqual(own, 8, "the lift's own sets")
+        XCTAssertEqual(all, 12, "plus the leg press for quads")
+        XCTAssertTrue(dose.summary.contains("8 squat sets a week (12 for quads in all)"), dose.summary)
         XCTAssertTrue(dose.summary.contains("inside the band"), dose.summary)
     }
 

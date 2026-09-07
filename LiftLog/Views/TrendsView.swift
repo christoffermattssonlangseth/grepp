@@ -238,8 +238,9 @@ struct TrendsView: View {
                     Text("work and result")
                         .font(.caption).foregroundStyle(.secondary)
                     Spacer()
-                    Text("\(dose.metric.rawValue.lowercased()) · \(dose.muscle.rawValue) sets")
+                    Text("\(dose.metric.rawValue.lowercased()) · sets of \(Theme.readableName(dose.exercise)), \(dose.muscle.rawValue) behind")
                         .font(.caption2).foregroundStyle(.tertiary)
+                        .lineLimit(1).minimumScaleFactor(0.8)
                 }
 
                 // Result: the week's best, where the lift was done.
@@ -265,14 +266,18 @@ struct TrendsView: View {
                 }
                 .frame(height: 90)
 
-                // Work: sets a week for the main muscle, against the band.
+                // Work: this lift's own sets as the bar, every set for its main
+                // muscle as a faint bar behind, against the band the total is judged by.
                 Chart {
                     RectangleMark(yStart: .value("low", DoseResponse.band.lowerBound),
                                   yEnd: .value("high", DoseResponse.band.upperBound))
                         .foregroundStyle(Theme.accent.opacity(0.12))
                     ForEach(dose.weeks) { week in
-                        BarMark(x: .value("Week", week.start), y: .value("Sets", week.sets), width: .ratio(0.6))
-                            .foregroundStyle(week.best == nil ? Color.secondary.opacity(0.35) : Theme.accent)
+                        BarMark(x: .value("Week", week.start), y: .value("Muscle sets", week.sets), width: .ratio(0.6))
+                            .foregroundStyle(Color.secondary.opacity(0.22))
+                            .cornerRadius(3)
+                        BarMark(x: .value("Week", week.start), y: .value("Lift sets", Double(week.liftSets)), width: .ratio(0.6))
+                            .foregroundStyle(Theme.accent)
                             .cornerRadius(3)
                     }
                 }

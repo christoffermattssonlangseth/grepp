@@ -85,8 +85,9 @@ struct LastSessionView: View {
     }
 
     /// The plan loaded in the Log tab: Coach's next session, or whatever's queued.
+    /// One row per lift, sets compressed — "90x8 ×3" — so four fit.
     private func upNext(_ snapshot: WidgetSnapshot, compact: Bool = false) -> some View {
-        let shown = Array(snapshot.upNext.prefix(compact ? 3 : (family == .systemSmall ? 3 : 4)))
+        let shown = Array(snapshot.upNext.prefix(4))
         return VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 6) {
                 Image(systemName: "arrow.turn.down.right")
@@ -97,23 +98,14 @@ struct LastSessionView: View {
                     .foregroundStyle(.secondary)
             }
             Text(snapshot.upNext.count == 1 ? "1 lift loaded" : "\(snapshot.upNext.count) lifts loaded")
-                .font(.title3.weight(.heavy))
+                .font((compact ? Font.headline : .title3).weight(.heavy))
                 .fontWidth(.condensed)
                 .lineLimit(1)
                 .padding(.top, 4)
-            Spacer(minLength: 6)
-            VStack(alignment: .leading, spacing: 2) {
+            if compact { Spacer().frame(height: 6) } else { Spacer(minLength: 6) }
+            VStack(alignment: .leading, spacing: 3) {
                 ForEach(Array(shown.enumerated()), id: \.offset) { _, line in
-                    VStack(alignment: .leading, spacing: 0) {
-                        Text(line.name.replacingOccurrences(of: "-", with: " "))
-                            .font(.footnote.weight(.semibold))
-                            .lineLimit(1)
-                        Text(line.sets)
-                            .font(.system(.caption2, design: .monospaced))
-                            .foregroundStyle(.secondary)
-                            .lineLimit(1)
-                            .minimumScaleFactor(0.7)
-                    }
+                    row(name: line.name, sets: compactSets(line.sets))
                 }
                 if snapshot.upNext.count > shown.count {
                     Text("+\(snapshot.upNext.count - shown.count) more")
@@ -125,11 +117,42 @@ struct LastSessionView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
 
+    /// Name left, sets right, one line.
+    private func row(name: String, sets: String) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 6) {
+            Text(name.replacingOccurrences(of: "-", with: " "))
+                .font(.footnote.weight(.semibold))
+                .lineLimit(1)
+            Spacer(minLength: 4)
+            Text(sets)
+                .font(.system(.caption2, design: .monospaced))
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+                .minimumScaleFactor(0.7)
+        }
+    }
+
+    /// "90x8 90x8 90x8" → "90x8 ×3"; "bwx6 bwx6 bwx7" → "bwx6 ×2 bwx7". A
+    /// trailing " · 1 done" is kept as is.
+    private func compactSets(_ sets: String) -> String {
+        let parts = sets.components(separatedBy: " · ")
+        let tokens = parts[0].split(separator: " ").map(String.init)
+        var out: [String] = []
+        var i = 0
+        while i < tokens.count {
+            var run = 1
+            while i + run < tokens.count, tokens[i + run] == tokens[i] { run += 1 }
+            out.append(run > 1 ? "\(tokens[i]) ×\(run)" : tokens[i])
+            i += run
+        }
+        return ([out.joined(separator: " ")] + parts.dropFirst()).joined(separator: " · ")
+    }
+
     private func session(_ snapshot: WidgetSnapshot, compact: Bool = false) -> some View {
         VStack(alignment: .leading, spacing: 0) {
             header
             Text(relative(snapshot))
-                .font(.title3.weight(.heavy))
+                .font((compact ? Font.headline : .title3).weight(.heavy))
                 .fontWidth(.condensed)
                 .lineLimit(1)
                 .padding(.top, 4)
@@ -137,7 +160,7 @@ struct LastSessionView: View {
                 .font(.caption2)
                 .foregroundStyle(.secondary)
                 .lineLimit(1)
-            Spacer(minLength: 6)
+            if compact { Spacer().frame(height: 6) } else { Spacer(minLength: 6) }
             lines(snapshot, compact: compact)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
@@ -156,20 +179,10 @@ struct LastSessionView: View {
     /// Medium on its own: the lifts and every set.
     private func lines(_ snapshot: WidgetSnapshot, compact: Bool = false) -> some View {
         let narrow = compact || family == .systemSmall
-        let shown = Array(snapshot.lines.prefix(narrow ? 3 : 4))
-        return VStack(alignment: .leading, spacing: 2) {
+        let shown = Array(snapshot.lines.prefix(4))
+        return VStack(alignment: .leading, spacing: 3) {
             ForEach(Array(shown.enumerated()), id: \.offset) { _, line in
-                HStack(alignment: .firstTextBaseline, spacing: 6) {
-                    Text(line.name.replacingOccurrences(of: "-", with: " "))
-                        .font(.footnote.weight(.semibold))
-                        .lineLimit(1)
-                    Spacer(minLength: 4)
-                    Text(narrow ? lastSet(line) : line.sets)
-                        .font(.system(.caption2, design: .monospaced))
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.7)
-                }
+                row(name: line.name, sets: narrow ? compactSets(line.sets) : line.sets)
             }
             if snapshot.lines.count > shown.count {
                 Text("+\(snapshot.lines.count - shown.count) more")
@@ -194,10 +207,6 @@ struct LastSessionView: View {
     }
 
     // MARK: - Words
-
-    private func lastSet(_ line: WidgetSnapshot.Line) -> String {
-        line.sets.split(separator: " ").last.map(String.init) ?? ""
-    }
 
     private func daysAgo(_ snapshot: WidgetSnapshot) -> Int? {
         guard let day = snapshot.date else { return nil }

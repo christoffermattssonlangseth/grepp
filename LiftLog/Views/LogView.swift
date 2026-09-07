@@ -40,6 +40,9 @@ struct LogView: View {
     @State private var setAdded = 0
     @State private var exerciseFinished = 0
     @State private var recordSet = 0
+    @StateObject private var strava = StravaService.shared
+    @State private var stravaStatus: String?
+    @State private var stravaError: String?
     /// When non-nil, the rest clock is running from this instant.
     @State private var restStart: Date?
     @FocusState private var focus: Field?
@@ -117,8 +120,9 @@ struct LogView: View {
             // Everything in flight, saved on every change — one equatable value,
             // so it's one modifier rather than one per field.
             .onChange(of: currentDraft) { _, draft in store.saveDraft(draft) }
-            .onChange(of: restStart) { _, _ in syncRestNotification() }
-            .onChange(of: restTarget) { _, _ in syncRestNotification() }
+            .onChange(of: restStart) { _, _ in syncRest() }
+            .onChange(of: restTarget) { _, _ in syncRest() }
+            .onChange(of: store.draftRevision) { _, _ in takeInOutsideDraft() }
             .onChange(of: store.editRequest) { _, _ in applyEditRequest() }
             .onChange(of: store.prescriptionRequest) { _, _ in applyPrescription() }
         }
@@ -147,6 +151,28 @@ struct LogView: View {
         plan = d.plan
         queue = d.queue
         if let start = d.restStart, Date().timeIntervalSince(start) < 30 * 60 { restStart = start }
+        // Whether or not a rest came back, the lock screen must agree: this is
+        // what clears a Live Activity left over from a session that just stopped.
+        syncRest()
+    }
+
+    /// A set landed from the lock screen: the draft moved without this screen
+    /// knowing. Take it back in whole, then line up the next set as `land` would.
+    private func takeInOutsideDraft() {
+        guard let d = store.draft else { return }
+        let grew = d.sets.count > sets.count
+        date = d.date
+        name = d.name
+        sets = d.sets
+        isBodyweight = d.isBodyweight
+        plan = d.plan
+        queue = d.queue
+        restStart = d.restStart
+        if grew {
+            if record(at: sets.count - 1) != nil { recordSet += 1 }
+            setAdded += 1
+            if let plan, sets.count < plan.count { prefill(plan[sets.count]) }
+        }
     }
 
     /// Load a prescription from Coach. The first set's numbers go in the fields
@@ -154,6 +180,7 @@ struct LogView: View {
     /// each one prefilling the next — 3x5 becomes tap, tap, tap.
     private func applyPrescription() {
         guard let first = store.prescriptionRequest.first else { return }
+        store.recordPlan(store.prescriptionRequest, on: date)
         queue = Array(store.prescriptionRequest.dropFirst())
         store.prescriptionRequest = []
         restStart = nil
@@ -239,11 +266,56 @@ struct LogView: View {
                     }
                     .onTapGesture { loadForEditing(ex) }
                 }
+                if strava.isConnected { stravaRow }
             }
         }
     }
 
     private var todaySetCount: Int { todayExercises.reduce(0) { $0 + $1.sets.count } }
+
+    // MARK: - Strava
+
+    /// Post the day to Strava as a Weight Training activity with the lines in
+    /// its description. Posted already, and grown since: the same button
+    /// updates it rather than posting twice.
+    private var stravaRow: some View {
+        let posted = store.stravaActivity(on: date) != nil
+        return VStack(alignment: .leading, spacing: 6) {
+            Button {
+                Task { await postToStrava() }
+            } label: {
+                HStack(spacing: 8) {
+                    if strava.isBusy { ProgressView().controlSize(.small) }
+                    Text(posted ? "Update on Strava" : "Post to Strava")
+                        .font(.subheadline.weight(.bold))
+                }
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 8)
+            }
+            .buttonStyle(.bordered)
+            .tint(Theme.strava)
+            .disabled(strava.isBusy || todayExercises.isEmpty)
+            if let stravaStatus {
+                Text(stravaStatus).font(.caption2).foregroundStyle(.secondary)
+            }
+            if let stravaError {
+                Text(stravaError).font(.caption2).foregroundStyle(.orange)
+            }
+        }
+    }
+
+    private func postToStrava() async {
+        stravaError = nil
+        stravaStatus = nil
+        do {
+            switch try await StravaPoster.post(Session(date: date, exercises: todayExercises), store: store, strava: strava) {
+            case .posted: stravaStatus = "Posted to Strava ✓"
+            case .updated: stravaStatus = "Updated on Strava ✓"
+            }
+        } catch {
+            stravaError = error.localizedDescription
+        }
+    }
 
     // MARK: - Exercise selector
 
@@ -438,21 +510,13 @@ struct LogView: View {
         .buttonStyle(.plain)
     }
 
-    /// Keep the "rest's up" notification in step with the clock: set for when
-    /// the target lands, moved if the target changes mid-rest, cancelled when the
-    /// rest ends. It only ever shows when the phone is locked or you're elsewhere.
-    private func syncRestNotification() {
-        guard let start = restStart else { RestNotifier.cancel(); return }
-        let remaining = restTarget - Int(Date().timeIntervalSince(start))
-        guard remaining > 0 else { RestNotifier.cancel(); return }
-        RestNotifier.schedule(in: remaining, next: nextUp)
-    }
-
-    /// "squat · 87.5 kg × 5" when the plan knows the next set; nil when it doesn't.
-    private var nextUp: String? {
-        guard let plan, sets.count < plan.count, !name.isEmpty else { return nil }
-        let next = plan[sets.count]
-        return "\(Theme.readableName(name)) · \(loadLabel(next)) × \(next.reps)"
+    /// Keep the world outside the app in step with the clock: the "rest's up"
+    /// notification set for when the target lands, and the Live Activity that
+    /// shows the countdown on the lock screen. Both move if the target changes
+    /// mid-rest and go away when the rest ends. Neither shows in the foreground —
+    /// there, the card is the clock.
+    private func syncRest() {
+        RestSignals.sync(currentDraft, target: restTarget)
     }
 
     private func restSeconds(at now: Date) -> Int {
@@ -595,6 +659,7 @@ struct LogView: View {
     /// The one path for both add-set and repeat-last.
     private func land(_ set: WorkSet) {
         sets.append(set)
+        store.noteSetLanded(on: date)
         if record(at: sets.count - 1) != nil { recordSet += 1 }
         restStart = Date()   // start resting the moment a set lands
         setAdded += 1
@@ -676,11 +741,7 @@ struct LogView: View {
     }
 
     /// Row label for a logged set: "82.5 kg", "BW +5 kg" or "Bodyweight".
-    private func loadLabel(_ set: WorkSet) -> String {
-        if let w = set.weight { return "\(WorkSet.formatWeight(w)) kg" }
-        if let a = set.added, a > 0 { return "BW +\(WorkSet.formatWeight(a)) kg" }
-        return "Bodyweight"
-    }
+    private func loadLabel(_ set: WorkSet) -> String { set.loadLabel }
 
     /// Load an already-logged exercise back into the input area so its sets can be edited.
     private func loadForEditing(_ ex: ExerciseEntry) {
@@ -700,6 +761,7 @@ struct LogView: View {
         // failure leaves the input so the user can retry. Today's session card
         // keeps the record either way.
         if result != .failed {
+            if plan != nil { store.completePlan(entry, on: date) }
             exerciseFinished += 1
             focus = nil
             if !queue.isEmpty {

@@ -3,6 +3,29 @@ import XCTest
 
 final class SessionDraftTests: XCTestCase {
 
+    private func draft(sets: [WorkSet], plan: [WorkSet]?) -> SessionDraft {
+        SessionDraft(date: Date(), name: "squat", sets: sets, isBodyweight: false,
+                     weightText: "", addedText: "", repsText: "", plan: plan, queue: [], restStart: nil)
+    }
+
+    func testSameAgainPrefersThePlanThenRepeatsTheLast() {
+        let planned = WorkSet(weight: 87.5, added: nil, reps: 5)
+        let done = WorkSet(weight: 85, added: nil, reps: 5)
+        XCTAssertEqual(draft(sets: [done], plan: [planned, planned]).sameAgainSet?.token, "87.5x5")
+        XCTAssertEqual(draft(sets: [done, done], plan: [planned, planned]).sameAgainSet?.token, "85x5",
+                       "plan done — repeat the last set")
+        XCTAssertEqual(draft(sets: [done], plan: nil).sameAgainSet?.token, "85x5")
+        XCTAssertNil(draft(sets: [], plan: nil).sameAgainSet)
+        XCTAssertNil(draft(sets: [], plan: nil).nextPlanned)
+    }
+
+    func testLoadLabelSpeaksLikeALifter() {
+        XCTAssertEqual(WorkSet(weight: 87.5, added: nil, reps: 5).loadLabel, "87.5 kg")
+        XCTAssertEqual(WorkSet(weight: nil, added: 5, reps: 5).loadLabel, "BW +5 kg")
+        XCTAssertEqual(WorkSet(weight: nil, added: nil, reps: 5).loadLabel, "Bodyweight")
+    }
+
+
     private let set = WorkSet(weight: 87.5, added: nil, reps: 5)
 
     func testRoundTripsThroughJSON() throws {

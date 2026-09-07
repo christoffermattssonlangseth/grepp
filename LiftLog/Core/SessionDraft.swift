@@ -18,4 +18,16 @@ struct SessionDraft: Codable, Equatable {
     /// Nothing worth keeping: no lift chosen, nothing landed, nothing queued.
     /// Numbers typed but not yet added don't count on their own.
     var isEmpty: Bool { name.isEmpty && sets.isEmpty && queue.isEmpty }
+
+    /// The set the plan says comes next, if the plan has one left.
+    var nextPlanned: WorkSet? {
+        guard let plan, sets.count < plan.count else { return nil }
+        return plan[sets.count]
+    }
+
+    /// What "same again" lands: the next planned set, else the last one landed.
+    /// Nil when nothing has been landed and nothing is planned.
+    var sameAgainSet: WorkSet? {
+        nextPlanned ?? sets.last
+    }
 }

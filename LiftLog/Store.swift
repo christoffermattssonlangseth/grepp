@@ -1,6 +1,7 @@
 import Foundation
 import SwiftUI
 import Combine
+import WidgetKit
 
 /// App-wide state: config, the loaded sessions, and sync with GitHub.
 ///
@@ -10,6 +11,11 @@ import Combine
 /// and syncs automatically on the next reconnect.
 @MainActor
 final class Store: ObservableObject {
+    /// The one instance. The app's scene owns it as a StateObject, and the
+    /// lock-screen intent — which the system performs in this process, scene
+    /// or no scene — reaches it here.
+    static let shared = Store()
+
     // Config (token lives in Keychain, everything else in UserDefaults).
     @AppStorage("gh_owner") var owner = ""
     @AppStorage("gh_repo") var repo = ""
@@ -22,6 +28,7 @@ final class Store: ObservableObject {
     /// just runs on its own defaults.
     @AppStorage("gh_coaching_path") var coachingPath = "coaching.md"
     @AppStorage("gh_goals_path") var goalsPath = "goals.md"
+    @AppStorage("gh_research_path") var researchPath = "research.md"
 
     /// Claude workspace for the Coach tab. An identifier, not a secret, so it sits
     /// in UserDefaults beside the repo config. Only needed when the API key spans
@@ -34,7 +41,9 @@ final class Store: ObservableObject {
     /// service — never in UserDefaults, and never in source (this repo is public).
     @Published var anthropicKey: String = CoachCredentials.stored ?? ""
 
-    @Published private(set) var sessions: [Session] = []
+    @Published private(set) var sessions: [Session] = [] {
+        didSet { publishWidgetSnapshot() }
+    }
     @Published private(set) var fileSHA: String?
     @Published var status: String = ""
     @Published var isBusy = false
@@ -93,13 +102,14 @@ final class Store: ObservableObject {
     /// The two files that make up the coach's standing brief. One identity for
     /// each, so a screen can read, edit and save either without special-casing.
     enum BriefFile: String, CaseIterable, Identifiable {
-        case coaching, goals
+        case coaching, goals, research
         var id: String { rawValue }
 
         var title: String {
             switch self {
             case .coaching: return "How I train"
             case .goals: return "What I'm working toward"
+            case .research: return "What the evidence says"
             }
         }
 
@@ -109,6 +119,8 @@ final class Store: ObservableObject {
                 return "Philosophy, preferences, the shape of your week, injuries to work around."
             case .goals:
                 return "Targets and dates. The coach programmes backwards from these."
+            case .research:
+                return "One finding per line, tagged [R1], [R2]… The coach cites the tags. Easier to fill from Coach: hand it a paper."
             }
         }
     }
@@ -117,6 +129,7 @@ final class Store: ObservableObject {
         switch file {
         case .coaching: return coachingPath
         case .goals: return goalsPath
+        case .research: return researchPath
         }
     }
 
@@ -124,6 +137,7 @@ final class Store: ObservableObject {
         switch file {
         case .coaching: return brief.coaching
         case .goals: return brief.goals
+        case .research: return brief.research
         }
     }
 
@@ -138,19 +152,34 @@ final class Store: ObservableObject {
     private let cacheKey = "gh_cache"
     private let coachingCacheKey = "gh_coaching_cache"
     private let goalsCacheKey = "gh_goals_cache"
+    private let researchCacheKey = "gh_research_cache"
     private let pendingKey = "gh_pending"
     private let draftKey = "session_draft"
+    private let plansKey = "plan_records"
+    private let sessionStartsKey = "session_starts"
+    private let stravaPostsKey = "strava_posts"
     private var defaults: UserDefaults { .standard }
 
     /// The exercise being logged right now, persisted so a kill mid-session
     /// costs nothing. Nil when there's nothing worth keeping.
     @Published private(set) var draft: SessionDraft?
+    /// Bumped when the draft was changed from outside the Log screen (the
+    /// lock-screen button), so the screen knows to take it back in.
+    @Published private(set) var draftRevision = 0
+
+    /// What Coach prescribed and what became of it, so the next answer can
+    /// start from the session as lifted rather than as written.
+    @Published private(set) var plans: [PlanRecord] = []
 
     init() {
         pending = loadPending()
         draft = loadDraft()
+        plans = loadPlans()
+        stravaPosts = defaults.data(forKey: stravaPostsKey)
+            .flatMap { try? JSONDecoder().decode([String: Int].self, from: $0) } ?? [:]
         brief = CoachContext.Brief(coaching: defaults.string(forKey: coachingCacheKey) ?? "",
-                                   goals: defaults.string(forKey: goalsCacheKey) ?? "")
+                                   goals: defaults.string(forKey: goalsCacheKey) ?? "",
+                                   research: defaults.string(forKey: researchCacheKey) ?? "")
         // Show cached content + any queued writes immediately, before the network load.
         sessions = WorkoutParser.applying(pending, to: cachedSessions())
     }
@@ -201,6 +230,7 @@ final class Store: ObservableObject {
             switch file {
             case .coaching: brief.coaching = content
             case .goals: brief.goals = content
+            case .research: brief.research = content
             }
             defaults.set(content, forKey: cacheKey(for: file))
             briefStatus = "Saved \(path) ✓"
@@ -214,10 +244,26 @@ final class Store: ObservableObject {
         }
     }
 
+    /// Keep a note from the coach: coaching.md with the note appended under the
+    /// coach's heading, pushed like any other brief edit.
+    func remember(_ note: String) async -> CommitResult {
+        await save(CoachContext.appendingNote(note, to: brief.coaching), to: .coaching)
+    }
+
+    /// Keep evidence the coach has written: research.md with the entries added
+    /// and numbered, pushed like any other brief edit.
+    func addResearch(_ entries: String) async -> CommitResult {
+        await save(CoachContext.appendingResearch(entries, to: brief.research), to: .research)
+    }
+
+    /// The evidence brief, parsed.
+    var evidence: [CoachContext.ResearchEntry] { CoachContext.parseResearch(brief.research) }
+
     private func cacheKey(for file: BriefFile) -> String {
         switch file {
         case .coaching: return coachingCacheKey
         case .goals: return goalsCacheKey
+        case .research: return researchCacheKey
         }
     }
 
@@ -228,7 +274,8 @@ final class Store: ObservableObject {
     private func loadBrief() async {
         brief = CoachContext.Brief(
             coaching: await companion(at: coachingPath, cacheKey: coachingCacheKey) ?? brief.coaching,
-            goals: await companion(at: goalsPath, cacheKey: goalsCacheKey) ?? brief.goals
+            goals: await companion(at: goalsPath, cacheKey: goalsCacheKey) ?? brief.goals,
+            research: await companion(at: researchPath, cacheKey: researchCacheKey) ?? brief.research
         )
     }
 
@@ -262,6 +309,36 @@ final class Store: ObservableObject {
             }
         }
         return result
+    }
+
+    /// Hand the home screen widget the latest session and what's loaded to
+    /// lift next. Only when it changed: a reload per parse would be noise, and
+    /// sessions re-parse on every load.
+    private func publishWidgetSnapshot() {
+        let last = sessions.max(by: { $0.date < $1.date })
+        let lines = last?.exercises.map {
+            WidgetSnapshot.Line(name: $0.name, sets: $0.sets.map(\.token).joined(separator: " "))
+        } ?? []
+
+        // The plan in the Log tab: the lift in the fields when Coach set it,
+        // with how much of it has landed, then the queue behind it.
+        var plan: [WidgetSnapshot.Line] = []
+        if let d = draft {
+            if !d.name.isEmpty, let sets = d.plan, !sets.isEmpty {
+                var tokens = sets.map(\.token).joined(separator: " ")
+                if !d.sets.isEmpty { tokens += " · \(d.sets.count) done" }
+                plan.append(WidgetSnapshot.Line(name: d.name, sets: tokens))
+            }
+            plan += d.queue.map {
+                WidgetSnapshot.Line(name: $0.name, sets: $0.sets.map(\.token).joined(separator: " "))
+            }
+        }
+
+        let snapshot = (last == nil && plan.isEmpty) ? nil
+            : WidgetSnapshot(day: last?.dateString ?? "", lines: lines, plan: plan)
+        guard snapshot != WidgetSnapshot.load() else { return }
+        WidgetSnapshot.save(snapshot)
+        WidgetCenter.shared.reloadTimelines(ofKind: WidgetSnapshot.kind)
     }
 
     // MARK: - Load
@@ -413,6 +490,78 @@ final class Store: ObservableObject {
         WorkoutParser.parse(defaults.string(forKey: cacheKey) ?? "")
     }
 
+    // MARK: - Session clock and Strava
+
+    /// When the first set of each day landed, keyed by the log's date, so a
+    /// posted session has a length. Kept for a week.
+    private var sessionStarts: [String: Date] {
+        get { (defaults.data(forKey: sessionStartsKey)).flatMap { try? JSONDecoder().decode([String: Date].self, from: $0) } ?? [:] }
+        set { defaults.set(try? JSONEncoder().encode(newValue), forKey: sessionStartsKey) }
+    }
+
+    /// A set landed under `date`: start that day's clock if it isn't running.
+    func noteSetLanded(on date: Date, at time: Date = Date()) {
+        let key = Session.dateFormatter.string(from: date)
+        var starts = sessionStarts
+        guard starts[key] == nil else { return }
+        starts[key] = time
+        let cutoff = time.addingTimeInterval(-7 * 86_400)
+        starts = starts.filter { $0.value >= cutoff }
+        sessionStarts = starts
+    }
+
+    func sessionStart(on date: Date) -> Date? {
+        sessionStarts[Session.dateFormatter.string(from: date)]
+    }
+
+    /// Strava activity ids for days already posted, keyed by the log's date,
+    /// so a session that grows after posting is updated rather than doubled.
+    @Published private(set) var stravaPosts: [String: Int] = [:]
+
+    func stravaActivity(on date: Date) -> Int? {
+        stravaPosts[Session.dateFormatter.string(from: date)]
+    }
+
+    func setStravaActivity(_ id: Int, on date: Date) {
+        stravaPosts[Session.dateFormatter.string(from: date)] = id
+        defaults.set(try? JSONEncoder().encode(stravaPosts), forKey: stravaPostsKey)
+    }
+
+    /// A prescription was loaded into the Log tab.
+    func recordPlan(_ entries: [ExerciseEntry], on date: Date) {
+        plans.prescribe(entries, on: date)
+        savePlans()
+    }
+
+    /// A planned lift was finished under `date`.
+    func completePlan(_ entry: ExerciseEntry, on date: Date) {
+        plans.complete(entry, on: date)
+        savePlans()
+    }
+
+    private func savePlans() {
+        plans.prune(before: Date().addingTimeInterval(-30 * 86_400))
+        defaults.set(try? JSONEncoder().encode(plans), forKey: plansKey)
+    }
+    private func loadPlans() -> [PlanRecord] {
+        guard let data = defaults.data(forKey: plansKey),
+              let decoded = try? JSONDecoder().decode([PlanRecord].self, from: data) else { return [] }
+        return decoded
+    }
+
+    /// The lock-screen button: land the next planned set, or the last one
+    /// again, and restart the rest — straight into the persisted draft, since
+    /// the Log screen may not exist when the system wakes us for this.
+    func sameAgain() {
+        guard var d = draft, let set = d.sameAgainSet else { return }
+        d.sets.append(WorkSet(weight: set.weight, added: set.added, reps: set.reps))
+        d.restStart = Date()
+        noteSetLanded(on: d.date)
+        saveDraft(d)
+        draftRevision += 1
+        RestSignals.sync(d)
+    }
+
     func saveDraft(_ new: SessionDraft?) {
         draft = new
         if let new {
@@ -420,6 +569,7 @@ final class Store: ObservableObject {
         } else {
             defaults.removeObject(forKey: draftKey)
         }
+        publishWidgetSnapshot()   // the plan on the widget follows the draft
     }
     private func loadDraft() -> SessionDraft? {
         guard let data = defaults.data(forKey: draftKey) else { return nil }

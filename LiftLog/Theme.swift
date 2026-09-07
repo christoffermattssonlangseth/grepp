@@ -10,12 +10,15 @@ enum Theme {
     /// on it needs 4.5:1 for the small type in a Coach bubble, and a brighter
     /// steel (#2B8CB3) only manages 3.81:1. This one measures 4.99:1 on white
     /// and 4.48:1 against the light ground it also tints.
-    static let accent = Color(red: 0.122, green: 0.471, blue: 0.600)   // #1F7899
+    static let accent = Brand.accent   // #1F7899, defined once in Shared/Brand.swift
 
     /// Anything drawn *on* the accent — button labels, the send glyph, chat text.
     /// Named rather than inlined as `.white` so a re-skin to a light accent is
     /// one edit here instead of a hunt through the views.
-    static let onAccent = Color.white
+    static let onAccent = Brand.onAccent
+
+    /// Strava's own orange, for its button only — their brand rules ask for it.
+    static let strava = Color(red: 0.988, green: 0.298, blue: 0.008)   // #FC4C02
 
     static let corner: CGFloat = 20
     static let bigFieldHeight: CGFloat = 76
@@ -39,44 +42,15 @@ enum Theme {
     }
 }
 
-/// The app's mark: a barbell, drawn rather than shipped as an image so it takes
-/// the accent colour, stays crisp at any size, and needs no asset per scale.
-///
-/// Sized by `height`; the width follows at 2.3:1. Two plates a side, with the bar
-/// running past them so it reads as a bar and not a dumbbell.
-struct Barbell: View {
-    var height: CGFloat = 24
-    var color: Color = Theme.accent
-
-    var body: some View {
-        ZStack {
-            Capsule()
-                .frame(height: height * 0.13)
-            HStack(spacing: height * 0.09) {
-                plate(0.52)
-                plate(1.0)
-                Spacer(minLength: height * 0.4)
-                plate(1.0)
-                plate(0.52)
-            }
-            .padding(.horizontal, height * 0.09)
-        }
-        .foregroundStyle(color)
-        .frame(width: height * 2.3, height: height)
-        .accessibilityHidden(true)
-    }
-
-    private func plate(_ scale: CGFloat) -> some View {
-        RoundedRectangle(cornerRadius: height * 0.07, style: .continuous)
-            .frame(width: height * 0.15, height: height * scale)
-    }
-}
-
 extension View {
     /// Tap any empty space, or drag a scrolling list, and the keyboard goes.
     /// Controls still win their own taps — this only catches the space between
     /// them. Dismisses through the responder chain rather than a FocusState, so it
     /// works on any screen with no wiring; put it on the screen's scroll container.
+    ///
+    /// A ScrollView, not a List or Form: on those the container's tap gesture
+    /// swallows the taps meant for buttons in rows. Settings uses a keyboard
+    /// Done button instead.
     func dismissesKeyboardOnTap() -> some View {
         self
             .contentShape(Rectangle())

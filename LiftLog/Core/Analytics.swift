@@ -32,6 +32,72 @@ enum Analytics {
         }
     }
 
+    /// Working sets in a session — every logged set is one. Sets, not kilos:
+    /// tonnage rewards a light leg press over a heavy triple and says nothing
+    /// about where the work went, and the research on volume counts sets.
+    static func setCount(of session: Session) -> Int {
+        session.exercises.reduce(0) { $0 + $1.sets.count }
+    }
+
+    // MARK: - Training days
+
+    /// One calendar day on the weeks grid.
+    struct TrainingDay: Equatable, Identifiable {
+        var id: String { key }
+        /// The day as the log keys it: yyyy-MM-dd.
+        let key: String
+        /// Local midnight.
+        let date: Date
+        /// Working sets that day; nil when nothing was logged.
+        let sets: Int?
+        var trained: Bool { sets != nil }
+    }
+
+    /// Seven days, Monday first. A day in the future is nil.
+    struct TrainingWeek: Equatable, Identifiable {
+        var id: Date { start }
+        let start: Date
+        let days: [TrainingDay?]
+
+        var sessions: Int { days.compactMap { $0 }.filter(\.trained).count }
+        var sets: Int { days.compactMap { $0?.sets }.reduce(0, +) }
+    }
+
+    /// The last `weeks` weeks ending on `today`'s week, oldest first, each
+    /// aligned Monday to Sunday. Days are matched on the log's own date key so
+    /// a session logged as 2026-09-04 lands on 4 September wherever the phone is.
+    static func weekGrid(weeks: Int, endingOn today: Date = Date(),
+                         calendar: Calendar = .current, in sessions: [Session]) -> [TrainingWeek] {
+        guard weeks > 0 else { return [] }
+        var setsByDay: [String: Int] = [:]
+        for session in sessions {
+            setsByDay[session.dateString, default: 0] += setCount(of: session)
+        }
+
+        let keyFormatter = DateFormatter()
+        keyFormatter.locale = Locale(identifier: "en_US_POSIX")
+        keyFormatter.timeZone = calendar.timeZone
+        keyFormatter.dateFormat = "yyyy-MM-dd"
+
+        let todayStart = calendar.startOfDay(for: today)
+        // Calendar weekdays run Sunday = 1 … Saturday = 7; a gym week starts Monday.
+        let mondayOffset = (calendar.component(.weekday, from: todayStart) + 5) % 7
+        guard let thisMonday = calendar.date(byAdding: .day, value: -mondayOffset, to: todayStart)
+        else { return [] }
+
+        return (0..<weeks).reversed().compactMap { back -> TrainingWeek? in
+            guard let monday = calendar.date(byAdding: .day, value: -7 * back, to: thisMonday)
+            else { return nil }
+            let days = (0..<7).map { offset -> TrainingDay? in
+                guard let date = calendar.date(byAdding: .day, value: offset, to: monday),
+                      date <= todayStart else { return nil }
+                let key = keyFormatter.string(from: date)
+                return TrainingDay(key: key, date: date, sets: setsByDay[key])
+            }
+            return TrainingWeek(start: monday, days: days)
+        }
+    }
+
     /// Epley estimated one-rep max.
     static func epley(weight: Double, reps: Int) -> Double {
         weight * (1 + Double(reps) / 30)

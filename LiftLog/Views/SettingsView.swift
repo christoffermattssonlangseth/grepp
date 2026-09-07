@@ -262,7 +262,20 @@ struct SettingsView: View {
                 }
                 .listRowBackground(Color.clear)
             }
-            .dismissesKeyboardOnTap()
+            // Not the tap-anywhere dismisser the other screens use: on a Form,
+            // a tap gesture on the container eats the taps meant for the buttons
+            // in its rows. Drag to dismiss, or the Done above the keyboard.
+            .scrollDismissesKeyboard(.interactively)
+            .toolbar {
+                ToolbarItemGroup(placement: .keyboard) {
+                    Spacer()
+                    Button("Done") {
+                        UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder),
+                                                        to: nil, from: nil, for: nil)
+                    }
+                    .font(.body.weight(.semibold))
+                }
+            }
             .scrollContentBackground(.hidden)
             .background(Theme.backgroundView)
             .navigationTitle("Settings")

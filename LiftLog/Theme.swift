@@ -47,6 +47,10 @@ extension View {
     /// Controls still win their own taps — this only catches the space between
     /// them. Dismisses through the responder chain rather than a FocusState, so it
     /// works on any screen with no wiring; put it on the screen's scroll container.
+    ///
+    /// A ScrollView, not a List or Form: on those the container's tap gesture
+    /// swallows the taps meant for buttons in rows. Settings uses a keyboard
+    /// Done button instead.
     func dismissesKeyboardOnTap() -> some View {
         self
             .contentShape(Rectangle())

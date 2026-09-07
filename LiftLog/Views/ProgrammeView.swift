@@ -108,7 +108,7 @@ struct ProgrammeView: View {
         ContentUnavailableView {
             Label("No programme yet", systemImage: "calendar")
         } description: {
-            Text("Ask the coach to write one — \"write me a programme\" — and save it. It designs from your log, your goals and your evidence brief, and prescribes each day from it after that.")
+            Text("Ask the coach to write one — \"write me a programme\" — then tap Save as my programme under its answer. The screen reads the saved file. It designs from your log, your goals and your evidence brief, and prescribes each day from it after that.")
         } actions: {
             Button("Ask the coach") {
                 dismiss()

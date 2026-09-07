@@ -39,6 +39,41 @@ final class ProgrammeTests: XCTestCase {
         XCTAssertNotNil(Programme.parseExercise("squat 5x3"))
     }
 
+    func testLenientLiftLines() {
+        let a = Programme.parseExercise("Squat: 3 x 5")!
+        XCTAssertEqual([a.name, a.scheme, a.note], ["squat", "3x5", ""])
+        let b = Programme.parseExercise("**Bench press** 3x8-10 (add 2.5 kg once 3x10)")!
+        XCTAssertEqual([b.name, b.scheme, b.note], ["bench-press", "3x8-10", "add 2.5 kg once 3x10"])
+        let c = Programme.parseExercise("chin-ups — 4×AMRAP — add load once 3x10")!
+        XCTAssertEqual([c.name, c.scheme, c.note], ["chin-ups", "4xAMRAP", "add load once 3x10"])
+        let d = Programme.parseExercise("squat 3x5 @ 90 kg")!
+        XCTAssertEqual([d.name, d.scheme, d.note], ["squat", "3x5", "@ 90 kg"])
+        let e = Programme.parseExercise("leg press 2 x max")!
+        XCTAssertEqual([e.name, e.scheme], ["leg-press", "2xAMRAP"])
+    }
+
+    func testLenientHeadingsAndLists() {
+        let p = Programme.parse("""
+        # Plan
+
+        ### Day 1 – Lower
+        1. Squat 3x5
+        2. RDL 3x8
+
+        **Day 2 – Upper**
+        - Bench press: 3 x 5
+        • Rows 3x10
+
+        Some prose.
+        """)
+        XCTAssertEqual(p.title, "Plan")
+        XCTAssertEqual(p.days.map(\.title), ["Day 1 – Lower", "Day 2 – Upper"])
+        XCTAssertEqual(p.days[0].exercises.map(\.name), ["squat", "rdl"])
+        XCTAssertEqual(p.days[1].exercises.map(\.name), ["bench-press", "rows"])
+        let single = Programme.parse("- squat 3x5\n- bench 3x5")
+        XCTAssertEqual(single.days.map(\.title), ["Session"], "bullets with no heading are one day")
+    }
+
     func testEmptyAndProseOnlyFilesAreEmpty() {
         XCTAssertTrue(Programme.parse("").isEmpty)
         XCTAssertTrue(Programme.parse("# Title\n\nJust words.\n").isEmpty)

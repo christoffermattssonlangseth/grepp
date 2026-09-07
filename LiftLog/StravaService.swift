@@ -240,8 +240,10 @@ private enum WebAuth {
         func presentationAnchor(for session: ASWebAuthenticationSession) -> ASPresentationAnchor {
             let scenes = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
             if let key = scenes.flatMap(\.windows).first(where: { $0.isKeyWindow }) { return key }
-            if let scene = scenes.first { return UIWindow(windowScene: scene) }
-            return UIWindow(frame: .zero)
+            // The sheet is only ever asked for from a button on screen, so a
+            // scene exists; without one there is nothing to present from anyway.
+            guard let scene = scenes.first else { preconditionFailure("Strava sign-in needs a window scene") }
+            return UIWindow(windowScene: scene)
         }
     }
 }

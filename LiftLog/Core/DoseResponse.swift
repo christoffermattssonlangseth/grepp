@@ -56,14 +56,24 @@ struct DoseResponse: Equatable {
         let byDay = Dictionary(grouping: series) { Session.dateFormatter.string(from: $0.date) }
 
         let sessionsByDay = Dictionary(grouping: sessions, by: \.dateString)
-        let weeks: [Week] = grid.enumerated().map { i, week in
-            let keys = week.days.compactMap { $0?.key }
-            let best = keys.flatMap { byDay[$0] ?? [] }.map(\.value).max()
-            let own = keys.flatMap { sessionsByDay[$0] ?? [] }
-                .flatMap(\.exercises)
-                .filter { $0.name.caseInsensitiveCompare(exercise) == .orderedSame }
-                .reduce(0) { $0 + $1.sets.count }
-            return Week(start: week.start, liftSets: own, sets: dose[i][muscle] ?? 0, best: best)
+        // Plain loops, in steps: one chained expression here sent the type
+        // checker off for a walk it didn't come back from.
+        var weeks: [Week] = []
+        for (i, week) in grid.enumerated() {
+            let keys: [String] = week.days.compactMap { $0?.key }
+            var bests: [Double] = []
+            var own = 0
+            for key in keys {
+                for point in byDay[key] ?? [] { bests.append(point.value) }
+                for session in sessionsByDay[key] ?? [] {
+                    for entry in session.exercises
+                    where entry.name.caseInsensitiveCompare(exercise) == .orderedSame {
+                        own += entry.sets.count
+                    }
+                }
+            }
+            let muscleSets: Double = dose[i][muscle] ?? 0
+            weeks.append(Week(start: week.start, liftSets: own, sets: muscleSets, best: bests.max()))
         }
         guard weeks.contains(where: { $0.best != nil }) else { return nil }
         return DoseResponse(exercise: exercise, muscle: muscle, metric: metric,
@@ -77,9 +87,15 @@ struct DoseResponse: Equatable {
         let done = weeks.filter { $0.best != nil }
         guard done.count >= 3, let last = done.last, let lastBest = last.best else { return .tooEarly }
 
-        let recent = done.suffix(4)
-        let sets = recent.map(\.sets).reduce(0, +) / Double(recent.count)
-        let own = Double(recent.map(\.liftSets).reduce(0, +)) / Double(recent.count)
+        let recent = Array(done.suffix(4))
+        var setSum = 0.0
+        var ownSum = 0
+        for week in recent {
+            setSum += week.sets
+            ownSum += week.liftSets
+        }
+        let sets = setSum / Double(recent.count)
+        let own = Double(ownSum) / Double(recent.count)
         let earlier = done.dropLast().compactMap(\.best)
         let previousBest = earlier.max() ?? lastBest
         if lastBest > previousBest {
@@ -98,7 +114,9 @@ struct DoseResponse: Equatable {
     var summary: String {
         let lift = exercise.replacingOccurrences(of: "-", with: " ")
         func dose(_ own: Double, _ all: Double) -> String {
-            String(format: "%.0f %@ sets a week (%.0f for %@ in all)", own, lift, all, muscle.rawValue)
+            let ownText = String(format: "%.0f", own)
+            let allText = String(format: "%.0f", all)
+            return "\(ownText) \(lift) sets a week (\(allText) for \(muscle.rawValue) in all)"
         }
         func flat(_ weeks: Int) -> String { "Flat for \(weeks) \(weeks == 1 ? "week" : "weeks")" }
         switch verdict {

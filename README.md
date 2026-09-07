@@ -247,10 +247,11 @@ the Strava connection, and the offline sync queue.
 as a Weight Training activity named after its lifts, with the log lines in the
 description and the length from your first set to the post. Press it again
 after another lift and it updates the same activity. Needs a Strava API app of
-your own (strava.com/settings/api, callback domain `localhost`) with its client
-ID and secret in the untracked `LiftLog/Secrets.plist` as `STRAVA_CLIENT_ID`
-and `STRAVA_CLIENT_SECRET`; sign in once from Settings and the tokens live in
-the Keychain. Nothing is read back from Strava.
+your own (strava.com/settings/api, callback domain `localhost`): paste its
+client ID and secret into Settings ▸ Strava, where they go in the Keychain
+(an untracked `LiftLog/Secrets.plist` with `STRAVA_CLIENT_ID` and
+`STRAVA_CLIENT_SECRET` works too), then sign in once from the same screen.
+Nothing is read back from Strava.
 
 **Home screen widget** — *Last session*: how many days ago, which day, and
 the lifts with their sets (small shows each lift's last set, medium shows them

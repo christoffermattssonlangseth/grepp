@@ -17,6 +17,8 @@ final class StravaService: ObservableObject {
     /// The connected athlete's name, or nil when not connected.
     @Published private(set) var athlete: String?
     @Published private(set) var isBusy = false
+    /// A client ID and secret are on hand, from wherever.
+    @Published private(set) var isConfigured = false
 
     private static let service = "com.liftlog.strava"
     private static let redirect = "liftlog://localhost/strava"
@@ -34,7 +36,7 @@ final class StravaService: ObservableObject {
         var errorDescription: String? {
             switch self {
             case .notConfigured:
-                return "Strava isn't set up: add STRAVA_CLIENT_ID and STRAVA_CLIENT_SECRET to LiftLog/Secrets.plist."
+                return "Strava isn't set up: paste your API app's client ID and secret in Settings ▸ Strava."
             case .notConnected: return "Connect Strava in Settings first."
             case .cancelled: return "Strava sign-in was cancelled."
             case .api(let status, let message):
@@ -50,13 +52,28 @@ final class StravaService: ObservableObject {
 
     init() {
         athlete = tokens?.athlete
+        isConfigured = Self.secret("STRAVA_CLIENT_ID") != nil && Self.secret("STRAVA_CLIENT_SECRET") != nil
     }
 
     var isConnected: Bool { tokens != nil }
 
     // MARK: - Configuration
 
+    /// The API app's ID and secret, pasted in Settings. Keychain, like the
+    /// Claude key; the environment and Secrets.plist are the dev-time fallbacks.
+    func storeCredentials(id: String, secret: String) {
+        let id = id.trimmingCharacters(in: .whitespacesAndNewlines)
+        let secret = secret.trimmingCharacters(in: .whitespacesAndNewlines)
+        if id.isEmpty { Keychain.delete(account: "client_id", service: Self.service) }
+        else { Keychain.set(id, account: "client_id", service: Self.service) }
+        if secret.isEmpty { Keychain.delete(account: "client_secret", service: Self.service) }
+        else { Keychain.set(secret, account: "client_secret", service: Self.service) }
+        isConfigured = Self.secret("STRAVA_CLIENT_ID") != nil && Self.secret("STRAVA_CLIENT_SECRET") != nil
+    }
+
     private static func secret(_ key: String) -> String? {
+        let account = key == "STRAVA_CLIENT_ID" ? "client_id" : "client_secret"
+        if let kept = Keychain.get(account: account, service: service), !kept.isEmpty { return kept }
         if let env = ProcessInfo.processInfo.environment[key], !env.isEmpty { return env }
         guard let url = Bundle.main.url(forResource: "Secrets", withExtension: "plist"),
               let data = try? Data(contentsOf: url),
@@ -64,8 +81,6 @@ final class StravaService: ObservableObject {
               let value = plist[key] as? String, !value.isEmpty else { return nil }
         return value
     }
-
-    static var isConfigured: Bool { secret("STRAVA_CLIENT_ID") != nil && secret("STRAVA_CLIENT_SECRET") != nil }
 
     // MARK: - Tokens
 

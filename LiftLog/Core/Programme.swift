@@ -62,6 +62,40 @@ struct Programme: Equatable {
         return Programme(title: title, days: days)
     }
 
+    // MARK: - Against the log
+
+    /// Which day comes next: the one after the day most recently done, judged
+    /// by which day's lifts a session covered best. The first day when nothing
+    /// in the log matches any day, or when the programme has one day.
+    func dueDayIndex(in sessions: [Session]) -> Int {
+        guard days.count > 1 else { return 0 }
+        for session in sessions.sorted(by: { $0.date > $1.date }) {
+            let done = Set(session.exercises.map { $0.name.lowercased() })
+            var bestIndex: Int?
+            var bestScore = 0
+            for (i, day) in days.enumerated() {
+                let names = Set(day.exercises.map(\.name))
+                let overlap = names.intersection(done).count
+                // At least half the day's lifts, else it wasn't that day.
+                guard overlap * 2 >= names.count, overlap > bestScore else { continue }
+                bestScore = overlap
+                bestIndex = i
+            }
+            if let bestIndex { return (bestIndex + 1) % days.count }
+        }
+        return 0
+    }
+
+    /// The last time a lift was logged: its sets and the day, newest first.
+    static func lastDone(_ name: String, in sessions: [Session]) -> (entry: ExerciseEntry, day: String)? {
+        for session in sessions.sorted(by: { $0.date > $1.date }) {
+            if let entry = session.exercises.first(where: { $0.name.caseInsensitiveCompare(name) == .orderedSame }) {
+                return (entry, session.dateString)
+            }
+        }
+        return nil
+    }
+
     /// `squat 3x5 — add 2.5 kg when all sets hit` → name, scheme, note.
     static func parseExercise(_ text: String) -> Exercise? {
         let parts = text.components(separatedBy: " — ")

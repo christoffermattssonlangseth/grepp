@@ -42,6 +42,7 @@ enum CoachModelChoice: String, CaseIterable, Identifiable, Codable {
              + Double(u.cacheRead) * rates.input * 0.1 * m
              + Double(u.cacheWrite) * rates.input * 1.25 * m
              + Double(u.output) * rates.output * m
+             + Double(u.searches ?? 0) * 0.01   // $10 per thousand searches, any model
     }
 
     var blurb: String {
@@ -63,6 +64,8 @@ struct CoachMessage: Identifiable, Equatable, Codable {
     /// What the answer cost, once the API has said. Coach replies only.
     var usage: ClaudeService.Usage?
     var model: CoachModelChoice?
+    /// This answer went and read the paper: searched, fetched, cited.
+    var isLookup: Bool?
 }
 
 /// Drives one Coach conversation: holds the transcript, rebuilds the training
@@ -178,7 +181,12 @@ final class CoachService: ObservableObject {
         var turns = messages.map {
             ClaudeService.Turn(role: $0.role == .you ? .user : .assistant, text: $0.text)
         }
-        turns.append(ClaudeService.Turn(role: .user, text: trimmed))
+        // A paper to look up: the DOI goes in as a link, because the fetch tool
+        // may only follow what the lifter's own message contains.
+        let lookup = mode == .coaching ? CoachContext.lookupTarget(in: trimmed) : nil
+        var sent = trimmed
+        if let url = lookup?.url, !trimmed.contains(url) { sent += "\n\n(Paper: \(url))" }
+        turns.append(ClaudeService.Turn(role: .user, text: sent))
 
         // Rebuilt per question rather than pinned at the start of the chat, so a
         // workout logged mid-conversation is picked up on the next answer.
@@ -187,11 +195,12 @@ final class CoachService: ObservableObject {
         // The lift in the lifter's hands right now, which the log doesn't have
         // yet, and how recent prescriptions went. Sent as its own uncached block
         // so the log's cache holds.
-        let live = mode == .coaching
+        var live = mode == .coaching
             ? CoachContext.liveNote(draft: draft, plans: plans,
                                     weeklySets: muscleMap.weeklySets(weeks: 4, in: sessions),
                                     unmapped: muscleMap.unmapped(in: sessions))
             : nil
+        if lookup != nil { live = [live, CoachContext.lookupBrief].compactMap { $0 }.joined(separator: "\n\n") }
         // Say what's in play — otherwise there's no way to tell from the answers
         // whether the coaching notes or the live session were picked up.
         var note = excerpt.note
@@ -201,7 +210,8 @@ final class CoachService: ObservableObject {
         contextNote = note
 
         messages.append(CoachMessage(role: .you, text: trimmed))
-        let reply = CoachMessage(role: .coach, text: "", isStreaming: true, model: model)
+        let reply = CoachMessage(role: .coach, text: "", isStreaming: true, model: model,
+                                 isLookup: lookup != nil)
         messages.append(reply)
         isResponding = true
         persist()   // the question survives even if the answer doesn't
@@ -210,12 +220,29 @@ final class CoachService: ObservableObject {
 
         task = Task { [weak self] in
             do {
+                if lookup != nil {
+                    // The whole answer at once; the sources become a line of links.
+                    let result = try await service.lookup(system: system, live: live, turns: turns)
+                    guard let self, !Task.isCancelled else { return }
+                    var text = result.text
+                    if !result.sources.isEmpty {
+                        let links = result.sources.map { source in
+                            let title = source.title.replacingOccurrences(of: "[", with: "(")
+                                                    .replacingOccurrences(of: "]", with: ")")
+                            return "[\(title)](\(source.url))"
+                        }
+                        text += "\n\nSources: " + links.joined(separator: " · ")
+                    }
+                    self.append(text, to: reply.id)
+                    self.setUsage(result.usage, on: reply.id)
+                } else {
                 for try await event in service.stream(system: system, live: live, turns: turns) {
                     guard let self, !Task.isCancelled else { return }
                     switch event {
                     case .text(let chunk): self.append(chunk, to: reply.id)
                     case .usage(let usage): self.setUsage(usage, on: reply.id)
                     }
+                }
                 }
             } catch is CancellationError {
                 // Left the partial answer in place on purpose.

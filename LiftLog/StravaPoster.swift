@@ -22,8 +22,20 @@ enum StravaPoster {
             try await strava.update(id: id, name: name, description: description)
             return .updated
         }
-        let id = try await strava.post(name: name, description: description, start: start, elapsed: elapsed)
-        store.setStravaActivity(id, on: session.date)
-        return .posted
+
+        // Strava refuses a second activity over the same time (409). A clocked
+        // day is genuinely there already; a guessed noon just needs to move —
+        // an hour later, up to three times, still on the same day.
+        var attempt = start
+        for shift in 0...3 {
+            do {
+                let id = try await strava.post(name: name, description: description, start: attempt, elapsed: elapsed)
+                store.setStravaActivity(id, on: session.date)
+                return .posted
+            } catch StravaService.StravaError.api(let status, _) where status == 409 && clocked == nil && shift < 3 {
+                attempt = start.addingTimeInterval(TimeInterval(shift + 1) * 3600)
+            }
+        }
+        throw StravaService.StravaError.api(status: 409, message: "")
     }
 }

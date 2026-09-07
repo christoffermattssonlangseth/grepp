@@ -40,6 +40,9 @@ struct LogView: View {
     @State private var setAdded = 0
     @State private var exerciseFinished = 0
     @State private var recordSet = 0
+    @StateObject private var strava = StravaService.shared
+    @State private var stravaStatus: String?
+    @State private var stravaError: String?
     /// When non-nil, the rest clock is running from this instant.
     @State private var restStart: Date?
     @FocusState private var focus: Field?
@@ -263,11 +266,65 @@ struct LogView: View {
                     }
                     .onTapGesture { loadForEditing(ex) }
                 }
+                if strava.isConnected { stravaRow }
             }
         }
     }
 
     private var todaySetCount: Int { todayExercises.reduce(0) { $0 + $1.sets.count } }
+
+    // MARK: - Strava
+
+    /// Post the day to Strava as a Weight Training activity with the lines in
+    /// its description. Posted already, and grown since: the same button
+    /// updates it rather than posting twice.
+    private var stravaRow: some View {
+        let posted = store.stravaActivity(on: date) != nil
+        return VStack(alignment: .leading, spacing: 6) {
+            Button {
+                Task { await postToStrava() }
+            } label: {
+                HStack(spacing: 8) {
+                    if strava.isBusy { ProgressView().controlSize(.small) }
+                    Text(posted ? "Update on Strava" : "Post to Strava")
+                        .font(.subheadline.weight(.bold))
+                }
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 8)
+            }
+            .buttonStyle(.bordered)
+            .tint(Theme.strava)
+            .disabled(strava.isBusy || todayExercises.isEmpty)
+            if let stravaStatus {
+                Text(stravaStatus).font(.caption2).foregroundStyle(.secondary)
+            }
+            if let stravaError {
+                Text(stravaError).font(.caption2).foregroundStyle(.orange)
+            }
+        }
+    }
+
+    private func postToStrava() async {
+        stravaError = nil
+        stravaStatus = nil
+        let session = Session(date: date, exercises: todayExercises)
+        let start = store.sessionStart(on: date) ?? Calendar.current.date(bySettingHour: 12, minute: 0, second: 0, of: date) ?? date
+        let elapsed = StravaPost.elapsed(start: store.sessionStart(on: date), end: Date())
+        let name = StravaPost.name(for: session)
+        let description = StravaPost.description(for: session, elapsed: elapsed)
+        do {
+            if let id = store.stravaActivity(on: date) {
+                try await strava.update(id: id, name: name, description: description)
+                stravaStatus = "Updated on Strava ✓"
+            } else {
+                let id = try await strava.post(name: name, description: description, start: start, elapsed: elapsed)
+                store.setStravaActivity(id, on: date)
+                stravaStatus = "Posted to Strava ✓"
+            }
+        } catch {
+            stravaError = error.localizedDescription
+        }
+    }
 
     // MARK: - Exercise selector
 
@@ -611,6 +668,7 @@ struct LogView: View {
     /// The one path for both add-set and repeat-last.
     private func land(_ set: WorkSet) {
         sets.append(set)
+        store.noteSetLanded(on: date)
         if record(at: sets.count - 1) != nil { recordSet += 1 }
         restStart = Date()   // start resting the moment a set lands
         setAdded += 1

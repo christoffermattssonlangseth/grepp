@@ -241,7 +241,16 @@ session** once you've already trained today). Teach it who you are with
 `coaching.md` and `goals.md`, or let it interview you. See [Coach](#coach).
 
 **Settings** — the GitHub repo and token, the Claude key, your bar and plates,
-and the offline sync queue.
+the Strava connection, and the offline sync queue.
+
+**Strava** — a **Post to Strava** button under today's session. The day goes up
+as a Weight Training activity named after its lifts, with the log lines in the
+description and the length from your first set to the post. Press it again
+after another lift and it updates the same activity. Needs a Strava API app of
+your own (strava.com/settings/api, callback domain `localhost`) with its client
+ID and secret in the untracked `LiftLog/Secrets.plist` as `STRAVA_CLIENT_ID`
+and `STRAVA_CLIENT_SECRET`; sign in once from Settings and the tokens live in
+the Keychain. Nothing is read back from Strava.
 
 **Home screen widget** — *Last session*: how many days ago, which day, and
 the lifts with their sets (small shows each lift's last set, medium shows them

@@ -135,14 +135,21 @@ struct SettingsView: View {
                         let unposted = store.sessions.filter { store.stravaActivity(on: $0.date) == nil }
                         if !unposted.isEmpty {
                             Button {
+                                backfillStatus = "Starting…"
                                 Task { await backfill(unposted.sorted { $0.date < $1.date }) }
                             } label: {
                                 HStack(spacing: 8) {
                                     if backfilling { ProgressView().controlSize(.small) }
                                     Text(unposted.count == 1 ? "Post the 1 session not on Strava"
                                                              : "Post the \(unposted.count) sessions not on Strava")
+                                        .font(.subheadline.weight(.bold))
                                 }
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, 8)
+                                .contentShape(Rectangle())
                             }
+                            .buttonStyle(.borderedProminent)
+                            .tint(Theme.strava)
                             .disabled(backfilling)
                             Text("Older days have no clock, so they go up as an hour from noon. Days posted before the app kept track will be posted again — delete the doubles on Strava.")
                                 .font(.caption)

@@ -71,13 +71,14 @@ cost a cent each. A starter file is in
 [`docs/research-seed.md`](docs/research-seed.md), written from the model's
 memory of the literature and meant to be checked, not trusted.
 
-**Trends.** A chart per lift (top set, Est. 1RM, or reps and added load for
-bodyweight lifts) with three-week and all-time change. A training-days grid,
-Monday to Sunday. Sets per muscle per week, six weeks across: a compound counts
-fully for its prime mover and half for each muscle that also works (bench is
-chest, half triceps, half front delts), every logged set is a working set, and
-lifts the app doesn't know are assigned once in Settings ▸ Muscles. No tonnage,
-on purpose.
+**Trends.** Two views. *Lift*: a chart per lift (top set, Est. 1RM, or reps
+and added load for bodyweight lifts) with three-week and all-time change.
+*Volume*: a training-days grid, Monday to Sunday, and sets per muscle for the
+week as bars against a 10–20 band with the four-week average marked. A
+compound counts fully for its prime mover and half for each muscle that also
+works (bench is chest, half triceps, half front delts), every logged set is a
+working set, and lifts the app doesn't know are assigned once in
+Settings ▸ Muscles. No tonnage, on purpose.
 
 **History.** Every day, newest first, with sets per muscle under each date and
 whether it's on Strava. Tap an exercise to edit, swipe to delete.

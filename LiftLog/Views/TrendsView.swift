@@ -8,6 +8,15 @@ struct TrendsView: View {
 
     // Persisted so Trends reopens on the lift you last looked at.
     @AppStorage("trends_exercise") private var exercise = ""
+    /// Two questions, two views: how a lift is going, and how the training
+    /// as a whole is going. One screen tried to answer both and the exercise
+    /// picker at the top made the second look like it belonged to the first.
+    private enum Mode: String, CaseIterable, Identifiable {
+        case lift, volume
+        var id: String { rawValue }
+        var title: String { self == .lift ? "Lift" : "Volume" }
+    }
+    @AppStorage("trends_mode") private var mode: Mode = .lift
     @AppStorage("muscle_map") private var muscleMap = MuscleMap()
     @State private var metric: Analytics.Metric = .topSet
     /// Where a finger is on the chart's x-axis, if it's on it at all.
@@ -55,12 +64,21 @@ struct TrendsView: View {
                     .padding(.top, 80)
                 } else {
                     VStack(spacing: 16) {
-                        exercisePicker
-                        if availableMetrics.count > 1 { metricPicker }
-                        chartCard
-                        statsRow
-                        weeksCard
-                        musclesCard
+                        Picker("view", selection: $mode) {
+                            ForEach(Mode.allCases) { Text($0.title).tag($0) }
+                        }
+                        .pickerStyle(.segmented)
+
+                        switch mode {
+                        case .lift:
+                            exercisePicker
+                            if availableMetrics.count > 1 { metricPicker }
+                            chartCard
+                            statsRow
+                        case .volume:
+                            weeksCard
+                            musclesCard
+                        }
                     }
                     .padding()
                 }

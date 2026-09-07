@@ -30,6 +30,18 @@ enum StravaPost {
         return lines.joined(separator: "\n") + "\n\n" + summary + "\n\n" + signOff
     }
 
+    /// Noon, local time, on the session's day — for a day the app never clocked
+    /// (logged after the fact, or before the clock existed). Built from the
+    /// log's own date key so it lands on the right day in any time zone.
+    static func defaultStart(for session: Session, calendar: Calendar = .current) -> Date {
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "en_US_POSIX")
+        f.timeZone = calendar.timeZone
+        f.dateFormat = "yyyy-MM-dd"
+        let midnight = f.date(from: session.dateString) ?? session.date
+        return calendar.date(byAdding: .hour, value: 12, to: midnight) ?? midnight
+    }
+
     /// Seconds the activity lasted. From the first set to the last push when
     /// both are known and sensible; an hour otherwise, since Strava wants a
     /// number and a guess beats a zero-length workout.

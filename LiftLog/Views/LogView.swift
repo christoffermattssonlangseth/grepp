@@ -307,19 +307,10 @@ struct LogView: View {
     private func postToStrava() async {
         stravaError = nil
         stravaStatus = nil
-        let session = Session(date: date, exercises: todayExercises)
-        let start = store.sessionStart(on: date) ?? Calendar.current.date(bySettingHour: 12, minute: 0, second: 0, of: date) ?? date
-        let elapsed = StravaPost.elapsed(start: store.sessionStart(on: date), end: Date())
-        let name = StravaPost.name(for: session)
-        let description = StravaPost.description(for: session, elapsed: elapsed)
         do {
-            if let id = store.stravaActivity(on: date) {
-                try await strava.update(id: id, name: name, description: description)
-                stravaStatus = "Updated on Strava ✓"
-            } else {
-                let id = try await strava.post(name: name, description: description, start: start, elapsed: elapsed)
-                store.setStravaActivity(id, on: date)
-                stravaStatus = "Posted to Strava ✓"
+            switch try await StravaPoster.post(Session(date: date, exercises: todayExercises), store: store, strava: strava) {
+            case .posted: stravaStatus = "Posted to Strava ✓"
+            case .updated: stravaStatus = "Updated on Strava ✓"
             }
         } catch {
             stravaError = error.localizedDescription

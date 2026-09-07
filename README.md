@@ -4,6 +4,8 @@
 
 # LiftLog
 
+[![CI](https://github.com/christoffermattssonlangseth/liftlog/actions/workflows/ci.yml/badge.svg)](https://github.com/christoffermattssonlangseth/liftlog/actions/workflows/ci.yml)
+
 ### An iOS lifting log that lives in a text file you own, with a coach powered by Claude that reads it.
 
 Every set you log becomes a line of text in a file you control: in your iCloud
@@ -140,4 +142,5 @@ swift test
 
 It covers the file format, the analytics, the muscle map, the plan-versus-done
 verdicts, the Strava post, and the Coach context: what reaches the model, how
-the brief is assembled, and how its blocks are parsed back out.
+the brief is assembled, and how its blocks are parsed back out. CI runs it on
+every push, and builds the app and widget for the Simulator alongside.

@@ -8,6 +8,7 @@ struct TrendsView: View {
 
     // Persisted so Trends reopens on the lift you last looked at.
     @AppStorage("trends_exercise") private var exercise = ""
+    @AppStorage("muscle_map") private var muscleMap = MuscleMap()
     @State private var metric: Analytics.Metric = .topSet
     /// Where a finger is on the chart's x-axis, if it's on it at all.
     @State private var scrub: Date?
@@ -59,6 +60,7 @@ struct TrendsView: View {
                         chartCard
                         statsRow
                         weeksCard
+                        musclesCard
                     }
                     .padding()
                 }
@@ -207,12 +209,13 @@ struct TrendsView: View {
     // MARK: - Weeks
 
     /// Every day of the last few months as a dot: filled when you trained,
-    /// deeper the more you moved. A missed week is a blank column, visible
+    /// deeper the more sets you did. A missed week is a blank column, visible
     /// without asking anyone.
     private var weeksCard: some View {
         let thisWeek = weeks.last
         let lastFour = weeks.suffix(4)
         let perWeek = lastFour.isEmpty ? 0 : Double(lastFour.map(\.sessions).reduce(0, +)) / Double(lastFour.count)
+        let setsPerWeek = lastFour.isEmpty ? 0 : Double(lastFour.map(\.sets).reduce(0, +)) / Double(lastFour.count)
         let count = thisWeek?.sessions ?? 0
 
         return PanelBox {
@@ -226,7 +229,7 @@ struct TrendsView: View {
                         Text(count == 1 ? "1 session" : "\(count) sessions")
                             .font(.subheadline.weight(.bold))
                             .contentTransition(.numericText())
-                        Text(kilos(thisWeek?.tonnage ?? 0))
+                        Text("\(thisWeek?.sets ?? 0) sets")
                             .font(.caption).foregroundStyle(.secondary).monospacedDigit()
                     }
                     Spacer()
@@ -235,7 +238,7 @@ struct TrendsView: View {
                         Text(String(format: "%.1f / week", perWeek))
                             .font(.subheadline.weight(.bold))
                             .monospacedDigit()
-                        Text(kilos(lastFour.map(\.tonnage).reduce(0, +)))
+                        Text(String(format: "%.0f sets / week", setsPerWeek))
                             .font(.caption).foregroundStyle(.secondary).monospacedDigit()
                     }
                 }
@@ -244,9 +247,67 @@ struct TrendsView: View {
         }
     }
 
-    /// "8 340 kg" — grouped the way the phone's locale groups.
-    private func kilos(_ value: Double) -> String {
-        value.formatted(.number.precision(.fractionLength(0))) + " kg"
+    // MARK: - Sets per muscle
+
+    /// Weekly sets per muscle for the last six weeks — the number a programme
+    /// is written in. Tonnage isn't here on purpose: it rewards a light leg
+    /// press over a heavy triple and says nothing about where the work went.
+    private var musclesCard: some View {
+        let weekly = muscleMap.weeklySets(weeks: 6, in: store.sessions)
+        let groups = MuscleGroup.ordered.filter { g in weekly.contains { ($0[g] ?? 0) > 0 } }
+        let unmapped = muscleMap.unmapped(in: store.sessions)
+
+        return PanelBox {
+            VStack(alignment: .leading, spacing: 10) {
+                Text("sets per muscle · per week")
+                    .font(.caption).foregroundStyle(.secondary)
+
+                if groups.isEmpty {
+                    Text("Nothing counted yet. Lifts the app doesn't know are assigned in Settings ▸ Muscles.")
+                        .font(.footnote).foregroundStyle(.secondary)
+                } else {
+                    Grid(alignment: .trailing, horizontalSpacing: 6, verticalSpacing: 6) {
+                        GridRow {
+                            Text("").gridColumnAlignment(.leading)
+                            ForEach(Array(weekly.indices), id: \.self) { i in
+                                Text(i == weekly.count - 1 ? "now" : "-\(weekly.count - 1 - i)")
+                                    .font(.system(size: 10, weight: .bold))
+                                    .foregroundStyle(.tertiary)
+                            }
+                        }
+                        ForEach(groups) { group in
+                            GridRow {
+                                Text(group.rawValue)
+                                    .font(.caption.weight(.semibold))
+                                    .gridColumnAlignment(.leading)
+                                ForEach(Array(weekly.indices), id: \.self) { i in
+                                    setCell(weekly[i][group] ?? 0, current: i == weekly.count - 1)
+                                }
+                            }
+                        }
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                }
+
+                if !unmapped.isEmpty {
+                    Text("not counted: " + unmapped.map { Theme.readableName($0) }.joined(separator: ", ")
+                         + " — assign in Settings ▸ Muscles")
+                        .font(.caption2).foregroundStyle(.tertiary)
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
+
+    /// A count, or a dash for none. The current week is the one to read, so
+    /// it's the accent; earlier weeks fade so the row reads as a trend.
+    private func setCell(_ sets: Double, current: Bool) -> some View {
+        let shown = sets == sets.rounded() ? String(Int(sets)) : String(format: "%.1f", sets)
+        return Text(sets > 0 ? shown : "–")
+            .font(.system(.caption, design: .rounded).weight(current ? .bold : .regular))
+            .monospacedDigit()
+            .foregroundStyle(sets > 0 ? (current ? Theme.accent : Color.primary) : Color.secondary.opacity(0.5))
+            .frame(minWidth: 26, alignment: .trailing)
     }
 
     // MARK: - Helpers
@@ -298,7 +359,7 @@ private struct TrainingGrid: View {
         GeometryReader { geo in
             let fit = Int((geo.size.width - labelWidth + gap) / (dot + gap))
             let shown = Array(weeks.suffix(max(1, fit)))
-            let heaviest = shown.flatMap(\.days).compactMap { $0?.tonnage }.max() ?? 0
+            let heaviest = shown.flatMap(\.days).compactMap { $0?.sets }.max() ?? 0
             let today = shown.last?.days.compactMap { $0 }.last?.key
 
             HStack(alignment: .top, spacing: gap) {
@@ -323,7 +384,7 @@ private struct TrainingGrid: View {
         .frame(height: 7 * dot + 6 * gap)
     }
 
-    private func cell(_ day: Analytics.TrainingDay?, heaviest: Double, isToday: Bool) -> some View {
+    private func cell(_ day: Analytics.TrainingDay?, heaviest: Int, isToday: Bool) -> some View {
         RoundedRectangle(cornerRadius: 3, style: .continuous)
             .fill(fill(day, heaviest: heaviest))
             .overlay {
@@ -336,11 +397,11 @@ private struct TrainingGrid: View {
     }
 
     /// Blank for the future, faint for a rest day, accent for a session — the
-    /// heavier the day, the deeper the accent. A bodyweight-only day still shows.
-    private func fill(_ day: Analytics.TrainingDay?, heaviest: Double) -> Color {
+    /// more sets in the day, the deeper the accent.
+    private func fill(_ day: Analytics.TrainingDay?, heaviest: Int) -> Color {
         guard let day else { return .clear }
-        guard let tonnage = day.tonnage else { return Color.secondary.opacity(0.14) }
-        let intensity = heaviest > 0 ? tonnage / heaviest : 1
+        guard let sets = day.sets else { return Color.secondary.opacity(0.14) }
+        let intensity = heaviest > 0 ? Double(sets) / Double(heaviest) : 1
         return Theme.accent.opacity(0.4 + 0.6 * intensity)
     }
 }

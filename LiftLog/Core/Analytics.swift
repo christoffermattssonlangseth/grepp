@@ -22,32 +22,21 @@ enum Analytics {
         case oneRepMax = "Est. 1RM"  // derived, for comparing across rep schemes
         case addedLoad = "Added load" // extra load on a bodyweight lift (bw+X), where weight progresses
         case maxReps = "Max reps"    // for bodyweight lifts, where reps are the progression
-        case volume = "Volume"       // kg lifted in the session: weight × reps, summed
         var id: String { rawValue }
 
         var unit: String {
             switch self {
-            case .topSet, .oneRepMax, .addedLoad, .volume: return "kg"
+            case .topSet, .oneRepMax, .addedLoad: return "kg"
             case .maxReps: return "reps"
             }
         }
     }
 
-    // MARK: - Tonnage
-
-    /// Kilograms moved in a set: the load times the reps. On a bodyweight lift
-    /// only the added load counts — the log doesn't know what you weigh, and a
-    /// made-up number would swamp the real ones.
-    static func tonnage(of set: WorkSet) -> Double {
-        (set.weight ?? set.added ?? 0) * Double(set.reps)
-    }
-
-    static func tonnage(of exercise: ExerciseEntry) -> Double {
-        exercise.sets.reduce(0) { $0 + tonnage(of: $1) }
-    }
-
-    static func tonnage(of session: Session) -> Double {
-        session.exercises.reduce(0) { $0 + tonnage(of: $1) }
+    /// Working sets in a session — every logged set is one. Sets, not kilos:
+    /// tonnage rewards a light leg press over a heavy triple and says nothing
+    /// about where the work went, and the research on volume counts sets.
+    static func setCount(of session: Session) -> Int {
+        session.exercises.reduce(0) { $0 + $1.sets.count }
     }
 
     // MARK: - Training days
@@ -59,9 +48,9 @@ enum Analytics {
         let key: String
         /// Local midnight.
         let date: Date
-        /// Kilograms moved that day; nil when nothing was logged.
-        let tonnage: Double?
-        var trained: Bool { tonnage != nil }
+        /// Working sets that day; nil when nothing was logged.
+        let sets: Int?
+        var trained: Bool { sets != nil }
     }
 
     /// Seven days, Monday first. A day in the future is nil.
@@ -71,7 +60,7 @@ enum Analytics {
         let days: [TrainingDay?]
 
         var sessions: Int { days.compactMap { $0 }.filter(\.trained).count }
-        var tonnage: Double { days.compactMap { $0?.tonnage }.reduce(0, +) }
+        var sets: Int { days.compactMap { $0?.sets }.reduce(0, +) }
     }
 
     /// The last `weeks` weeks ending on `today`'s week, oldest first, each
@@ -80,9 +69,9 @@ enum Analytics {
     static func weekGrid(weeks: Int, endingOn today: Date = Date(),
                          calendar: Calendar = .current, in sessions: [Session]) -> [TrainingWeek] {
         guard weeks > 0 else { return [] }
-        var tonnageByDay: [String: Double] = [:]
+        var setsByDay: [String: Int] = [:]
         for session in sessions {
-            tonnageByDay[session.dateString, default: 0] += tonnage(of: session)
+            setsByDay[session.dateString, default: 0] += setCount(of: session)
         }
 
         let keyFormatter = DateFormatter()
@@ -103,7 +92,7 @@ enum Analytics {
                 guard let date = calendar.date(byAdding: .day, value: offset, to: monday),
                       date <= todayStart else { return nil }
                 let key = keyFormatter.string(from: date)
-                return TrainingDay(key: key, date: date, tonnage: tonnageByDay[key])
+                return TrainingDay(key: key, date: date, sets: setsByDay[key])
             }
             return TrainingWeek(start: monday, days: days)
         }
@@ -163,7 +152,7 @@ enum Analytics {
     /// weight (intensity); bodyweight lifts progress by reps — or by added load once
     /// you start hanging plates on (bw+X), which stays continuous from pure bodyweight.
     static func availableMetrics(_ name: String, in sessions: [Session]) -> [Metric] {
-        guard isBodyweight(name, in: sessions) else { return [.topSet, .oneRepMax, .volume] }
+        guard isBodyweight(name, in: sessions) else { return [.topSet, .oneRepMax] }
         return hasAddedLoad(name, in: sessions) ? [.addedLoad, .maxReps] : [.maxReps]
     }
 
@@ -187,9 +176,6 @@ enum Analytics {
                 value = ex.sets.map { $0.added ?? 0 }.max()
             case .maxReps:
                 value = ex.sets.map { Double($0.reps) }.max()
-            case .volume:
-                let total = tonnage(of: ex)
-                value = total > 0 ? total : nil
             }
             return value.map { TrendPoint(date: session.date, value: $0) }
         }

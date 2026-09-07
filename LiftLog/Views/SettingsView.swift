@@ -5,6 +5,7 @@ struct SettingsView: View {
     @EnvironmentObject var store: Store
     @AppStorage("coach_show_cost") private var showCost = true
     @AppStorage("bar_weight") private var barWeight: Double = 20
+    @AppStorage("muscle_map") private var muscleMap = MuscleMap()
     @AppStorage("plate_inventory") private var inventory = PlateInventory.standard
 
     var body: some View {
@@ -53,6 +54,23 @@ struct SettingsView: View {
                         }
                     }
                     Text("The plates you own, both sides together — four 25s is two a side. The calculator never suggests a plate you don't have.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                .listRowBackground(Rectangle().fill(.regularMaterial))
+
+                Section("Muscles") {
+                    let unmapped = muscleMap.unmapped(in: store.sessions)
+                    let assigned = store.knownExercises.filter { muscleMap.isOverridden($0) }
+                    if unmapped.isEmpty && assigned.isEmpty {
+                        Text("Every lift in your log is counted. A new one the app doesn't know will show up here.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    ForEach(unmapped + assigned, id: \.self) { name in
+                        muscleRow(name)
+                    }
+                    Text("Sets per muscle in Trends and for the coach. A lift counts fully for the first muscle and half for the second. Lifts the app already knows — squat, bench, chin-ups and the rest — need nothing here.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
@@ -154,6 +172,55 @@ struct SettingsView: View {
             return "Neither file found. Commit them beside your log — **\(store.coachingPath)** for how you like to train and what to work around, **\(store.goalsPath)** for what you're aiming at — and they become the coach's standing brief."
         }
         return "Loaded \(found.joined(separator: " and ")). Edit them in your repo, then reload below."
+    }
+
+    /// One unknown lift: pick what it's for, and optionally what it also trains.
+    private func muscleRow(_ name: String) -> some View {
+        let groups = muscleMap.groups(for: name) ?? []
+        return HStack {
+            Text(Theme.readableName(name))
+                .lineLimit(1)
+                .minimumScaleFactor(0.8)
+            Spacer()
+            musclePicker(current: groups.first, title: "muscle") { picked in
+                var next = groups
+                if let picked {
+                    next = [picked] + groups.dropFirst().filter { $0 != picked }
+                } else {
+                    next = []
+                }
+                muscleMap.set(next, for: name)
+            }
+            if let primary = groups.first {
+                musclePicker(current: groups.dropFirst().first, title: "+ half") { picked in
+                    muscleMap.set(picked.map { [primary, $0] } ?? [primary], for: name)
+                }
+            }
+        }
+    }
+
+    private func musclePicker(current: MuscleGroup?, title: String,
+                              onPick: @escaping (MuscleGroup?) -> Void) -> some View {
+        Menu {
+            ForEach(MuscleGroup.ordered) { group in
+                Button {
+                    onPick(group)
+                } label: {
+                    if group == current { Label(group.rawValue, systemImage: "checkmark") }
+                    else { Text(group.rawValue) }
+                }
+            }
+            if current != nil {
+                Divider()
+                Button("none", role: .destructive) { onPick(nil) }
+            }
+        } label: {
+            Text(current?.rawValue ?? title)
+                .font(.subheadline.weight(current == nil ? .regular : .semibold))
+                .foregroundStyle(current == nil ? Color.secondary : Theme.accent)
+                .padding(.horizontal, 10).padding(.vertical, 6)
+                .background(.ultraThinMaterial, in: Capsule())
+        }
     }
 
     /// A binding into one plate size's count. Writing replaces the whole inventory

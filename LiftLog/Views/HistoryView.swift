@@ -11,16 +11,28 @@ struct HistoryView: View {
         var id: String { "\(Session.dateFormatter.string(from: date))-\(name)" }
     }
     @State private var pendingDelete: DeleteTarget?
+    @AppStorage("muscle_map") private var muscleMap = MuscleMap()
 
     private var sortedSessions: [Session] {
         store.sessions.sorted { $0.date > $1.date }
+    }
+
+    /// Sets per muscle for one workout, in body order; nil when nothing is mapped.
+    private func setsLine(_ session: Session) -> String? {
+        let counted = muscleMap.sets(in: [session])
+        let parts = MuscleGroup.ordered.compactMap { group -> String? in
+            guard let n = counted[group], n > 0 else { return nil }
+            let shown = n == n.rounded() ? String(Int(n)) : String(format: "%.1f", n)
+            return "\(group.rawValue) \(shown)"
+        }
+        return parts.isEmpty ? nil : parts.joined(separator: " · ")
     }
 
     var body: some View {
         NavigationStack {
             List {
                 ForEach(sortedSessions) { session in
-                    Section(session.dateString) {
+                    Section {
                         ForEach(session.exercises) { ex in
                             VStack(alignment: .leading, spacing: 2) {
                                 Text(ex.name).font(.headline)
@@ -52,6 +64,17 @@ struct HistoryView: View {
                                 } label: {
                                     Label("Delete", systemImage: "trash")
                                 }
+                            }
+                        }
+                    } header: {
+                        // The date, and where the day's sets went: "quads 6 · back 4½".
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(session.dateString)
+                            if let sets = setsLine(session) {
+                                Text(sets)
+                                    .font(.caption2)
+                                    .textCase(nil)
+                                    .foregroundStyle(.tertiary)
                             }
                         }
                     }

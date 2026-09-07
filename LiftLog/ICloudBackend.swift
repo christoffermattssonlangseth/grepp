@@ -24,8 +24,17 @@ nonisolated struct ICloudBackend: LogBackend {
         }
     }
 
-    /// Whether this phone is signed in to iCloud at all. Cheap; no I/O.
+    /// Whether this phone is signed in to iCloud at all. Cheap; no I/O. Can
+    /// say no on a Simulator that is signed in — `available()` is the real test.
     static var isAvailable: Bool { FileManager.default.ubiquityIdentityToken != nil }
+
+    /// The check that matters: can the app's container be resolved. True when
+    /// the device is signed in, iCloud Drive is on for the app, and the build
+    /// carries the entitlement. Touches the disk, so it's async.
+    static func available() async -> Bool {
+        if isAvailable { return true }
+        return await documents() != nil
+    }
 
     /// The Documents folder of the app's container. Resolving it can touch the
     /// disk, so it's done off the main thread.

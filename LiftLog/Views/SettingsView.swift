@@ -27,9 +27,7 @@ struct SettingsView: View {
                     .pickerStyle(.segmented)
                     if store.storage == .icloud {
                         labeled("file", text: $store.path, placeholder: "training.md")
-                        Text(ICloudBackend.isAvailable
-                             ? "In iCloud Drive, in a LiftLog folder you can open from the Files app. Synced by Apple; nothing leaves your account."
-                             : "This phone isn't signed in to iCloud. Sign in, or keep the log in a GitHub repo instead.")
+                        Text("In iCloud Drive, in a LiftLog folder you can open from the Files app. Synced by Apple; nothing leaves your account. If this phone isn't signed in to iCloud, saves will say so.")
                             .font(.caption)
                             .foregroundStyle(.secondary)
                     } else {

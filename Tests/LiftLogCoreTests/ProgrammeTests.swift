@@ -61,6 +61,8 @@ final class ProgrammeTests: XCTestCase {
         XCTAssertTrue(text.contains("YOUR PROGRAMME."), text)
         XCTAssertTrue(text.contains("PROGRAMMES. When they ask for a programme"), text)
         XCTAssertTrue(text.contains("Adherence first"), text)
+        XCTAssertTrue(text.contains("YOUR FILES."), text)
+        XCTAssertTrue(text.contains("add today's session as a day"), text)
         XCTAssertFalse(CoachContext.systemPrompt(for: excerpt, mode: .goalsInterview).contains("PROGRAMMES. When"))
     }
 }

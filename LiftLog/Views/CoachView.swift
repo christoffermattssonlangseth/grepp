@@ -621,8 +621,9 @@ struct CoachView: View {
                 Text(coach.contextNote ?? model.blurb)
                     .font(.caption2)
                     .foregroundStyle(.secondary)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.7)
+                    .lineLimit(2)
+                    .minimumScaleFactor(0.8)
+                    .multilineTextAlignment(.trailing)
             }
 
             HStack(spacing: 10) {

@@ -16,6 +16,11 @@ struct WidgetSnapshot: Codable, Equatable {
     /// The day, as the log keys it: yyyy-MM-dd.
     var day: String
     var lines: [Line]
+    /// What's loaded in the Log tab and not yet lifted: the lift in the fields
+    /// with its plan, then the queue Coach handed over. Empty when nothing is.
+    var plan: [Line]? = []
+
+    var upNext: [Line] { plan ?? [] }
 
     /// Shared between the app and the widget. Must match both entitlements files.
     static let appGroup = "group.CML.LiftLog"
@@ -53,5 +58,8 @@ struct WidgetSnapshot: Codable, Equatable {
         Line(name: "squat", sets: "87.5x5 87.5x5 87.5x5"),
         Line(name: "bench", sets: "70x5 70x5 70x5"),
         Line(name: "chin-ups", sets: "bw+5x6 bw+5x6 bw+5x5"),
+    ], plan: [
+        Line(name: "deadlift", sets: "120x5 120x5 120x5"),
+        Line(name: "over-head-press", sets: "45x5 45x5 45x5"),
     ])
 }

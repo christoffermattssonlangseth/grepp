@@ -256,8 +256,11 @@ Nothing is read back from Strava.
 
 **Home screen widget** — *Last session*: how many days ago, which day, and
 the lifts with their sets (small shows each lift's last set, medium shows them
-all). It reads a snapshot the app leaves in the App Group, never the log or
-the token, and re-renders at midnight so "2 days ago" stays true.
+all). When a session is loaded in Log and not yet lifted — Coach's next
+session, say — the widget shows it as **Up next**, with how much of the
+current lift has landed; the small widget prefers the plan, the medium shows
+both side by side. It reads a snapshot the app leaves in the App Group, never
+the log or the token, and re-renders at midnight so "2 days ago" stays true.
 
 ## Tests
 The pure-logic layer (parsing, serialization, analytics) lives in `LiftLog/Core`

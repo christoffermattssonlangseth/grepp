@@ -18,7 +18,7 @@ struct LastSessionWidget: Widget {
                 }
         }
         .configurationDisplayName("Last session")
-        .description("What you lifted last time, and how long ago.")
+        .description("What you lifted last time, and what's loaded to lift next.")
         .supportedFamilies([.systemSmall, .systemMedium])
     }
 }
@@ -58,8 +58,8 @@ struct LastSessionView: View {
     let entry: LastSessionEntry
 
     var body: some View {
-        if let snapshot = entry.snapshot, !snapshot.lines.isEmpty {
-            session(snapshot)
+        if let snapshot = entry.snapshot, !snapshot.lines.isEmpty || !snapshot.upNext.isEmpty {
+            content(snapshot)
         } else {
             empty
         }
@@ -67,7 +67,65 @@ struct LastSessionView: View {
 
     // MARK: - Content
 
-    private func session(_ snapshot: WidgetSnapshot) -> some View {
+    /// Small: the plan when there is one, else the last session — the plan is
+    /// the thing you'd glance at on the way to the gym. Medium: both, side by side.
+    @ViewBuilder
+    private func content(_ snapshot: WidgetSnapshot) -> some View {
+        if family == .systemSmall {
+            if !snapshot.upNext.isEmpty { upNext(snapshot) } else { session(snapshot) }
+        } else if snapshot.upNext.isEmpty || snapshot.lines.isEmpty {
+            if snapshot.upNext.isEmpty { session(snapshot) } else { upNext(snapshot) }
+        } else {
+            HStack(alignment: .top, spacing: 14) {
+                session(snapshot, compact: true)
+                Divider()
+                upNext(snapshot, compact: true)
+            }
+        }
+    }
+
+    /// The plan loaded in the Log tab: Coach's next session, or whatever's queued.
+    private func upNext(_ snapshot: WidgetSnapshot, compact: Bool = false) -> some View {
+        let shown = Array(snapshot.upNext.prefix(compact ? 3 : (family == .systemSmall ? 3 : 4)))
+        return VStack(alignment: .leading, spacing: 0) {
+            HStack(spacing: 6) {
+                Image(systemName: "arrow.turn.down.right")
+                    .font(.system(size: 10, weight: .heavy))
+                    .foregroundStyle(Brand.accent)
+                Text("UP NEXT")
+                    .font(.system(size: 10, weight: .heavy)).tracking(1.5)
+                    .foregroundStyle(.secondary)
+            }
+            Text(snapshot.upNext.count == 1 ? "1 lift loaded" : "\(snapshot.upNext.count) lifts loaded")
+                .font(.title3.weight(.heavy))
+                .fontWidth(.condensed)
+                .lineLimit(1)
+                .padding(.top, 4)
+            Spacer(minLength: 6)
+            VStack(alignment: .leading, spacing: 2) {
+                ForEach(Array(shown.enumerated()), id: \.offset) { _, line in
+                    VStack(alignment: .leading, spacing: 0) {
+                        Text(line.name.replacingOccurrences(of: "-", with: " "))
+                            .font(.footnote.weight(.semibold))
+                            .lineLimit(1)
+                        Text(line.sets)
+                            .font(.system(.caption2, design: .monospaced))
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.7)
+                    }
+                }
+                if snapshot.upNext.count > shown.count {
+                    Text("+\(snapshot.upNext.count - shown.count) more")
+                        .font(.caption2)
+                        .foregroundStyle(.tertiary)
+                }
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+    }
+
+    private func session(_ snapshot: WidgetSnapshot, compact: Bool = false) -> some View {
         VStack(alignment: .leading, spacing: 0) {
             header
             Text(relative(snapshot))
@@ -80,7 +138,7 @@ struct LastSessionView: View {
                 .foregroundStyle(.secondary)
                 .lineLimit(1)
             Spacer(minLength: 6)
-            lines(snapshot)
+            lines(snapshot, compact: compact)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
@@ -94,9 +152,11 @@ struct LastSessionView: View {
         }
     }
 
-    /// Small: the lifts and their last set. Medium: the lifts and every set.
-    private func lines(_ snapshot: WidgetSnapshot) -> some View {
-        let shown = Array(snapshot.lines.prefix(family == .systemSmall ? 3 : 4))
+    /// Small, or sharing the medium with the plan: the lifts and their last set.
+    /// Medium on its own: the lifts and every set.
+    private func lines(_ snapshot: WidgetSnapshot, compact: Bool = false) -> some View {
+        let narrow = compact || family == .systemSmall
+        let shown = Array(snapshot.lines.prefix(narrow ? 3 : 4))
         return VStack(alignment: .leading, spacing: 2) {
             ForEach(Array(shown.enumerated()), id: \.offset) { _, line in
                 HStack(alignment: .firstTextBaseline, spacing: 6) {
@@ -104,7 +164,7 @@ struct LastSessionView: View {
                         .font(.footnote.weight(.semibold))
                         .lineLimit(1)
                     Spacer(minLength: 4)
-                    Text(family == .systemSmall ? lastSet(line) : line.sets)
+                    Text(narrow ? lastSet(line) : line.sets)
                         .font(.system(.caption2, design: .monospaced))
                         .foregroundStyle(.secondary)
                         .lineLimit(1)

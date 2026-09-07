@@ -238,10 +238,10 @@ private enum WebAuth {
     private final class Anchor: NSObject, ASWebAuthenticationPresentationContextProviding {
         static let shared = Anchor()
         func presentationAnchor(for session: ASWebAuthenticationSession) -> ASPresentationAnchor {
-            UIApplication.shared.connectedScenes
-                .compactMap { $0 as? UIWindowScene }
-                .flatMap(\.windows)
-                .first { $0.isKeyWindow } ?? ASPresentationAnchor()
+            let scenes = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
+            if let key = scenes.flatMap(\.windows).first(where: { $0.isKeyWindow }) { return key }
+            if let scene = scenes.first { return UIWindow(windowScene: scene) }
+            return UIWindow(frame: .zero)
         }
     }
 }

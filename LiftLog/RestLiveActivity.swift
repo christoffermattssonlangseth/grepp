@@ -44,8 +44,10 @@ enum RestLiveActivity {
 /// the Log screen and a lock-screen tap keep them in step the same way.
 @MainActor
 enum RestSignals {
-    /// The rest target, as the Log screen keeps it.
-    static var target: Int {
+    /// The rest target, as the Log screen keeps it. Nonisolated because it's
+    /// the default for `sync`, and default arguments are evaluated outside
+    /// the actor; it only reads a value UserDefaults guards itself.
+    nonisolated static var target: Int {
         let stored = UserDefaults.standard.integer(forKey: "rest_target")
         return stored > 0 ? stored : 90
     }

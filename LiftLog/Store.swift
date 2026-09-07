@@ -28,6 +28,7 @@ final class Store: ObservableObject {
     /// just runs on its own defaults.
     @AppStorage("gh_coaching_path") var coachingPath = "coaching.md"
     @AppStorage("gh_goals_path") var goalsPath = "goals.md"
+    @AppStorage("gh_research_path") var researchPath = "research.md"
 
     /// Claude workspace for the Coach tab. An identifier, not a secret, so it sits
     /// in UserDefaults beside the repo config. Only needed when the API key spans
@@ -101,13 +102,14 @@ final class Store: ObservableObject {
     /// The two files that make up the coach's standing brief. One identity for
     /// each, so a screen can read, edit and save either without special-casing.
     enum BriefFile: String, CaseIterable, Identifiable {
-        case coaching, goals
+        case coaching, goals, research
         var id: String { rawValue }
 
         var title: String {
             switch self {
             case .coaching: return "How I train"
             case .goals: return "What I'm working toward"
+            case .research: return "What the evidence says"
             }
         }
 
@@ -117,6 +119,8 @@ final class Store: ObservableObject {
                 return "Philosophy, preferences, the shape of your week, injuries to work around."
             case .goals:
                 return "Targets and dates. The coach programmes backwards from these."
+            case .research:
+                return "One finding per line, tagged [R1], [R2]… The coach cites the tags. Easier to fill from Coach: hand it a paper."
             }
         }
     }
@@ -125,6 +129,7 @@ final class Store: ObservableObject {
         switch file {
         case .coaching: return coachingPath
         case .goals: return goalsPath
+        case .research: return researchPath
         }
     }
 
@@ -132,6 +137,7 @@ final class Store: ObservableObject {
         switch file {
         case .coaching: return brief.coaching
         case .goals: return brief.goals
+        case .research: return brief.research
         }
     }
 
@@ -146,6 +152,7 @@ final class Store: ObservableObject {
     private let cacheKey = "gh_cache"
     private let coachingCacheKey = "gh_coaching_cache"
     private let goalsCacheKey = "gh_goals_cache"
+    private let researchCacheKey = "gh_research_cache"
     private let pendingKey = "gh_pending"
     private let draftKey = "session_draft"
     private let plansKey = "plan_records"
@@ -167,7 +174,8 @@ final class Store: ObservableObject {
         draft = loadDraft()
         plans = loadPlans()
         brief = CoachContext.Brief(coaching: defaults.string(forKey: coachingCacheKey) ?? "",
-                                   goals: defaults.string(forKey: goalsCacheKey) ?? "")
+                                   goals: defaults.string(forKey: goalsCacheKey) ?? "",
+                                   research: defaults.string(forKey: researchCacheKey) ?? "")
         // Show cached content + any queued writes immediately, before the network load.
         sessions = WorkoutParser.applying(pending, to: cachedSessions())
     }
@@ -218,6 +226,7 @@ final class Store: ObservableObject {
             switch file {
             case .coaching: brief.coaching = content
             case .goals: brief.goals = content
+            case .research: brief.research = content
             }
             defaults.set(content, forKey: cacheKey(for: file))
             briefStatus = "Saved \(path) ✓"
@@ -237,10 +246,20 @@ final class Store: ObservableObject {
         await save(CoachContext.appendingNote(note, to: brief.coaching), to: .coaching)
     }
 
+    /// Keep evidence the coach has written: research.md with the entries added
+    /// and numbered, pushed like any other brief edit.
+    func addResearch(_ entries: String) async -> CommitResult {
+        await save(CoachContext.appendingResearch(entries, to: brief.research), to: .research)
+    }
+
+    /// The evidence brief, parsed.
+    var evidence: [CoachContext.ResearchEntry] { CoachContext.parseResearch(brief.research) }
+
     private func cacheKey(for file: BriefFile) -> String {
         switch file {
         case .coaching: return coachingCacheKey
         case .goals: return goalsCacheKey
+        case .research: return researchCacheKey
         }
     }
 
@@ -251,7 +270,8 @@ final class Store: ObservableObject {
     private func loadBrief() async {
         brief = CoachContext.Brief(
             coaching: await companion(at: coachingPath, cacheKey: coachingCacheKey) ?? brief.coaching,
-            goals: await companion(at: goalsPath, cacheKey: goalsCacheKey) ?? brief.goals
+            goals: await companion(at: goalsPath, cacheKey: goalsCacheKey) ?? brief.goals,
+            research: await companion(at: researchPath, cacheKey: researchCacheKey) ?? brief.research
         )
     }
 

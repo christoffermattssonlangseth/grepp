@@ -100,6 +100,17 @@ log's prompt cache holds across the session.
 It sees your weekly sets per muscle for the last four weeks too, so "what
 should I do this week" is a balance question, not a guess.
 
+**Evidence.** A third file, `research.md`, holds the findings you want it to
+programme from, one per line, each tagged: `- [R1] Ten or more weekly sets per
+muscle grew more muscle than fewer than five. — Schoenfeld 2017, J Sports Sci.
+doi:…`. The coach reads them with the brief, cites the tag when an answer rests
+on one, and the tag in the answer is a link to the entry. Hand it a paper — an
+abstract, a DOI, a title — and it writes the entry for you, with an **Add to
+evidence** button; you never wrangle a PDF. The list lives behind **Evidence**
+in the Coach toolbar, each entry a tap from the paper. There's a starter in
+[`docs/research-seed.md`](docs/research-seed.md), written from the model's
+memory of the literature and meant to be checked and pruned, not trusted.
+
 And it can remember. When it learns something worth keeping across chats — how
 you respond to a stall, a constraint, a thing you've told it to stop doing — it
 offers a note with a **Remember** button. Saved, the note goes into
@@ -217,7 +228,8 @@ Lifts the app doesn't know are assigned once in **Settings ▸ Muscles**;
 until then they're listed as not counted rather than guessed. History shows
 the same count per workout under each date.
 
-**Coach** — a chat with Claude that has your `training.md` in front of it. Ask
+**Coach** — a chat with Claude that has your `training.md` in front of it, and
+your evidence brief beside it. Ask
 "what session should I do today" and get loads and rep schemes cited from your
 own numbers, with a **Log the session** button (it reads **Load for next
 session** once you've already trained today). Teach it who you are with

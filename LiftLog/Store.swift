@@ -311,14 +311,31 @@ final class Store: ObservableObject {
         return result
     }
 
-    /// Hand the home screen widget the latest session. Only when it changed:
-    /// a reload per parse would be noise, and sessions re-parse on every load.
+    /// Hand the home screen widget the latest session and what's loaded to
+    /// lift next. Only when it changed: a reload per parse would be noise, and
+    /// sessions re-parse on every load.
     private func publishWidgetSnapshot() {
-        let snapshot = sessions.max(by: { $0.date < $1.date }).map { last in
-            WidgetSnapshot(day: last.dateString, lines: last.exercises.map {
+        let last = sessions.max(by: { $0.date < $1.date })
+        let lines = last?.exercises.map {
+            WidgetSnapshot.Line(name: $0.name, sets: $0.sets.map(\.token).joined(separator: " "))
+        } ?? []
+
+        // The plan in the Log tab: the lift in the fields when Coach set it,
+        // with how much of it has landed, then the queue behind it.
+        var plan: [WidgetSnapshot.Line] = []
+        if let d = draft {
+            if !d.name.isEmpty, let sets = d.plan, !sets.isEmpty {
+                var tokens = sets.map(\.token).joined(separator: " ")
+                if !d.sets.isEmpty { tokens += " · \(d.sets.count) done" }
+                plan.append(WidgetSnapshot.Line(name: d.name, sets: tokens))
+            }
+            plan += d.queue.map {
                 WidgetSnapshot.Line(name: $0.name, sets: $0.sets.map(\.token).joined(separator: " "))
-            })
+            }
         }
+
+        let snapshot = (last == nil && plan.isEmpty) ? nil
+            : WidgetSnapshot(day: last?.dateString ?? "", lines: lines, plan: plan)
         guard snapshot != WidgetSnapshot.load() else { return }
         WidgetSnapshot.save(snapshot)
         WidgetCenter.shared.reloadTimelines(ofKind: WidgetSnapshot.kind)
@@ -552,6 +569,7 @@ final class Store: ObservableObject {
         } else {
             defaults.removeObject(forKey: draftKey)
         }
+        publishWidgetSnapshot()   // the plan on the widget follows the draft
     }
     private func loadDraft() -> SessionDraft? {
         guard let data = defaults.data(forKey: draftKey) else { return nil }

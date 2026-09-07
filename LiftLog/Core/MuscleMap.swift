@@ -4,7 +4,10 @@ import Foundation
 /// written — not "legs", but the muscles a weekly set target is set for.
 enum MuscleGroup: String, CaseIterable, Codable, Identifiable {
     case quads, hamstrings, glutes, calves
-    case chest, shoulders, triceps
+    case chest, triceps
+    // Delts split three ways: a bench day's front-delt work must not read as
+    // side-delt volume, which is the one that's usually short.
+    case frontDelts = "front delts", sideDelts = "side delts", rearDelts = "rear delts"
     case back, biceps
     case core
     var id: String { rawValue }
@@ -16,10 +19,11 @@ enum MuscleGroup: String, CaseIterable, Codable, Identifiable {
 /// Which muscles an exercise's sets count toward, and how much.
 ///
 /// A set of a compound lift counts fully for the muscle it's a lift *for* and
-/// half for what it also trains — squat is a quad set and half a glute set,
-/// chin-ups a back set and half a biceps set. That's the convention weekly
-/// set counts are usually kept in, and it stops a bench day reading as zero
-/// triceps work. Isolation lifts count once, for one muscle.
+/// half for each muscle that also does real work in it — bench is a chest
+/// set, half a triceps set and half a front-delt set; squat a quad set and
+/// half a glute set; a row a back set, half biceps, half rear delts. That's
+/// the convention weekly set counts are usually kept in, and it stops a bench
+/// day reading as zero triceps work. Isolation lifts count once, for one muscle.
 ///
 /// The built-in table covers the exercise library and the usual aliases. A
 /// lift it doesn't know is *unmapped* and counted nowhere — shown as such
@@ -167,34 +171,34 @@ struct MuscleMap: Equatable, RawRepresentable {
         "glute-bridge": [.glutes, .hamstrings],
         "calf-raise": [.calves],
         // Push
-        "bench-press": [.chest, .triceps, .shoulders],
-        "incline-bench-press": [.chest, .shoulders, .triceps],
-        "dumbbell-bench-press": [.chest, .triceps, .shoulders],
+        "bench-press": [.chest, .triceps, .frontDelts],
+        "incline-bench-press": [.chest, .frontDelts, .triceps],
+        "dumbbell-bench-press": [.chest, .triceps, .frontDelts],
         "close-grip-bench-press": [.triceps, .chest],
         "push-ups": [.chest, .triceps],
         "dips": [.chest, .triceps],
         "chest-fly": [.chest],
-        "over-head-press": [.shoulders, .triceps],
-        "push-press": [.shoulders, .triceps],
-        "dumbbell-shoulder-press": [.shoulders, .triceps],
-        "lateral-raise": [.shoulders],
-        "front-raise": [.shoulders],
+        "over-head-press": [.frontDelts, .triceps, .sideDelts],
+        "push-press": [.frontDelts, .triceps, .sideDelts],
+        "dumbbell-shoulder-press": [.frontDelts, .triceps, .sideDelts],
+        "lateral-raise": [.sideDelts],
+        "front-raise": [.frontDelts],
         "tricep-pushdown": [.triceps],
         "skull-crusher": [.triceps],
         "overhead-tricep-extension": [.triceps],
         // Pull
-        "barbell-row": [.back, .biceps],
-        "pendlay-row": [.back, .biceps],
-        "seal-row": [.back, .biceps],
-        "dumbbell-row": [.back, .biceps],
-        "cable-row": [.back, .biceps],
-        "chest-supported-row": [.back, .biceps],
-        "upright-row": [.shoulders, .back],
+        "barbell-row": [.back, .biceps, .rearDelts],
+        "pendlay-row": [.back, .biceps, .rearDelts],
+        "seal-row": [.back, .biceps, .rearDelts],
+        "dumbbell-row": [.back, .biceps, .rearDelts],
+        "cable-row": [.back, .biceps, .rearDelts],
+        "chest-supported-row": [.back, .biceps, .rearDelts],
+        "upright-row": [.sideDelts, .back],
         "pull-ups": [.back, .biceps],
         "chin-ups": [.back, .biceps],
         "lat-pulldown": [.back, .biceps],
-        "face-pull": [.shoulders, .back],
-        "rear-delt-fly": [.shoulders, .back],
+        "face-pull": [.rearDelts, .back],
+        "rear-delt-fly": [.rearDelts],
         "shrug": [.back],
         "dumbbell-curl": [.biceps],
         "barbell-curl": [.biceps],

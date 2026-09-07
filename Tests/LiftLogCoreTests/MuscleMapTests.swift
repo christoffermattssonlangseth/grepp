@@ -11,7 +11,9 @@ final class MuscleMapTests: XCTestCase {
         let map = MuscleMap()
         XCTAssertEqual(map.credits(for: "squat"), [.quads: 1, .glutes: 0.5])
         XCTAssertEqual(map.credits(for: "chin-ups"), [.back: 1, .biceps: 0.5])
-        XCTAssertEqual(map.credits(for: "lateral-raise"), [.shoulders: 1])
+        XCTAssertEqual(map.credits(for: "bench-press"), [.chest: 1, .triceps: 0.5, .frontDelts: 0.5])
+        XCTAssertEqual(map.credits(for: "lateral-raise"), [.sideDelts: 1])
+        XCTAssertEqual(map.credits(for: "seal-row"), [.back: 1, .biceps: 0.5, .rearDelts: 0.5])
         XCTAssertNil(map.credits(for: "sled-push"), "unknown lifts count nowhere")
     }
 
@@ -37,7 +39,7 @@ final class MuscleMapTests: XCTestCase {
         XCTAssertEqual(MuscleMap(rawValue: raw), map)
 
         map.set([], for: "seal-row")
-        XCTAssertEqual(map.credits(for: "seal-row"), [.back: 1, .biceps: 0.5], "cleared — back to the table")
+        XCTAssertEqual(map.credits(for: "seal-row"), [.back: 1, .biceps: 0.5, .rearDelts: 0.5], "cleared — back to the table")
         XCTAssertEqual(MuscleMap(rawValue: "junk;x=;y=nothing")?.overrides, [:])
     }
 
@@ -50,9 +52,11 @@ final class MuscleMapTests: XCTestCase {
         XCTAssertEqual(counted[.glutes], 1.5)
         XCTAssertEqual(counted[.chest], 3)
         XCTAssertEqual(counted[.triceps], 1.5)
-        XCTAssertEqual(counted[.shoulders], 1.5)
+        XCTAssertEqual(counted[.frontDelts], 1.5)
+        XCTAssertNil(counted[.sideDelts], "a bench day is not side-delt work")
         XCTAssertEqual(counted[.back], 4)
         XCTAssertEqual(counted[.biceps], 2)
+        XCTAssertNil(counted[.rearDelts], "vertical pulls don't count for rear delts")
         XCTAssertNil(counted[.hamstrings])
         XCTAssertEqual(MuscleMap().unmapped(in: [session]), ["sled-push"])
     }

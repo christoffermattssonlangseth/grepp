@@ -17,6 +17,9 @@ enum Theme {
     /// one edit here instead of a hunt through the views.
     static let onAccent = Brand.onAccent
 
+    /// Strava's own orange, for its button only — their brand rules ask for it.
+    static let strava = Color(red: 0.988, green: 0.298, blue: 0.008)   // #FC4C02
+
     static let corner: CGFloat = 20
     static let bigFieldHeight: CGFloat = 76
 

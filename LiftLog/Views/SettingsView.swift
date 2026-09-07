@@ -6,6 +6,8 @@ struct SettingsView: View {
     @AppStorage("coach_show_cost") private var showCost = true
     @AppStorage("bar_weight") private var barWeight: Double = 20
     @AppStorage("muscle_map") private var muscleMap = MuscleMap()
+    @StateObject private var strava = StravaService.shared
+    @State private var stravaError: String?
     @AppStorage("plate_inventory") private var inventory = PlateInventory.standard
 
     var body: some View {
@@ -112,6 +114,50 @@ struct SettingsView: View {
                     """)
                         .font(.caption)
                         .foregroundStyle(.secondary)
+                }
+                .listRowBackground(Rectangle().fill(.regularMaterial))
+
+                Section("Strava") {
+                    if let athlete = strava.athlete {
+                        HStack {
+                            Text("Connected as \(athlete)")
+                            Spacer()
+                            Button("Disconnect", role: .destructive) { strava.disconnect() }
+                                .font(.subheadline)
+                        }
+                        Text("A **Post to Strava** button sits under today's session. It posts the day as a Weight Training activity with your lines in the description; press it again after another lift and it updates the same activity.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    } else {
+                        Button {
+                            Task {
+                                stravaError = nil
+                                do { try await strava.connect() } catch { stravaError = error.localizedDescription }
+                            }
+                        } label: {
+                            HStack(spacing: 8) {
+                                if strava.isBusy { ProgressView().controlSize(.small) }
+                                Text("Connect with Strava")
+                                    .font(.subheadline.weight(.bold))
+                            }
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 8)
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .tint(Theme.strava)
+                        .disabled(strava.isBusy || !StravaService.isConfigured)
+                        if !StravaService.isConfigured {
+                            Text("Needs a Strava API app: create one at strava.com/settings/api with **localhost** as the Authorization Callback Domain, then put its client ID and secret in the untracked LiftLog/Secrets.plist as STRAVA_CLIENT_ID and STRAVA_CLIENT_SECRET.")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                    if let stravaError {
+                        Text(stravaError).font(.caption2).foregroundStyle(.orange)
+                    }
+                    Text("Powered by Strava")
+                        .font(.caption2)
+                        .foregroundStyle(.tertiary)
                 }
                 .listRowBackground(Rectangle().fill(.regularMaterial))
 

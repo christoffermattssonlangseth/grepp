@@ -156,6 +156,8 @@ final class Store: ObservableObject {
     private let pendingKey = "gh_pending"
     private let draftKey = "session_draft"
     private let plansKey = "plan_records"
+    private let sessionStartsKey = "session_starts"
+    private let stravaPostsKey = "strava_posts"
     private var defaults: UserDefaults { .standard }
 
     /// The exercise being logged right now, persisted so a kill mid-session
@@ -173,6 +175,8 @@ final class Store: ObservableObject {
         pending = loadPending()
         draft = loadDraft()
         plans = loadPlans()
+        stravaPosts = defaults.data(forKey: stravaPostsKey)
+            .flatMap { try? JSONDecoder().decode([String: Int].self, from: $0) } ?? [:]
         brief = CoachContext.Brief(coaching: defaults.string(forKey: coachingCacheKey) ?? "",
                                    goals: defaults.string(forKey: goalsCacheKey) ?? "",
                                    research: defaults.string(forKey: researchCacheKey) ?? "")
@@ -469,6 +473,43 @@ final class Store: ObservableObject {
         WorkoutParser.parse(defaults.string(forKey: cacheKey) ?? "")
     }
 
+    // MARK: - Session clock and Strava
+
+    /// When the first set of each day landed, keyed by the log's date, so a
+    /// posted session has a length. Kept for a week.
+    private var sessionStarts: [String: Date] {
+        get { (defaults.data(forKey: sessionStartsKey)).flatMap { try? JSONDecoder().decode([String: Date].self, from: $0) } ?? [:] }
+        set { defaults.set(try? JSONEncoder().encode(newValue), forKey: sessionStartsKey) }
+    }
+
+    /// A set landed under `date`: start that day's clock if it isn't running.
+    func noteSetLanded(on date: Date, at time: Date = Date()) {
+        let key = Session.dateFormatter.string(from: date)
+        var starts = sessionStarts
+        guard starts[key] == nil else { return }
+        starts[key] = time
+        let cutoff = time.addingTimeInterval(-7 * 86_400)
+        starts = starts.filter { $0.value >= cutoff }
+        sessionStarts = starts
+    }
+
+    func sessionStart(on date: Date) -> Date? {
+        sessionStarts[Session.dateFormatter.string(from: date)]
+    }
+
+    /// Strava activity ids for days already posted, keyed by the log's date,
+    /// so a session that grows after posting is updated rather than doubled.
+    @Published private(set) var stravaPosts: [String: Int] = [:]
+
+    func stravaActivity(on date: Date) -> Int? {
+        stravaPosts[Session.dateFormatter.string(from: date)]
+    }
+
+    func setStravaActivity(_ id: Int, on date: Date) {
+        stravaPosts[Session.dateFormatter.string(from: date)] = id
+        defaults.set(try? JSONEncoder().encode(stravaPosts), forKey: stravaPostsKey)
+    }
+
     /// A prescription was loaded into the Log tab.
     func recordPlan(_ entries: [ExerciseEntry], on date: Date) {
         plans.prescribe(entries, on: date)
@@ -498,6 +539,7 @@ final class Store: ObservableObject {
         guard var d = draft, let set = d.sameAgainSet else { return }
         d.sets.append(WorkSet(weight: set.weight, added: set.added, reps: set.reps))
         d.restStart = Date()
+        noteSetLanded(on: d.date)
         saveDraft(d)
         draftRevision += 1
         RestSignals.sync(d)

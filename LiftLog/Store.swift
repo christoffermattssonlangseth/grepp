@@ -51,6 +51,7 @@ final class Store: ObservableObject {
     @AppStorage("gh_coaching_path") var coachingPath = "coaching.md"
     @AppStorage("gh_goals_path") var goalsPath = "goals.md"
     @AppStorage("gh_research_path") var researchPath = "research.md"
+    @AppStorage("gh_program_path") var programPath = "program.md"
 
     /// Claude workspace for the Coach tab. An identifier, not a secret, so it sits
     /// in UserDefaults beside the repo config. Only needed when the API key spans
@@ -124,13 +125,14 @@ final class Store: ObservableObject {
     /// The two files that make up the coach's standing brief. One identity for
     /// each, so a screen can read, edit and save either without special-casing.
     enum BriefFile: String, CaseIterable, Identifiable {
-        case coaching, goals, research
+        case coaching, goals, program, research
         var id: String { rawValue }
 
         var title: String {
             switch self {
             case .coaching: return "How I train"
             case .goals: return "What I'm working toward"
+            case .program: return "The programme I'm running"
             case .research: return "What the evidence says"
             }
         }
@@ -141,6 +143,8 @@ final class Store: ObservableObject {
                 return "Philosophy, preferences, the shape of your week, injuries to work around."
             case .goals:
                 return "Targets and dates. The coach programmes backwards from these."
+            case .program:
+                return "Days under ## headings, one lift per bullet with its set scheme, no loads. Ask the coach to write one."
             case .research:
                 return "One finding per line, tagged [R1], [R2]… The coach cites the tags. Easier to fill from Coach: hand it a paper."
             }
@@ -152,6 +156,7 @@ final class Store: ObservableObject {
         case .coaching: return coachingPath
         case .goals: return goalsPath
         case .research: return researchPath
+        case .program: return programPath
         }
     }
 
@@ -160,6 +165,7 @@ final class Store: ObservableObject {
         case .coaching: return brief.coaching
         case .goals: return brief.goals
         case .research: return brief.research
+        case .program: return brief.program
         }
     }
 
@@ -175,6 +181,7 @@ final class Store: ObservableObject {
     private let coachingCacheKey = "gh_coaching_cache"
     private let goalsCacheKey = "gh_goals_cache"
     private let researchCacheKey = "gh_research_cache"
+    private let programCacheKey = "gh_program_cache"
     private let pendingKey = "gh_pending"
     private let draftKey = "session_draft"
     private let plansKey = "plan_records"
@@ -201,7 +208,8 @@ final class Store: ObservableObject {
             .flatMap { try? JSONDecoder().decode([String: Int].self, from: $0) } ?? [:]
         brief = CoachContext.Brief(coaching: defaults.string(forKey: coachingCacheKey) ?? "",
                                    goals: defaults.string(forKey: goalsCacheKey) ?? "",
-                                   research: defaults.string(forKey: researchCacheKey) ?? "")
+                                   research: defaults.string(forKey: researchCacheKey) ?? "",
+                                   program: defaults.string(forKey: programCacheKey) ?? "")
         // Show cached content + any queued writes immediately, before the network load.
         sessions = WorkoutParser.applying(pending, to: cachedSessions())
     }
@@ -260,6 +268,7 @@ final class Store: ObservableObject {
             case .coaching: brief.coaching = content
             case .goals: brief.goals = content
             case .research: brief.research = content
+            case .program: brief.program = content
             }
             defaults.set(content, forKey: cacheKey(for: file))
             briefStatus = "Saved \(path) ✓"
@@ -288,11 +297,15 @@ final class Store: ObservableObject {
     /// The evidence brief, parsed.
     var evidence: [CoachContext.ResearchEntry] { CoachContext.parseResearch(brief.research) }
 
+    /// The programme on file, parsed.
+    var programme: Programme { Programme.parse(brief.program) }
+
     private func cacheKey(for file: BriefFile) -> String {
         switch file {
         case .coaching: return coachingCacheKey
         case .goals: return goalsCacheKey
         case .research: return researchCacheKey
+        case .program: return programCacheKey
         }
     }
 
@@ -304,7 +317,8 @@ final class Store: ObservableObject {
         brief = CoachContext.Brief(
             coaching: await companion(at: coachingPath, cacheKey: coachingCacheKey) ?? brief.coaching,
             goals: await companion(at: goalsPath, cacheKey: goalsCacheKey) ?? brief.goals,
-            research: await companion(at: researchPath, cacheKey: researchCacheKey) ?? brief.research
+            research: await companion(at: researchPath, cacheKey: researchCacheKey) ?? brief.research,
+            program: await companion(at: programPath, cacheKey: programCacheKey) ?? brief.program
         )
     }
 

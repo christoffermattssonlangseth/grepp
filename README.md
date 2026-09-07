@@ -57,12 +57,24 @@ queue, the rest. It keeps what it prescribed next to what you did, and reads
 your weekly sets per muscle, so the next prescription starts from the session as
 lifted. A cost line under each answer shows the API's own token counts.
 
-**Your brief.** Three optional Markdown files beside the log, editable in the
+**Your brief.** Four optional Markdown files beside the log, editable in the
 app: `coaching.md` for how you train, `goals.md` for what you're chasing (the
 coach can interview you and write it), `research.md` for the findings you want
-it to programme from. Changing how you're coached is a commit. When the coach
+it to programme from, and `program.md` for the plan you're running. Changing
+how you're coached is a commit. When the coach
 learns something worth keeping, it offers a **Remember** card that appends a
 dated note to `coaching.md`. Nothing is written until you tap.
+
+**Programme.** Ask for one, "write me a programme", and the coach designs it
+from your log, goals and evidence, asks what it doesn't know (days, time,
+equipment), and writes `program.md`: days under headings, one lift per line
+with its set scheme and progression rule, no loads. Save it, and from then on
+"what should I do today" is that programme's next day with loads from your
+log, and the Programme screen in the Coach toolbar lists the days with a
+button each. The design rules it follows are the usual evidence-based ones
+(hard sets per muscle per week, two exposures, 1–3 reps in reserve, reactive
+deloads), stated as defaults your evidence brief overrides; Liftosaur's
+programme-design guide was the checklist for what to cover.
 
 **Evidence.** `research.md` holds one finding per line, tagged `[R1]`, `[R2]`…
 The coach cites the tag when an answer rests on one, and the tag is a link to
@@ -131,9 +143,9 @@ the Authorization Callback Domain, paste its client ID and secret into
 Settings ▸ Strava (or `Secrets.plist` as `STRAVA_CLIENT_ID` and
 `STRAVA_CLIENT_SECRET`), and tap Connect. Tokens live in the Keychain.
 
-**Brief files.** Optional. `coaching.md`, `goals.md` and `research.md` sit
-beside the log, wherever it lives; create them from the app or by hand. Paths
-are in Settings ▸ Coach.
+**Brief files.** Optional. `coaching.md`, `goals.md`, `program.md` and
+`research.md` sit beside the log, wherever it lives; create them from the app
+or by hand. Paths are in Settings ▸ Coach.
 
 ## Tests
 

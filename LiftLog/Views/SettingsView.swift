@@ -10,6 +10,8 @@ struct SettingsView: View {
     @State private var stravaError: String?
     @State private var stravaID = ""
     @State private var stravaSecret = ""
+    @State private var backfillStatus: String?
+    @State private var backfilling = false
     @AppStorage("plate_inventory") private var inventory = PlateInventory.standard
 
     var body: some View {
@@ -127,9 +129,32 @@ struct SettingsView: View {
                             Button("Disconnect", role: .destructive) { strava.disconnect() }
                                 .font(.subheadline)
                         }
-                        Text("A **Post to Strava** button sits under today's session. It posts the day as a Weight Training activity with your lines in the description; press it again after another lift and it updates the same activity.")
+                        Text("A **Post to Strava** button sits under today's session. It posts the day as a Weight Training activity with your lines in the description; press it again after another lift and it updates the same activity. History shows which days are on Strava, with a post button for the ones that aren't.")
                             .font(.caption)
                             .foregroundStyle(.secondary)
+                        let unposted = store.sessions.filter { store.stravaActivity(on: $0.date) == nil }
+                        if !unposted.isEmpty {
+                            Button {
+                                Task { await backfill(unposted.sorted { $0.date < $1.date }) }
+                            } label: {
+                                HStack(spacing: 8) {
+                                    if backfilling { ProgressView().controlSize(.small) }
+                                    Text(unposted.count == 1 ? "Post the 1 session not on Strava"
+                                                             : "Post the \(unposted.count) sessions not on Strava")
+                                }
+                            }
+                            .disabled(backfilling)
+                            Text("Older days have no clock, so they go up as an hour from noon. Days posted before the app kept track will be posted again — delete the doubles on Strava.")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        } else {
+                            Text("Every logged day is on Strava.")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                        if let backfillStatus {
+                            Text(backfillStatus).font(.caption2).foregroundStyle(.secondary)
+                        }
                     } else {
                         // Keys first, then the one button: fill the two fields
                         // and Connect saves them and signs in, in one tap.
@@ -246,6 +271,24 @@ struct SettingsView: View {
             return "Neither file found. Commit them beside your log — **\(store.coachingPath)** for how you like to train and what to work around, **\(store.goalsPath)** for what you're aiming at — and they become the coach's standing brief."
         }
         return "Loaded \(found.joined(separator: " and ")). Edit them in your repo, then reload below."
+    }
+
+    /// Post every day not yet on Strava, oldest first, one at a time — Strava
+    /// rate-limits, and a pause between posts keeps well under it.
+    private func backfill(_ sessions: [Session]) async {
+        backfilling = true
+        defer { backfilling = false }
+        for (i, session) in sessions.enumerated() {
+            backfillStatus = "Posting \(i + 1) of \(sessions.count) — \(session.dateString)…"
+            do {
+                try await StravaPoster.post(session, store: store, strava: strava)
+            } catch {
+                backfillStatus = "Stopped at \(session.dateString): \(error.localizedDescription)"
+                return
+            }
+            try? await Task.sleep(for: .milliseconds(600))
+        }
+        backfillStatus = "Posted \(sessions.count) \(sessions.count == 1 ? "session" : "sessions") ✓"
     }
 
     /// One unknown lift: pick what it's for, and optionally what it also trains.

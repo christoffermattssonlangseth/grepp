@@ -247,7 +247,10 @@ the Strava connection, and the offline sync queue.
 as a Weight Training activity named after its lifts, with the log lines in the
 description, a "Tracked with LiftLog" sign-off linking here, and the length
 from your first set to the post. Press it again
-after another lift and it updates the same activity. Needs a Strava API app of
+after another lift and it updates the same activity. History marks each day
+"on Strava" or offers a post button, and Settings has one button to post
+every day that isn't up yet, oldest first (an hour from noon, since old days
+have no clock). Needs a Strava API app of
 your own (strava.com/settings/api, callback domain `localhost`): paste its
 client ID and secret into Settings ▸ Strava, where they go in the Keychain
 (an untracked `LiftLog/Secrets.plist` with `STRAVA_CLIENT_ID` and

@@ -29,6 +29,19 @@ final class StravaPostTests: XCTestCase {
         XCTAssertTrue(StravaPost.description(for: session(["squat"], sets: 1), elapsed: nil).contains("1 lift · 1 set\n"))
     }
 
+    func testDefaultStartIsLocalNoonOnTheLogsDay() {
+        var stockholm = Calendar(identifier: .gregorian)
+        stockholm.timeZone = TimeZone(identifier: "Europe/Stockholm")!
+        let start = StravaPost.defaultStart(for: session(["squat"]), calendar: stockholm)
+        let parts = stockholm.dateComponents([.year, .month, .day, .hour], from: start)
+        XCTAssertEqual([parts.year, parts.month, parts.day, parts.hour], [2026, 9, 7, 12])
+
+        var pacific = Calendar(identifier: .gregorian)
+        pacific.timeZone = TimeZone(identifier: "America/Los_Angeles")!
+        let west = pacific.dateComponents([.day, .hour], from: StravaPost.defaultStart(for: session(["squat"]), calendar: pacific))
+        XCTAssertEqual([west.day, west.hour], [7, 12], "the log's day, not UTC midnight's local day")
+    }
+
     func testElapsedFallsBackToAnHourWhenUnknownOrSilly() {
         let start = Date()
         XCTAssertEqual(StravaPost.elapsed(start: start, end: start.addingTimeInterval(2000)), 2000)

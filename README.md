@@ -4,7 +4,7 @@
 
 # Grepp
 
-[![CI](https://github.com/christoffermattssonlangseth/liftlog/actions/workflows/ci.yml/badge.svg)](https://github.com/christoffermattssonlangseth/liftlog/actions/workflows/ci.yml)
+[![CI](https://github.com/christoffermattssonlangseth/grepp/actions/workflows/ci.yml/badge.svg)](https://github.com/christoffermattssonlangseth/grepp/actions/workflows/ci.yml)
 
 ### An iOS lifting log that lives in a text file you own, with a coach powered by Claude that reads it.
 

@@ -199,7 +199,7 @@ struct LastSessionView: View {
             Text("Nothing logged yet")
                 .font(.headline)
                 .fontWidth(.condensed)
-            Text("Open LiftLog and land a set.")
+            Text("Open Grepp and land a set.")
                 .font(.caption2)
                 .foregroundStyle(.secondary)
         }

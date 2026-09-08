@@ -23,7 +23,7 @@ final class StravaPostTests: XCTestCase {
 
         2 lifts · 4 sets · 32 min
 
-        Tracked with LiftLog — a plain-text lifting log with a Claude coach
+        Tracked with Grepp — a plain-text lifting log with a Claude coach
         https://github.com/christoffermattssonlangseth/liftlog
         """)
         XCTAssertTrue(StravaPost.description(for: session(["squat"], sets: 1), elapsed: nil).contains("1 lift · 1 set\n"))

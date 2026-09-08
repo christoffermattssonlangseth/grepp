@@ -27,7 +27,7 @@ struct SettingsView: View {
                     .pickerStyle(.segmented)
                     if store.storage == .icloud {
                         labeled("file", text: $store.path, placeholder: "training.md")
-                        Text("In iCloud Drive, in a LiftLog folder you can open from the Files app. Synced by Apple; nothing leaves your account. If this phone isn't signed in to iCloud, saves will say so.")
+                        Text("In iCloud Drive, in a Grepp folder you can open from the Files app. Synced by Apple; nothing leaves your account. If this phone isn't signed in to iCloud, saves will say so.")
                             .font(.caption)
                             .foregroundStyle(.secondary)
                     } else {
@@ -278,7 +278,7 @@ struct SettingsView: View {
                 Section {
                     VStack(spacing: 8) {
                         Barbell(height: 26)
-                        Text("LiftLog")
+                        Text("Grepp")
                             .font(.caption.weight(.heavy))
                             .tracking(3)
                             .foregroundStyle(.secondary)

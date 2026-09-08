@@ -980,7 +980,7 @@ enum CoachContext {
     }
 
     /// The scheme the app answers for an evidence tag tapped in a bubble.
-    static let evidenceScheme = "liftlog"
+    static let evidenceScheme = "grepp"
 
     /// `[R3]` becomes a tappable link to that entry. A tag already inside a
     /// markdown link is left alone.

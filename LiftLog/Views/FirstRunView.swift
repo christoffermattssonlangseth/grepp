@@ -15,7 +15,7 @@ struct FirstRunView: View {
         VStack(spacing: 24) {
             Spacer()
             Barbell(height: 44)
-            Text("LiftLog")
+            Text("Grepp")
                 .font(.largeTitle.weight(.heavy))
                 .fontWidth(.condensed)
             Text("Your training log is a text file you own. Where should it live?")
@@ -27,7 +27,7 @@ struct FirstRunView: View {
             VStack(spacing: 12) {
                 choice(title: "iCloud Drive",
                        detail: icloudReady
-                           ? "Synced by Apple. Shows up in the Files app as LiftLog ▸ training.md."
+                           ? "Synced by Apple. Shows up in the Files app as Grepp ▸ training.md."
                            : (checkingICloud ? "Checking iCloud…"
                               : "Sign in to iCloud on this phone, then tap here to check again."),
                        icon: "icloud",

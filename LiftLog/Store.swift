@@ -263,7 +263,7 @@ final class Store: ObservableObject {
         do {
             // Fetch first for the version: nil creates the file, a stale one is refused.
             let existing = try await remote.fetch()
-            _ = try await remote.put(content: content, version: existing?.version, message: "Update \(path) from LiftLog")
+            _ = try await remote.put(content: content, version: existing?.version, message: "Update \(path) from Grepp")
             switch file {
             case .coaching: brief.coaching = content
             case .goals: brief.goals = content

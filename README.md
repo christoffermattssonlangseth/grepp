@@ -1,12 +1,14 @@
 <p align="center">
-  <img src="LiftLog/Assets.xcassets/AppIcon.appiconset/icon-1024.png" width="120" alt="LiftLog icon">
+  <img src="LiftLog/Assets.xcassets/AppIcon.appiconset/icon-1024.png" width="120" alt="Grepp icon">
 </p>
 
-# LiftLog
+# Grepp
 
 [![CI](https://github.com/christoffermattssonlangseth/liftlog/actions/workflows/ci.yml/badge.svg)](https://github.com/christoffermattssonlangseth/liftlog/actions/workflows/ci.yml)
 
 ### An iOS lifting log that lives in a text file you own, with a coach powered by Claude that reads it.
+
+*Grepp* is Swedish for grip.
 
 Every set you log becomes a line of text in a file you control: in your iCloud
 Drive, where it shows up in the Files app, or in a GitHub repo where every set is
@@ -108,7 +110,7 @@ their sets, and **Up next** when a session is loaded and not yet lifted.
 
 **Strava.** A **Post to Strava** button under today's session. The day goes up
 as a Weight Training activity named after its lifts, the log lines in the
-description with a "Tracked with LiftLog" sign-off, and the length from your
+description with a "Tracked with Grepp" sign-off, and the length from your
 first set to the post. Press again and it updates the same activity. History
 offers a post button per day, and Settings posts every day not yet up, oldest
 first. Nothing is read back from Strava.
@@ -123,14 +125,16 @@ lift in progress, the rest clock and the Coach chat survive an app kill.
 **Run it.** Open `LiftLog.xcodeproj`, pick your iPhone, press ▶. First run on a
 phone: enable Developer Mode and trust the developer in iOS Settings.
 `LiftLog/` is the app, `LiftLogWidgets/` the widget extension, `Shared/` what
-both compile. The app needs the App Group `group.CML.LiftLog` and the iCloud
-container `iCloud.CML.LiftLog`, both in its entitlements; automatic signing
-registers them (open Signing & Capabilities on each target if it complains).
+both compile; the folders, targets and bundle IDs keep the project's first
+name so an installed build carries on. The app needs the App Group
+`group.CML.LiftLog` and the iCloud container `iCloud.CML.LiftLog`, both in its
+entitlements; automatic signing registers them (open Signing & Capabilities on
+each target if it complains).
 The palette is one constant, `Theme.accent`, and `Scripts/make-icon.py` draws
 the icon from it.
 
 **Where the log lives.** The first run asks: iCloud Drive or a GitHub repo.
-iCloud needs nothing else; the file is `LiftLog/training.md` in the Files app,
+iCloud needs nothing else; the file is `Grepp/training.md` in the Files app,
 synced by Apple. GitHub takes the owner, repo, path and branch in Settings plus
 a fine-grained token with Contents read and write on that repo, kept in the
 Keychain. Switch either way later in Settings; the format is the same.

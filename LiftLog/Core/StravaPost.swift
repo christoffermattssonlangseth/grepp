@@ -10,7 +10,7 @@ enum StravaPost {
     static let sportType = "WeightTraining"
 
     /// The sign-off at the foot of every post. Strava turns the URL into a link.
-    static let signOff = "Tracked with LiftLog — a plain-text lifting log with a Claude coach\nhttps://github.com/christoffermattssonlangseth/liftlog"
+    static let signOff = "Tracked with Grepp — a plain-text lifting log with a Claude coach\nhttps://github.com/christoffermattssonlangseth/liftlog"
 
     /// "Lifting · squat, bench, chin-ups" — the first three lifts, then a count.
     static func name(for session: Session) -> String {

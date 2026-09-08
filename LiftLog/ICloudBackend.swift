@@ -1,6 +1,6 @@
 import Foundation
 
-/// The log as a file in iCloud Drive: `LiftLog/training.md`, visible in the
+/// The log as a file in iCloud Drive: `Grepp/training.md`, visible in the
 /// Files app, synced by Apple, no account with anyone but Apple.
 ///
 /// Reads and writes go through a file coordinator so they don't collide with
@@ -17,7 +17,7 @@ nonisolated struct ICloudBackend: LogBackend {
         var errorDescription: String? {
             switch self {
             case .unavailable:
-                return "iCloud Drive isn't available. Sign in to iCloud on this phone and turn on iCloud Drive for LiftLog in Settings ▸ Apple Account ▸ iCloud."
+                return "iCloud Drive isn't available. Sign in to iCloud on this phone and turn on iCloud Drive for Grepp in Settings ▸ Apple Account ▸ iCloud."
             case .stale:
                 return "The file changed on another device. Reloading and trying again."
             }

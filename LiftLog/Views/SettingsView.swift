@@ -349,7 +349,7 @@ struct SettingsView: View {
 
     /// One unknown lift: pick what it's for, and optionally what it also trains.
     private func muscleRow(_ name: String) -> some View {
-        let groups = muscleMap.groups(for: name) ?? []
+        let groups = muscleMap.share(for: name)?.ordered ?? []
         return HStack {
             Text(Theme.readableName(name))
                 .lineLimit(1)

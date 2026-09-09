@@ -48,7 +48,7 @@ struct DoseResponse: Equatable {
     static func make(for exercise: String, in sessions: [Session], map: MuscleMap,
                      weeks count: Int = 8, endingOn today: Date = Date(),
                      calendar: Calendar = .current) -> DoseResponse? {
-        guard let muscle = map.groups(for: exercise)?.first else { return nil }
+        guard let muscle = map.share(for: exercise)?.primary else { return nil }
         let metric = Analytics.availableMetrics(exercise, in: sessions).first ?? .topSet
         let grid = Analytics.weekGrid(weeks: count, endingOn: today, calendar: calendar, in: sessions)
         let dose = map.weeklySets(weeks: count, endingOn: today, calendar: calendar, in: sessions)

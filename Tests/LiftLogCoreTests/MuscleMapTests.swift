@@ -13,6 +13,9 @@ final class MuscleMapTests: XCTestCase {
         XCTAssertEqual(map.credits(for: "chin-ups"), [.back: 1, .biceps: 0.5])
         XCTAssertEqual(map.credits(for: "bench-press"), [.chest: 1, .triceps: 0.5, .frontDelts: 0.5])
         XCTAssertEqual(map.credits(for: "lateral-raise"), [.sideDelts: 1])
+        XCTAssertEqual(map.credits(for: "over-head-press"), [.frontDelts: 1, .sideDelts: 1, .triceps: 0.5],
+                       "a press is a full set for both delt heads")
+        XCTAssertEqual(map.share(for: "over-head-press")?.primary, .frontDelts)
         XCTAssertEqual(map.credits(for: "seal-row"), [.back: 1, .biceps: 0.5, .rearDelts: 0.5])
         XCTAssertNil(map.credits(for: "sled-push"), "unknown lifts count nowhere")
     }

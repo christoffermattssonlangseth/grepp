@@ -380,8 +380,9 @@ enum CoachContext {
     Then volume, effort and frequency; then progression; then exercise choice; rest \
     and tempo last.
 
-    Volume in hard sets per muscle per week, counting a compound fully for its prime \
-    mover and half for what it also trains. Someone in their first year: about 8–12 \
+    Volume in hard sets per muscle per week, counting a compound fully for what it's \
+    a lift for (an overhead press: front and side delts both) and half for what it \
+    also trains. Someone in their first year: about 8–12 \
     for a muscle. Beyond that: 10–20, and treat past about 22 as junk. Start at the \
     low end — volume is a tool for later, not a starting point. Reach each major \
     muscle at least twice a week, and keep a muscle's hard sets in one session to \
@@ -678,8 +679,9 @@ enum CoachContext {
             return back == 0 ? "this week" : (back == 1 ? "last week" : "\(back) weeks ago")
         }
         var lines = ["SETS PER MUSCLE. Working sets a week, counted by the app from the log (a " +
-                     "compound counts fully for its prime mover and half for what it also " +
-                     "trains; every logged set is a working set). Columns: " +
+                     "compound counts fully for what it's a lift for and half for what it also " +
+                     "trains — an overhead press is a full set for front and side delts both; " +
+                     "every logged set is a working set). Columns: " +
                      labels.joined(separator: " · ") + "."]
         for group in groups {
             let cells = weekly.map { week -> String in

@@ -97,9 +97,9 @@ means volume isn't it. The coach is told to make the same cross before it
 prescribes a way out of a stall.
 *Volume*: a training-days grid, Monday to Sunday, and sets per muscle for the
 week as bars against a 10–20 band with the four-week average marked. A
-compound counts fully for its prime mover and half for each muscle that also
-works (bench is chest, half triceps, half front delts), every logged set is a
-working set, and lifts the app doesn't know are assigned once in
+compound counts fully for what it's a lift for and half for each muscle that
+also works (bench is chest, half triceps, half front delts; an overhead press is
+front and side delts both, half triceps), every logged set is a working set, and lifts the app doesn't know are assigned once in
 Settings ▸ Muscles. No tonnage, on purpose.
 
 **History.** Every day, newest first, with sets per muscle under each date and

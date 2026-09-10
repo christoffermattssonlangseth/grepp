@@ -356,8 +356,12 @@ final class Store: ObservableObject {
 
     /// Hand the home screen widget the latest session and what's loaded to
     /// lift next. Only when it changed: a reload per parse would be noise, and
-    /// sessions re-parse on every load.
-    private func publishWidgetSnapshot() {
+    /// sessions re-parse on every load. Reloads are coalesced — a set landing
+    /// every minute would otherwise ask for a reload every minute, and the
+    /// system rations those — and `force` skips both the change check and the
+    /// wait, for the moment the app leaves the screen: whatever was rationed
+    /// or dropped earlier, the widget gets the final state then.
+    private func publishWidgetSnapshot(force: Bool = false) {
         let last = sessions.max(by: { $0.date < $1.date })
         let lines = last?.exercises.map {
             WidgetSnapshot.Line(name: $0.name, sets: $0.sets.map(\.token).joined(separator: " "))
@@ -379,10 +383,23 @@ final class Store: ObservableObject {
 
         let snapshot = (last == nil && plan.isEmpty) ? nil
             : WidgetSnapshot(day: last?.dateString ?? "", lines: lines, plan: plan)
-        guard snapshot != WidgetSnapshot.load() else { return }
+        guard force || snapshot != WidgetSnapshot.load() else { return }
         WidgetSnapshot.save(snapshot)
-        WidgetCenter.shared.reloadTimelines(ofKind: WidgetSnapshot.kind)
+        widgetReload?.cancel()
+        if force {
+            WidgetCenter.shared.reloadTimelines(ofKind: WidgetSnapshot.kind)
+        } else {
+            widgetReload = Task {
+                try? await Task.sleep(for: .seconds(2))
+                guard !Task.isCancelled else { return }
+                WidgetCenter.shared.reloadTimelines(ofKind: WidgetSnapshot.kind)
+            }
+        }
     }
+    private var widgetReload: Task<Void, Never>?
+
+    /// The app is leaving the screen: make sure the widget has what it shows.
+    func refreshWidget() { publishWidgetSnapshot(force: true) }
 
     // MARK: - Load
 

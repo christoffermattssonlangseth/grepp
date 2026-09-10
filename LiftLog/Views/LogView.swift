@@ -14,8 +14,13 @@ struct LogView: View {
     /// History — rather than inherited from a stale view or an old draft. Only
     /// a deliberate date skips the wrong-day check at finish.
     @State private var dateChosen = false
-    /// Finish was pressed on a day that isn't today and wasn't chosen: ask.
-    @State private var confirmingDay = false
+    /// What was about to happen on a day that isn't today and wasn't chosen —
+    /// the first set of a lift, or finishing it — held while the dialog asks.
+    private enum DayCheck: Identifiable {
+        case set(WorkSet), finish
+        var id: String { if case .finish = self { return "finish" } else { return "set" } }
+    }
+    @State private var dayCheck: DayCheck?
     @Environment(\.scenePhase) private var scenePhase
     @State private var name = ""
     @State private var sets: [WorkSet] = []
@@ -78,6 +83,9 @@ struct LogView: View {
     private var sessionCrossedMidnight: Bool {
         store.sessionStart(on: date).map { Date().timeIntervalSince($0) < 8 * 3600 } ?? false
     }
+    /// The catch: a day that isn't today, wasn't picked, and isn't a session
+    /// that ran past midnight is probably a mistake. Ask before it's a line.
+    private var needsDayCheck: Bool { !isToday && !dateChosen && !sessionCrossedMidnight }
 
     var body: some View {
         NavigationStack {
@@ -148,17 +156,18 @@ struct LogView: View {
             .onAppear { restoreDraft(); applyEditRequest(); applyPrescription(); refreshDay() }
             .onChange(of: scenePhase) { _, phase in if phase == .active { refreshDay() } }
             .confirmationDialog(
-                "Log \(Theme.readableName(name)) on \(dayLabel)? That isn't today.",
-                isPresented: $confirmingDay, titleVisibility: .visible
-            ) {
-                Button("Log on \(dayLabel)") {
-                    dateChosen = true
-                    Task { await finishExercise() }
-                }
+                "Logging \(Theme.readableName(name)) on \(dayLabel) — that isn't today.",
+                isPresented: Binding(get: { dayCheck != nil }, set: { if !$0 { dayCheck = nil } }),
+                titleVisibility: .visible, presenting: dayCheck
+            ) { check in
                 Button("Log on today instead") {
                     date = Date()
                     dateChosen = true
-                    Task { await finishExercise() }
+                    resume(check)
+                }
+                Button("Keep \(dayLabel)") {
+                    dateChosen = true
+                    resume(check)
                 }
                 Button("Cancel", role: .cancel) {}
             }
@@ -747,9 +756,23 @@ struct LogView: View {
                      reps: reps))
     }
 
+    /// The day is settled: do what the dialog interrupted.
+    private func resume(_ check: DayCheck) {
+        switch check {
+        case .set(let set): land(set)
+        case .finish: Task { await finishExercise() }
+        }
+    }
+
     /// A set is done: record it, start the rest, feel it, and line up the next.
     /// The one path for both add-set and repeat-last.
     private func land(_ set: WorkSet) {
+        // The first set of a lift is where a wrong day gets caught — before
+        // anything is on the clock, not after the whole lift is done.
+        if sets.isEmpty, needsDayCheck {
+            dayCheck = .set(set)
+            return
+        }
         sets.append(set)
         store.noteSetLanded(on: date)
         if record(at: sets.count - 1) != nil { recordSet += 1 }
@@ -848,10 +871,10 @@ struct LogView: View {
     }
 
     private func finishExercise() async {
-        // The catch: a day that isn't today, wasn't picked, and isn't a session
-        // that ran past midnight is probably a mistake. Ask before it's a line.
-        if !isToday, !dateChosen, !sessionCrossedMidnight {
-            confirmingDay = true
+        // Caught at the first set as a rule; this is for a lift whose sets came
+        // in some other way — a restored draft, the lock screen.
+        if needsDayCheck {
+            dayCheck = .finish
             return
         }
         let entry = ExerciseEntry(name: name.trimmingCharacters(in: .whitespaces), sets: sets)

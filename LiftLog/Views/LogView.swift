@@ -257,12 +257,19 @@ struct LogView: View {
                         .font(.caption.weight(.semibold)).foregroundStyle(.secondary)
                 }
                 ForEach(todayExercises) { ex in
-                    VStack(alignment: .leading, spacing: 3) {
-                        Text(Theme.readableName(ex.name))
-                            .font(.subheadline.weight(.heavy)).tracking(0.5)
-                        Text(ex.sets.map(\.token).joined(separator: "  "))
-                            .font(.system(.footnote, design: .monospaced).weight(.medium))
-                            .foregroundStyle(.secondary)
+                    HStack(spacing: 8) {
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text(Theme.readableName(ex.name))
+                                .font(.subheadline.weight(.heavy)).tracking(0.5)
+                            Text(ex.sets.map(\.token).joined(separator: "  "))
+                                .font(.system(.footnote, design: .monospaced).weight(.medium))
+                                .foregroundStyle(.secondary)
+                        }
+                        Spacer(minLength: 0)
+                        // A tap loads the lift back into the fields to change it.
+                        Image(systemName: "pencil")
+                            .font(.footnote.weight(.semibold))
+                            .foregroundStyle(.tertiary)
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.vertical, 10)
@@ -393,7 +400,11 @@ struct LogView: View {
                     plateLine(load)
                 }
 
-                Button { addSet() } label: {
+                // The one thing you do most on this screen, so it's the one
+                // glass button — but only once there's a set to add: a disabled
+                // glass button fades to nothing and reads as broken, so until
+                // then it's a visible, muted pill.
+                let addSetButton = Button { addSet() } label: {
                     HStack(spacing: 6) {
                         Image(systemName: "plus")
                             .symbolEffect(.bounce, value: setAdded)
@@ -403,12 +414,13 @@ struct LogView: View {
                     .frame(maxWidth: .infinity)
                     .frame(height: 44)
                 }
-                // Bordered, not glass: a disabled glass button fades to nothing and
-                // reads as broken. Bordered stays a visible, muted pill — and keeps
-                // glass for the one primary action, finish.
-                .buttonStyle(.bordered)
                 .tint(Theme.accent)
                 .disabled(!canAddSet)
+                if canAddSet {
+                    addSetButton.buttonStyle(.glassProminent)
+                } else {
+                    addSetButton.buttonStyle(.bordered)
+                }
 
                 // Muted, secondary control — only relevant for the odd bodyweight lift.
                 Button {
@@ -597,7 +609,10 @@ struct LogView: View {
             .frame(maxWidth: .infinity)
             .frame(height: 48)
         }
-        .buttonStyle(.glassProminent)
+        // Quiet on purpose: it's pressed once a lift, and it sits right under
+        // the sets, where a thumb heading for "add set" lands. Add set is the
+        // loud one.
+        .buttonStyle(.bordered)
         .tint(Theme.accent)
         .disabled(!canFinish)
     }

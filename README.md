@@ -43,7 +43,9 @@ product.
 **Log.** Big number pads. A plate calculator under the weight field, worked out
 from the plates you own and the bar that lift uses. A PR badge when a set beats
 your best. A rest timer that starts on every set and flips the card when you're
-due. Each finished exercise pushes to GitHub on its own.
+due. Each finished exercise pushes to GitHub on its own. Got a set wrong?
+Tap the lift in today's session, or in History, and it comes back into the
+fields; finishing again replaces it in the file.
 
 **Lock screen and Dynamic Island.** The rest clock runs as a Live Activity with
 the app asleep, flips to READY at the target, and has one button, labelled with

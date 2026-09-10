@@ -43,7 +43,10 @@ product.
 **Log.** Big number pads. A plate calculator under the weight field, worked out
 from the plates you own and the bar that lift uses. A PR badge when a set beats
 your best. A rest timer that starts on every set and flips the card when you're
-due. Each finished exercise pushes to GitHub on its own. Got a set wrong?
+due. Each finished exercise pushes to GitHub on its own. The date is a pill
+in the corner; when it isn't today, a banner says so, and finishing on a day
+you didn't pick asks first, unless the session simply ran past midnight. Got
+a set wrong?
 Tap the lift in today's session, or in History, and it comes back into the
 fields; finishing again replaces it in the file.
 

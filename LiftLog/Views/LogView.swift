@@ -10,6 +10,13 @@ struct LogView: View {
     @EnvironmentObject var store: Store
 
     @State private var date = Date()
+    /// The date was picked on purpose — the pill, or a lift opened from
+    /// History — rather than inherited from a stale view or an old draft. Only
+    /// a deliberate date skips the wrong-day check at finish.
+    @State private var dateChosen = false
+    /// Finish was pressed on a day that isn't today and wasn't chosen: ask.
+    @State private var confirmingDay = false
+    @Environment(\.scenePhase) private var scenePhase
     @State private var name = ""
     @State private var sets: [WorkSet] = []
 
@@ -63,12 +70,21 @@ struct LogView: View {
     private var parsedReps: Int? { Int(repsText) }
     private var canAddSet: Bool { parsedReps != nil && (isBodyweight || parsedWeight != nil) }
     private var canFinish: Bool { !name.isEmpty && !sets.isEmpty && !store.isBusy }
+    private var isToday: Bool { Calendar.current.isDateInToday(date) }
+    /// "Tue 9 Sep" — the day in the pill, for the banner and the dialog.
+    private var dayLabel: String { date.formatted(.dateTime.weekday(.abbreviated).day().month(.abbreviated)) }
+    /// A session that started on that day within the last eight hours is
+    /// still that session: finishing a lift after midnight belongs to it.
+    private var sessionCrossedMidnight: Bool {
+        store.sessionStart(on: date).map { Date().timeIntervalSince($0) < 8 * 3600 } ?? false
+    }
 
     var body: some View {
         NavigationStack {
             ScrollView {
                 VStack(spacing: 16) {
                     if !todayExercises.isEmpty { todaySessionCard }
+                    if !isToday { dayBanner }
                     sectionLabel("add exercise")
                     exerciseCard
                     addSetCard
@@ -110,9 +126,12 @@ struct LogView: View {
                 // The date as a compact pill up here, not a whole card under the
                 // title: on a gym screen that card-height belongs to the number pad.
                 ToolbarItem(placement: .topBarTrailing) {
-                    DatePicker("Date", selection: $date, displayedComponents: .date)
+                    DatePicker("Date",
+                               selection: Binding(get: { date },
+                                                  set: { date = $0; dateChosen = true }),
+                               displayedComponents: .date)
                         .labelsHidden()
-                        .tint(Theme.accent)
+                        .tint(isToday ? Theme.accent : .orange)
                 }
                 ToolbarItemGroup(placement: .keyboard) {
                     Spacer()
@@ -126,7 +145,23 @@ struct LogView: View {
             // medium one, which reads as "more" without a second haptic vocabulary.
             .sensoryFeedback(.impact(weight: .heavy, intensity: 1), trigger: recordSet)
             .refreshable { await store.load() }
-            .onAppear { restoreDraft(); applyEditRequest(); applyPrescription() }
+            .onAppear { restoreDraft(); applyEditRequest(); applyPrescription(); refreshDay() }
+            .onChange(of: scenePhase) { _, phase in if phase == .active { refreshDay() } }
+            .confirmationDialog(
+                "Log \(Theme.readableName(name)) on \(dayLabel)? That isn't today.",
+                isPresented: $confirmingDay, titleVisibility: .visible
+            ) {
+                Button("Log on \(dayLabel)") {
+                    dateChosen = true
+                    Task { await finishExercise() }
+                }
+                Button("Log on today instead") {
+                    date = Date()
+                    dateChosen = true
+                    Task { await finishExercise() }
+                }
+                Button("Cancel", role: .cancel) {}
+            }
             // Everything in flight, saved on every change — one equatable value,
             // so it's one modifier rather than one per field.
             .onChange(of: currentDraft) { _, draft in store.saveDraft(draft) }
@@ -225,9 +260,37 @@ struct LogView: View {
         if let ex = store.sessions.first(where: { $0.dateString == key })?
             .exercises.first(where: { $0.name.caseInsensitiveCompare(req.name) == .orderedSame }) {
             date = req.date
+            dateChosen = true   // opened from that day on purpose
             loadForEditing(ex)
         }
         store.editRequest = nil
+    }
+
+    /// A view can outlive the day it was made on, and a lift opened from History
+    /// leaves its date behind. With nothing in flight, the date is today again.
+    private func refreshDay() {
+        guard !isToday, !dateChosen, name.isEmpty, sets.isEmpty, queue.isEmpty else { return }
+        date = Date()
+    }
+
+    /// Said out loud whenever the sets are going somewhere other than today.
+    private var dayBanner: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "calendar.badge.exclamationmark")
+                .foregroundStyle(.orange)
+            Text("Logging for \(dayLabel), not today")
+                .font(.footnote.weight(.semibold))
+            Spacer()
+            Button("today") {
+                date = Date()
+                dateChosen = false
+            }
+            .font(.footnote.weight(.bold))
+            .buttonStyle(.bordered)
+            .tint(.orange)
+        }
+        .padding(.horizontal, 12).padding(.vertical, 8)
+        .background(.orange.opacity(0.12), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
     }
 
     // MARK: - Section label
@@ -643,7 +706,8 @@ struct LogView: View {
 
     private var finishTitle: String {
         let alreadyLogged = todayExercises.contains { $0.name.caseInsensitiveCompare(name) == .orderedSame }
-        return alreadyLogged ? "update exercise" : "finish exercise"
+        let verb = alreadyLogged ? "update exercise" : "finish exercise"
+        return isToday ? verb : "\(verb) · \(dayLabel)"
     }
 
     // MARK: - Helpers
@@ -784,6 +848,12 @@ struct LogView: View {
     }
 
     private func finishExercise() async {
+        // The catch: a day that isn't today, wasn't picked, and isn't a session
+        // that ran past midnight is probably a mistake. Ask before it's a line.
+        if !isToday, !dateChosen, !sessionCrossedMidnight {
+            confirmingDay = true
+            return
+        }
         let entry = ExerciseEntry(name: name.trimmingCharacters(in: .whitespaces), sets: sets)
         let result = await store.commit(entry, on: date,
                            message: "Log \(entry.name) \(Session.dateFormatter.string(from: date))")
@@ -794,6 +864,9 @@ struct LogView: View {
             if plan != nil { store.completePlan(entry, on: date) }
             exerciseFinished += 1
             focus = nil
+            // The day stays for the next lift — a backfill is several — but it
+            // has to be confirmed again: one lift on purpose isn't the next.
+            dateChosen = false
             if !queue.isEmpty {
                 // Straight on to the next prescribed lift, fields already filled.
                 load(prescription: queue.removeFirst())

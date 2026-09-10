@@ -105,7 +105,9 @@ front and side delts both, half triceps), every logged set is a working set, and
 Settings ▸ Muscles. No tonnage, on purpose.
 
 **History.** Every day, newest first, with sets per muscle under each date and
-whether it's on Strava. Tap an exercise to edit, swipe to delete.
+whether it's on Strava. Tap an exercise to edit, swipe to delete or to move
+it to another day; the date itself is a menu that moves the whole day. A move
+is one commit.
 
 **Widget.** *Last session* on the home screen: how long ago, the lifts and
 their sets, and **Up next** when a session is loaded and not yet lifted.

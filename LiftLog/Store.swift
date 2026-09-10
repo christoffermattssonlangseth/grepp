@@ -447,8 +447,18 @@ final class Store: ObservableObject {
         await perform(PendingWrite(operation: .delete(name: name), date: date, message: message))
     }
 
-    /// Push a single change (add/replace or delete) via merge-on-remote, or queue it
-    /// locally when offline. Shared by `commit` and `delete`.
+    /// Move one exercise, or a whole day when `name` is nil, to another date.
+    /// One write, one commit, same offline-safe path.
+    @discardableResult
+    func move(exercise name: String?, on date: Date, to target: Date) async -> CommitResult {
+        let from = Session.dateFormatter.string(from: date)
+        let to = Session.dateFormatter.string(from: target)
+        let message = name.map { "Move \($0) from \(from) to \(to)" } ?? "Move \(from) to \(to)"
+        return await perform(PendingWrite(operation: .move(name: name, to: target), date: date, message: message))
+    }
+
+    /// Push a single change (add/replace, delete or move) via merge-on-remote, or
+    /// queue it locally when offline. Shared by `commit`, `delete` and `move`.
     @discardableResult
     private func perform(_ write: PendingWrite) async -> CommitResult {
         guard !isBusy else { return .failed }

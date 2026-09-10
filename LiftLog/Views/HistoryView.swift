@@ -11,6 +11,14 @@ struct HistoryView: View {
         var id: String { "\(Session.dateFormatter.string(from: date))-\(name)" }
     }
     @State private var pendingDelete: DeleteTarget?
+
+    /// A lift, or a whole day when `name` is nil, being moved to another date.
+    private struct MoveTarget: Identifiable {
+        let name: String?
+        let date: Date
+        var id: String { "\(Session.dateFormatter.string(from: date))-\(name ?? "*")" }
+    }
+    @State private var pendingMove: MoveTarget?
     @AppStorage("muscle_map") private var muscleMap = MuscleMap()
     @StateObject private var strava = StravaService.shared
     /// The day being posted, and the last failure, so the header can say.
@@ -97,6 +105,26 @@ struct HistoryView: View {
                                     Label("Edit", systemImage: "pencil")
                                 }
                                 .tint(Theme.accent)
+                                Button {
+                                    pendingMove = MoveTarget(name: ex.name, date: session.date)
+                                } label: {
+                                    Label("Move", systemImage: "calendar")
+                                }
+                                .tint(.indigo)
+                            }
+                            .contextMenu {
+                                Button {
+                                    store.requestEdit(exercise: ex.name, on: session.date)
+                                } label: { Label("Edit sets", systemImage: "pencil") }
+                                Button {
+                                    pendingMove = MoveTarget(name: ex.name, date: session.date)
+                                } label: { Label("Move to another day", systemImage: "calendar") }
+                                Button {
+                                    pendingMove = MoveTarget(name: nil, date: session.date)
+                                } label: { Label("Move the whole day", systemImage: "calendar.badge.clock") }
+                                Button(role: .destructive) {
+                                    pendingDelete = DeleteTarget(name: ex.name, date: session.date)
+                                } label: { Label("Delete", systemImage: "trash") }
                             }
                             .swipeActions(edge: .trailing) {
                                 Button(role: .destructive) {
@@ -111,7 +139,21 @@ struct HistoryView: View {
                         // and whether it's on Strava yet.
                         HStack(alignment: .top) {
                             VStack(alignment: .leading, spacing: 2) {
-                                Text(session.dateString)
+                                // The date is a menu: the whole day can move.
+                                Menu {
+                                    Button {
+                                        pendingMove = MoveTarget(name: nil, date: session.date)
+                                    } label: { Label("Move the whole day", systemImage: "calendar") }
+                                } label: {
+                                    HStack(spacing: 4) {
+                                        Text(session.dateString)
+                                        Image(systemName: "chevron.down")
+                                            .font(.caption2.weight(.bold))
+                                            .foregroundStyle(.tertiary)
+                                    }
+                                }
+                                .buttonStyle(.plain)
+                                .foregroundStyle(.secondary)
                                 if let sets = setsLine(session) {
                                     Text(sets)
                                         .font(.caption2)
@@ -163,6 +205,66 @@ struct HistoryView: View {
                 }
                 Button("Cancel", role: .cancel) {}
             }
+            .sheet(item: $pendingMove) { target in
+                MoveSheet(target: target.name.map(Theme.readableName) ?? "the whole day", from: target.date) { newDate in
+                    Task { await store.move(exercise: target.name, on: target.date, to: newDate) }
+                }
+            }
         }
+    }
+}
+
+/// Pick the day a lift, or a session, should have been logged on.
+private struct MoveSheet: View {
+    let target: String
+    let from: Date
+    let onMove: (Date) -> Void
+    @Environment(\.dismiss) private var dismiss
+    @State private var date: Date
+
+    init(target: String, from: Date, onMove: @escaping (Date) -> Void) {
+        self.target = target
+        self.from = from
+        self.onMove = onMove
+        _date = State(initialValue: from)
+    }
+
+    private var sameDay: Bool { Calendar.current.isDate(date, inSameDayAs: from) }
+
+    var body: some View {
+        NavigationStack {
+            VStack(spacing: 16) {
+                DatePicker("Move to", selection: $date, in: ...Date(), displayedComponents: .date)
+                    .datePickerStyle(.graphical)
+                    .tint(Theme.accent)
+                Text("Moves \(target) from \(Session.dateFormatter.string(from: from)) to \(Session.dateFormatter.string(from: date)) in the file. A lift already logged on that day under the same name is replaced.")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                Button {
+                    onMove(date)
+                    dismiss()
+                } label: {
+                    Text("Move")
+                        .font(.headline.weight(.heavy))
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 48)
+                }
+                .buttonStyle(.glassProminent)
+                .tint(Theme.accent)
+                .disabled(sameDay)
+                Spacer(minLength: 0)
+            }
+            .padding()
+            .background(Theme.backgroundView)
+            .navigationTitle("Move \(target)")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { dismiss() }
+                }
+            }
+        }
+        .presentationDetents([.large])
     }
 }

@@ -66,6 +66,18 @@ extension Array where Element == PlanRecord {
         self[idx].sets = entry.sets
     }
 
+    /// A lift — or the whole day, when `name` is nil — was moved in the log:
+    /// what was done under the old date is now done under the new one.
+    mutating func move(name: String?, from old: Date, to new: Date) {
+        let key = Session.dateFormatter.string(from: old)
+        for i in indices {
+            guard let done = self[i].done, Session.dateFormatter.string(from: done) == key,
+                  name.map({ self[i].name.caseInsensitiveCompare($0) == .orderedSame }) ?? true
+            else { continue }
+            self[i].done = new
+        }
+    }
+
     /// Drop what's too old to matter to the next prescription.
     mutating func prune(before cutoff: Date) {
         removeAll { $0.prescribed < cutoff && ($0.done ?? $0.prescribed) < cutoff }

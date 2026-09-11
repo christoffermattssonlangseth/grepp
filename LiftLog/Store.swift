@@ -3,7 +3,8 @@ import SwiftUI
 import Combine
 import WidgetKit
 
-/// App-wide state: config, the loaded sessions, and sync with GitHub.
+/// App-wide state: config, the loaded sessions, and sync with wherever the
+/// log lives — a GitHub repo or iCloud Drive, behind one `LogBackend`.
 ///
 /// Offline-first: every write goes through a merge-on-remote push, but if the
 /// network is unreachable the write is queued locally (`pending`) and the file's
@@ -15,6 +16,27 @@ final class Store: ObservableObject {
     /// lock-screen intent — which the system performs in this process, scene
     /// or no scene — reaches it here.
     static let shared = Store()
+
+    /// Where the log lives. Unset on a fresh install, which is what shows the
+    /// first-run choice; a phone that already had a repo configured before this
+    /// existed keeps GitHub without being asked.
+    enum Storage: String, CaseIterable, Identifiable {
+        case icloud, github
+        var id: String { rawValue }
+        var title: String { self == .icloud ? "iCloud Drive" : "GitHub repo" }
+    }
+    @AppStorage("storage") private var storageRaw = ""
+
+    var storage: Storage {
+        get {
+            if let chosen = Storage(rawValue: storageRaw) { return chosen }
+            return owner.isEmpty && repo.isEmpty ? .icloud : .github
+        }
+        set { storageRaw = newValue.rawValue; objectWillChange.send() }
+    }
+
+    /// Nothing chosen and nothing configured: show the first-run choice.
+    var needsSetup: Bool { storageRaw.isEmpty && owner.isEmpty && repo.isEmpty && token.isEmpty }
 
     // Config (token lives in Keychain, everything else in UserDefaults).
     @AppStorage("gh_owner") var owner = ""
@@ -29,6 +51,7 @@ final class Store: ObservableObject {
     @AppStorage("gh_coaching_path") var coachingPath = "coaching.md"
     @AppStorage("gh_goals_path") var goalsPath = "goals.md"
     @AppStorage("gh_research_path") var researchPath = "research.md"
+    @AppStorage("gh_program_path") var programPath = "program.md"
 
     /// Claude workspace for the Coach tab. An identifier, not a secret, so it sits
     /// in UserDefaults beside the repo config. Only needed when the API key spans
@@ -102,13 +125,14 @@ final class Store: ObservableObject {
     /// The two files that make up the coach's standing brief. One identity for
     /// each, so a screen can read, edit and save either without special-casing.
     enum BriefFile: String, CaseIterable, Identifiable {
-        case coaching, goals, research
+        case coaching, goals, program, research
         var id: String { rawValue }
 
         var title: String {
             switch self {
             case .coaching: return "How I train"
             case .goals: return "What I'm working toward"
+            case .program: return "The programme I'm running"
             case .research: return "What the evidence says"
             }
         }
@@ -119,6 +143,8 @@ final class Store: ObservableObject {
                 return "Philosophy, preferences, the shape of your week, injuries to work around."
             case .goals:
                 return "Targets and dates. The coach programmes backwards from these."
+            case .program:
+                return "Days under ## headings, one lift per bullet with its set scheme, no loads. Ask the coach to write one."
             case .research:
                 return "One finding per line, tagged [R1], [R2]… The coach cites the tags. Easier to fill from Coach: hand it a paper."
             }
@@ -130,6 +156,7 @@ final class Store: ObservableObject {
         case .coaching: return coachingPath
         case .goals: return goalsPath
         case .research: return researchPath
+        case .program: return programPath
         }
     }
 
@@ -138,6 +165,7 @@ final class Store: ObservableObject {
         case .coaching: return brief.coaching
         case .goals: return brief.goals
         case .research: return brief.research
+        case .program: return brief.program
         }
     }
 
@@ -153,6 +181,7 @@ final class Store: ObservableObject {
     private let coachingCacheKey = "gh_coaching_cache"
     private let goalsCacheKey = "gh_goals_cache"
     private let researchCacheKey = "gh_research_cache"
+    private let programCacheKey = "gh_program_cache"
     private let pendingKey = "gh_pending"
     private let draftKey = "session_draft"
     private let plansKey = "plan_records"
@@ -179,7 +208,8 @@ final class Store: ObservableObject {
             .flatMap { try? JSONDecoder().decode([String: Int].self, from: $0) } ?? [:]
         brief = CoachContext.Brief(coaching: defaults.string(forKey: coachingCacheKey) ?? "",
                                    goals: defaults.string(forKey: goalsCacheKey) ?? "",
-                                   research: defaults.string(forKey: researchCacheKey) ?? "")
+                                   research: defaults.string(forKey: researchCacheKey) ?? "",
+                                   program: defaults.string(forKey: programCacheKey) ?? "")
         // Show cached content + any queued writes immediately, before the network load.
         sessions = WorkoutParser.applying(pending, to: cachedSessions())
     }
@@ -198,9 +228,16 @@ final class Store: ObservableObject {
         CoachCredentials.store(trimmed)
     }
 
-    private var service: GitHubService {
-        GitHubService(owner: owner, repo: repo, path: path, branch: branch, token: token)
+    /// The backend for one file, wherever the log lives. The brief files sit
+    /// beside the log, so they take the same backend with their own path.
+    func backend(for filePath: String) -> any LogBackend {
+        switch storage {
+        case .github: return GitHubService(owner: owner, repo: repo, path: filePath, branch: branch, token: token)
+        case .icloud: return ICloudBackend(path: filePath)
+        }
     }
+
+    private var service: any LogBackend { backend(for: path) }
 
     /// Overwrite one of the brief files — hand-edited, or written by the coach in
     /// an interview.
@@ -221,16 +258,17 @@ final class Store: ObservableObject {
         isBusy = true; briefStatus = "Saving \(path)…"
         defer { isBusy = false }
 
-        let remote = GitHubService(owner: owner, repo: repo, path: path, branch: branch, token: token)
+        let remote = backend(for: path)
         let content = text.hasSuffix("\n") ? text : text + "\n"
         do {
-            // Fetch first for the sha: a nil sha creates the file, a stale one is a 409.
+            // Fetch first for the version: nil creates the file, a stale one is refused.
             let existing = try await remote.fetch()
-            _ = try await remote.put(content: content, sha: existing?.sha, message: "Update \(path) from LiftLog")
+            _ = try await remote.put(content: content, version: existing?.version, message: "Update \(path) from Grepp")
             switch file {
             case .coaching: brief.coaching = content
             case .goals: brief.goals = content
             case .research: brief.research = content
+            case .program: brief.program = content
             }
             defaults.set(content, forKey: cacheKey(for: file))
             briefStatus = "Saved \(path) ✓"
@@ -259,11 +297,15 @@ final class Store: ObservableObject {
     /// The evidence brief, parsed.
     var evidence: [CoachContext.ResearchEntry] { CoachContext.parseResearch(brief.research) }
 
+    /// The programme on file, parsed.
+    var programme: Programme { Programme.parse(brief.program) }
+
     private func cacheKey(for file: BriefFile) -> String {
         switch file {
         case .coaching: return coachingCacheKey
         case .goals: return goalsCacheKey
         case .research: return researchCacheKey
+        case .program: return programCacheKey
         }
     }
 
@@ -275,7 +317,8 @@ final class Store: ObservableObject {
         brief = CoachContext.Brief(
             coaching: await companion(at: coachingPath, cacheKey: coachingCacheKey) ?? brief.coaching,
             goals: await companion(at: goalsPath, cacheKey: goalsCacheKey) ?? brief.goals,
-            research: await companion(at: researchPath, cacheKey: researchCacheKey) ?? brief.research
+            research: await companion(at: researchPath, cacheKey: researchCacheKey) ?? brief.research,
+            program: await companion(at: programPath, cacheKey: programCacheKey) ?? brief.program
         )
     }
 
@@ -284,7 +327,7 @@ final class Store: ObservableObject {
     /// file", which is a real answer and clears any stale cache.
     private func companion(at path: String, cacheKey: String) async -> String? {
         guard !path.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return "" }
-        let file = GitHubService(owner: owner, repo: repo, path: path, branch: branch, token: token)
+        let file = backend(for: path)
         do {
             // fetch() answers nil for a 404 — the file simply isn't there, which is a
             // real answer and clears any stale cache. `try?` can't express that: it
@@ -313,8 +356,12 @@ final class Store: ObservableObject {
 
     /// Hand the home screen widget the latest session and what's loaded to
     /// lift next. Only when it changed: a reload per parse would be noise, and
-    /// sessions re-parse on every load.
-    private func publishWidgetSnapshot() {
+    /// sessions re-parse on every load. Reloads are coalesced — a set landing
+    /// every minute would otherwise ask for a reload every minute, and the
+    /// system rations those — and `force` skips both the change check and the
+    /// wait, for the moment the app leaves the screen: whatever was rationed
+    /// or dropped earlier, the widget gets the final state then.
+    private func publishWidgetSnapshot(force: Bool = false) {
         let last = sessions.max(by: { $0.date < $1.date })
         let lines = last?.exercises.map {
             WidgetSnapshot.Line(name: $0.name, sets: $0.sets.map(\.token).joined(separator: " "))
@@ -336,21 +383,34 @@ final class Store: ObservableObject {
 
         let snapshot = (last == nil && plan.isEmpty) ? nil
             : WidgetSnapshot(day: last?.dateString ?? "", lines: lines, plan: plan)
-        guard snapshot != WidgetSnapshot.load() else { return }
+        guard force || snapshot != WidgetSnapshot.load() else { return }
         WidgetSnapshot.save(snapshot)
-        WidgetCenter.shared.reloadTimelines(ofKind: WidgetSnapshot.kind)
+        widgetReload?.cancel()
+        if force {
+            WidgetCenter.shared.reloadTimelines(ofKind: WidgetSnapshot.kind)
+        } else {
+            widgetReload = Task {
+                try? await Task.sleep(for: .seconds(2))
+                guard !Task.isCancelled else { return }
+                WidgetCenter.shared.reloadTimelines(ofKind: WidgetSnapshot.kind)
+            }
+        }
     }
+    private var widgetReload: Task<Void, Never>?
+
+    /// The app is leaving the screen: make sure the widget has what it shows.
+    func refreshWidget() { publishWidgetSnapshot(force: true) }
 
     // MARK: - Load
 
     func load() async {
-        guard !isBusy else { return }   // don't overlap with an in-flight save/load
+        guard !isBusy, !needsSetup else { return }   // don't overlap with an in-flight save/load
         isBusy = true; status = "Loading…"
         defer { isBusy = false }
         do {
             if let state = try await service.fetch() {
                 cacheContent(state.content)
-                fileSHA = state.sha
+                fileSHA = state.version
                 // Show queued-but-unsynced writes layered on top of the fresh remote.
                 sessions = WorkoutParser.applying(pending, to: WorkoutParser.parse(state.content))
                 status = "Loaded \(sessions.count) sessions.\(pendingSuffix)"
@@ -387,8 +447,33 @@ final class Store: ObservableObject {
         await perform(PendingWrite(operation: .delete(name: name), date: date, message: message))
     }
 
-    /// Push a single change (add/replace or delete) via merge-on-remote, or queue it
-    /// locally when offline. Shared by `commit` and `delete`.
+    /// Move one exercise, or a whole day when `name` is nil, to another date.
+    /// One write, one commit, same offline-safe path.
+    @discardableResult
+    func move(exercise name: String?, on date: Date, to target: Date) async -> CommitResult {
+        let from = Session.dateFormatter.string(from: date)
+        let to = Session.dateFormatter.string(from: target)
+        let message = name.map { "Move \($0) from \(from) to \(to)" } ?? "Move \(from) to \(to)"
+        let result = await perform(PendingWrite(operation: .move(name: name, to: target), date: date, message: message))
+        guard result != .failed else { return result }
+        // What the app knows about the day goes with it: the plan verdicts,
+        // and for a whole day its clock. The Strava mark does not — the
+        // activity there keeps its old date, so the moved day is unposted.
+        plans.move(name: name, from: date, to: target)
+        savePlans()
+        if name == nil {
+            var starts = sessionStarts
+            if let start = starts.removeValue(forKey: from) { starts[to] = start }
+            sessionStarts = starts
+            if stravaPosts.removeValue(forKey: from) != nil {
+                defaults.set(try? JSONEncoder().encode(stravaPosts), forKey: stravaPostsKey)
+            }
+        }
+        return result
+    }
+
+    /// Push a single change (add/replace, delete or move) via merge-on-remote, or
+    /// queue it locally when offline. Shared by `commit`, `delete` and `move`.
     @discardableResult
     private func perform(_ write: PendingWrite) async -> CommitResult {
         guard !isBusy else { return .failed }
@@ -401,7 +486,8 @@ final class Store: ObservableObject {
             // A successful reach means we can drain anything queued earlier, too.
             await flushPending()
             sessions = WorkoutParser.applying(pending, to: base)
-            status = pending.isEmpty ? "Pushed ✓" : "Pushed ✓ — \(pending.count) still queued"
+            let done = storage == .github ? "Pushed ✓" : "Saved ✓"
+            status = pending.isEmpty ? done : "\(done) — \(pending.count) still queued"
             return .pushed
         } catch is URLError {
             enqueue(write)
@@ -434,7 +520,7 @@ final class Store: ObservableObject {
                 WorkoutParser.apply(write, to: &base)
 
                 let content = WorkoutParser.serialize(base)
-                fileSHA = try await service.put(content: content, sha: remote?.sha, message: write.message)
+                fileSHA = try await service.put(content: content, version: remote?.version, message: write.message)
                 return base
             } catch let error as GitHubService.GitHubError {
                 if case .badResponse(409, _) = error, attempt < maxAttempts {
@@ -444,6 +530,12 @@ final class Store: ObservableObject {
                     continue
                 }
                 throw error
+            } catch ICloudBackend.ICloudError.stale where attempt < maxAttempts {
+                // Another device wrote first: same retry as a GitHub 409.
+                status = "Syncing… (retry \(attempt))"
+                try? await Task.sleep(nanoseconds: 700_000_000)
+                lastError = ICloudBackend.ICloudError.stale
+                continue
             }
         }
         throw lastError ?? StoreError.unsafeMerge

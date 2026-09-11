@@ -17,6 +17,28 @@ struct SettingsView: View {
     var body: some View {
         NavigationStack {
             Form {
+                Section("Where the log lives") {
+                    Picker("storage", selection: Binding(
+                        get: { store.storage },
+                        set: { store.storage = $0; Task { await store.load() } }
+                    )) {
+                        ForEach(Store.Storage.allCases) { Text($0.title).tag($0) }
+                    }
+                    .pickerStyle(.segmented)
+                    if store.storage == .icloud {
+                        labeled("file", text: $store.path, placeholder: "training.md")
+                        Text("In iCloud Drive, in a Grepp folder you can open from the Files app. Synced by Apple; nothing leaves your account. If this phone isn't signed in to iCloud, saves will say so.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    } else {
+                        Text("Every set is a commit to a repo you own. Fill in the repo and a fine-grained token below.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                .listRowBackground(Rectangle().fill(.regularMaterial))
+
+                if store.storage == .github {
                 Section("Repository") {
                     labeled("owner", text: $store.owner, placeholder: "your-username")
                     labeled("repo", text: $store.repo, placeholder: "training")
@@ -24,7 +46,9 @@ struct SettingsView: View {
                     labeled("branch", text: $store.branch, placeholder: "main")
                 }
                 .listRowBackground(Rectangle().fill(.regularMaterial))
+                }
 
+                if store.storage == .github {
                 Section("GitHub token") {
                     SecureField("ghp_… (fine-grained PAT)", text: $store.token)
                         .textInputAutocapitalization(.never)
@@ -35,6 +59,7 @@ struct SettingsView: View {
                         .foregroundStyle(.secondary)
                 }
                 .listRowBackground(Rectangle().fill(.regularMaterial))
+                }
 
                 Section("Gym") {
                     Picker("bar weight", selection: $barWeight) {
@@ -76,9 +101,19 @@ struct SettingsView: View {
                     ForEach(unmapped + assigned, id: \.self) { name in
                         muscleRow(name)
                     }
-                    Text("Sets per muscle in Trends and for the coach. A lift counts fully for the first muscle and half for the second. Lifts the app already knows — squat, bench, chin-ups and the rest — need nothing here.")
+                    Text("Sets per muscle in Trends and for the coach. A lift the app doesn't know shows up here until you say what it trains; lifts it already knows — squat, bench, chin-ups and the rest — need nothing.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
+                    NavigationLink {
+                        MuscleMapView()
+                    } label: {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Every lift's shares")
+                            Text("Each muscle's share of a set, per lift — the table's defaults, or yours.")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
                 }
                 .listRowBackground(Rectangle().fill(.regularMaterial))
 
@@ -98,6 +133,7 @@ struct SettingsView: View {
                     labeled("coaching file", text: $store.coachingPath, placeholder: "coaching.md")
                     labeled("goals file", text: $store.goalsPath, placeholder: "goals.md")
                     labeled("evidence file", text: $store.researchPath, placeholder: "research.md")
+                    labeled("programme file", text: $store.programPath, placeholder: "program.md")
                     Text(coachingHint)
                         .font(.caption)
                         .foregroundStyle(.secondary)
@@ -252,7 +288,7 @@ struct SettingsView: View {
                 Section {
                     VStack(spacing: 8) {
                         Barbell(height: 26)
-                        Text("LiftLog")
+                        Text("Grepp")
                             .font(.caption.weight(.heavy))
                             .tracking(3)
                             .foregroundStyle(.secondary)
@@ -288,9 +324,9 @@ struct SettingsView: View {
                      store.brief.goals.isEmpty ? nil : store.goalsPath,
                      store.brief.research.isEmpty ? nil : store.researchPath].compactMap { $0 }
         if found.isEmpty {
-            return "Neither file found. Commit them beside your log — **\(store.coachingPath)** for how you like to train and what to work around, **\(store.goalsPath)** for what you're aiming at — and they become the coach's standing brief."
+            return "No brief files yet. Write them from Your brief, or put them beside your log — **\(store.coachingPath)** for how you like to train and what to work around, **\(store.goalsPath)** for what you're aiming at — and they become the coach's standing brief."
         }
-        return "Loaded \(found.joined(separator: " and ")). Edit them in your repo, then reload below."
+        return "Loaded \(found.joined(separator: " and ")). Edit them in Your brief or beside the log, then reload below."
     }
 
     /// Post every day not yet on Strava, oldest first, one at a time — Strava
@@ -321,52 +357,20 @@ struct SettingsView: View {
         backfillStatus = summary
     }
 
-    /// One unknown lift: pick what it's for, and optionally what it also trains.
+    /// One lift the app doesn't know, or one the lifter has set: a row into
+    /// the share editor, with what it counts for today.
     private func muscleRow(_ name: String) -> some View {
-        let groups = muscleMap.groups(for: name) ?? []
-        return HStack {
-            Text(Theme.readableName(name))
-                .lineLimit(1)
-                .minimumScaleFactor(0.8)
-            Spacer()
-            musclePicker(current: groups.first, title: "muscle") { picked in
-                var next = groups
-                if let picked {
-                    next = [picked] + groups.dropFirst().filter { $0 != picked }
-                } else {
-                    next = []
-                }
-                muscleMap.set(next, for: name)
-            }
-            if let primary = groups.first {
-                musclePicker(current: groups.dropFirst().first, title: "+ half") { picked in
-                    muscleMap.set(picked.map { [primary, $0] } ?? [primary], for: name)
-                }
-            }
-        }
-    }
-
-    private func musclePicker(current: MuscleGroup?, title: String,
-                              onPick: @escaping (MuscleGroup?) -> Void) -> some View {
-        Menu {
-            ForEach(MuscleGroup.ordered) { group in
-                Button {
-                    onPick(group)
-                } label: {
-                    if group == current { Label(group.rawValue, systemImage: "checkmark") }
-                    else { Text(group.rawValue) }
-                }
-            }
-            if current != nil {
-                Divider()
-                Button("none", role: .destructive) { onPick(nil) }
-            }
+        NavigationLink {
+            ExerciseMuscleView(exercise: name)
         } label: {
-            Text(current?.rawValue ?? title)
-                .font(.subheadline.weight(current == nil ? .regular : .semibold))
-                .foregroundStyle(current == nil ? Color.secondary : Theme.accent)
-                .padding(.horizontal, 10).padding(.vertical, 6)
-                .background(.ultraThinMaterial, in: Capsule())
+            VStack(alignment: .leading, spacing: 2) {
+                Text(Theme.readableName(name))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.8)
+                Text(muscleMap.share(for: name)?.summary ?? "not counted yet — tap to say what it trains")
+                    .font(.caption)
+                    .foregroundStyle(muscleMap.share(for: name) == nil ? .orange : .secondary)
+            }
         }
     }
 

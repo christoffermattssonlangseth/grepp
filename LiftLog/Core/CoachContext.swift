@@ -37,11 +37,14 @@ enum CoachContext {
         var goals = ""
         /// Findings the lifter has chosen to programme from, tagged [R1], [R2]…
         var research = ""
+        /// The programme on file: days and set schemes, no loads.
+        var program = ""
 
         static let none = Brief()
 
         var isEmpty: Bool {
-            trimmed(coaching).text.isEmpty && trimmed(goals).text.isEmpty && trimmed(research).text.isEmpty
+            trimmed(coaching).text.isEmpty && trimmed(goals).text.isEmpty
+                && trimmed(research).text.isEmpty && trimmed(program).text.isEmpty
         }
 
         /// True when either file has content — for "the brief landed" UI.
@@ -209,20 +212,26 @@ enum CoachContext {
         CALL STALLS. When a lift's top set hasn't moved in three or more sessions, say \
         so and prescribe a specific way out — hold the load and add a rep, cut ~10% and \
         build back, or swap the movement — rather than repeating the same jump that \
-        already failed to land.
+        already failed to land. Before choosing the way out, cross the stall with the \
+        dose: look up the weekly sets for the muscle that lift mainly trains. Under \
+        about 10 a week, volume is the lever — add a set or a second exposure and say \
+        so. Inside 10–20, don't reach for volume first; change the effort, the load \
+        jump or the rep scheme, or call a deload. Above 20, more is not the answer: cut \
+        back, recover, then push. Name which case it is.
 
         SAY WHAT YOU CAN'T SEE. When the log won't support an answer, say so plainly and \
         say what would settle it. You cannot see RPE, bodyweight, sleep, illness, or why \
         a gap happened, so ask before reading a gap as lost progress.
 
         You can only read this log — you cannot add to it, change it, or schedule \
-        anything. If the user wants a session recorded, tell them to log it in the Log tab.
+        anything. If the user wants a session recorded, tell them to log it in the Log tab. \
+        The brief files are different: you write those, see YOUR FILES.
 
         Keep it short: this is read on a phone, often between sets. Lead with the \
         recommendation. You are not a doctor; suggest medical advice for pain, never \
         diagnose it.
 
-        \(mode == .coaching ? rememberBrief + "\n" + researchBrief : "")
+        \(mode == .coaching ? rememberBrief + "\n" + researchBrief + "\n" + programmeBrief : "")
         FORMATTING. Your answer renders in a chat bubble, which shows **bold**, \
         *italics*, `code` and dash-led lists — and nothing else. No headings, no \
         tables, no numbered lists. Prose and the occasional short list.
@@ -243,9 +252,11 @@ enum CoachContext {
     private static func standingBrief(_ brief: Brief) -> String {
         let notes = trimmed(brief.coaching)
         let goals = trimmed(brief.goals)
-        guard !notes.text.isEmpty || !goals.text.isEmpty || !trimmed(brief.research).text.isEmpty else { return "" }
+        guard !notes.text.isEmpty || !goals.text.isEmpty || !trimmed(brief.research).text.isEmpty
+                || !trimmed(brief.program).text.isEmpty else { return "" }
 
-        let truncation = (notes.truncated || goals.truncated || trimmed(brief.research).truncated)
+        let truncation = (notes.truncated || goals.truncated || trimmed(brief.research).truncated
+                          || trimmed(brief.program).truncated)
             ? " Some of what follows was long enough to be cut off part-way; say so if an answer seems to need the missing part."
             : ""
 
@@ -285,6 +296,27 @@ enum CoachContext {
             <goals>
             \(goals.text)
             </goals>
+
+
+            """
+        }
+
+        let program = trimmed(brief.program)
+        if !program.text.isEmpty {
+            block += """
+            YOUR PROGRAMME. The plan this lifter is running, written by you or by them: \
+            days under headings, lifts with set schemes, no loads. When asked what to do \
+            today or next, work out which day is due from the log (the day after the one \
+            last done, the first if none), take its lifts and schemes, and put loads on \
+            them from the log and the programme's own progression rules. Prescribe that \
+            day in full, in blocks. Say when the log suggests the programme should change — \
+            a lift stalled for three weeks, volume that isn't being recovered from — \
+            rather than running it unchanged forever; and when they ask for a new one, \
+            write a whole new file rather than patching this one.
+
+            <programme>
+            \(program.text)
+            </programme>
 
 
             """
@@ -330,6 +362,87 @@ enum CoachContext {
     /// The fence an evidence entry arrives in. Saved, it lands in research.md.
     static let researchFence = "```research"
 
+    /// The fence a whole programme arrives in. Saved, it replaces program.md.
+    static let programFence = "```program.md"
+
+    /// How to design a programme, when asked for one. Our own wording; the
+    /// numbers are the usual ones from Helms, Israetel and Nuckols, and they
+    /// are defaults for the lifter's evidence brief to override.
+    private static let programmeBrief = """
+    PROGRAMMES. When they ask for a programme — a plan, a block, "write me a \
+    routine" — design one and write it as a file. First make sure you know: days a \
+    week, roughly how long a session, what equipment, the goal (their goals file, if \
+    any), and anything to work around (their coaching notes). Ask for what's missing, \
+    two or three questions at once, then write. Don't drag it out.
+
+    Design it in this order of importance. Adherence first: a plan they will do \
+    beats a better plan they won't; three days they'll keep beats five they'll miss. \
+    Then volume, effort and frequency; then progression; then exercise choice; rest \
+    and tempo last.
+
+    Volume in hard sets per muscle per week, counting a compound fully for what it's \
+    a lift for (an overhead press: front and side delts both) and half for what it \
+    also trains. Someone in their first year: about 8–12 \
+    for a muscle. Beyond that: 10–20, and treat past about 22 as junk. Start at the \
+    low end — volume is a tool for later, not a starting point. Reach each major \
+    muscle at least twice a week, and keep a muscle's hard sets in one session to \
+    about 6–8; more than that in one go is wasted. Their sets-per-muscle table shows \
+    what they do now; don't double it.
+
+    Effort: most sets end 1–3 reps in reserve. Strength work 1–6 reps at roughly \
+    75–90% of a max, 2–4 in reserve; hypertrophy work anywhere from 5 to 30 reps \
+    with the last set of a lift close to failure. Compounds for size sit well at \
+    5–10 reps. Rest 3–5 minutes on heavy compounds, 2–3 on lighter ones, 1–2 on \
+    isolation.
+
+    Splits by days a week: 2 → full body; 3 → full body (or upper/lower/full); 4 → \
+    upper/lower; 5 → upper/lower/push/pull/legs; 6 → push/pull/legs twice. Every \
+    week covers squat, hinge, horizontal and vertical push, horizontal and vertical \
+    pull. Prefer lifts that load the muscle at long lengths. 4–8 lifts a session, \
+    compounds first while fresh, big before small, and never two heavy lower-body \
+    compounds back to back. About 12–16 working sets fit in 45 minutes, 16–22 in an \
+    hour.
+
+    Progression: a beginner adds load every session that goes to plan — 2.5 kg \
+    upper, 5 kg lower — and drops about 10% after three failed attempts at a load. \
+    Past that, double progression (reps climb through a range, then load), or an \
+    AMRAP top set deciding the next jump. Deloads are reactive, not scheduled: when \
+    progress has stalled two or three weeks or joints ache, cut volume by about half \
+    for a week and keep the loads. Starting loads come from the log — a weight they \
+    have lifted for the reps recently — never a guess, and the first week should \
+    feel easy.
+
+    Bodyweight lifts progress reps first, then a harder variation, then added load; \
+    once a set passes about 15–20 reps it's endurance work, so move on.
+
+    Where their evidence brief says otherwise, the brief wins — these are defaults, \
+    and they chose those.
+
+    Then write the file: one short line, then the whole programme in a fenced block \
+    tagged exactly `program.md`, nothing after the closing fence. Its shape is fixed \
+    so the app can read it: a `#` title, a `##` heading per day, one lift per bullet \
+    as the log names it, its set scheme, then " — " and the progression rule in a \
+    few words. No loads in the file — you put those on each time a day is asked \
+    for, from the log.
+
+    \(programFence)
+    # Upper / Lower, 4 days
+
+    ## Day A — Lower
+    - squat 3x5 — add 2.5 kg when all three sets hit 5
+    - romanian-deadlift 3x8–10 — add 2.5 kg once 3x10
+    - leg-press 3x10–12 — add a plate once 3x12
+    - calf-raise 3x12–15
+
+    ## Day B — Upper
+    - bench-press 3x5 — add 2.5 kg when all sets hit
+    - seal-row 3x8–10 — add 2.5 kg once 3x10
+    - over-head-press 3x6–8
+    - chin-ups 3xAMRAP — add 2.5 kg once 3x10
+    ```
+
+    """
+
     private static let researchBrief = """
     EVIDENCE. When the lifter hands you a paper — an abstract, a DOI, a title, a \
     finding they want kept — write it as an evidence entry in a fenced block tagged \
@@ -347,8 +460,21 @@ enum CoachContext {
 
     Given only a DOI or a title and no way to read the paper, don't write the entry \
     from memory: say which paper you take it to be, if you recognise it, and ask for \
-    the abstract. The goals.md and remember blocks are for the goals file and for \
-    notes about the lifter — never park a reference in either.
+    the abstract.
+
+    YOUR FILES. Four files sit beside the log, and you write to them: put the content \
+    in the right fence and the app shows it with a button; when the lifter taps, it \
+    is saved. You never need to say you can't write a file, and never ask them to \
+    copy something into one by hand. Each fence is one file:
+    - `goals.md`: the whole goals file, replaced. In the interview, or whenever they \
+    ask to change their goals.
+    - `program.md`: the whole programme file, replaced. When they ask for a \
+    programme — and again, the whole file with the change made, whenever they ask to \
+    change it: add today's session as a day, swap a lift, change a scheme, drop a day.
+    - `remember`: a line or two appended to their coaching notes.
+    - `research`: findings, one per line, appended to their evidence.
+    Never put one file's content in another's fence. A `prescription` block is not a \
+    file; it's today's session for the Log tab.
 
     """
 
@@ -553,8 +679,9 @@ enum CoachContext {
             return back == 0 ? "this week" : (back == 1 ? "last week" : "\(back) weeks ago")
         }
         var lines = ["SETS PER MUSCLE. Working sets a week, counted by the app from the log (a " +
-                     "compound counts fully for its prime mover and half for what it also " +
-                     "trains; every logged set is a working set). Columns: " +
+                     "compound counts fully for what it's a lift for and half for what it also " +
+                     "trains — an overhead press is a full set for front and side delts both; " +
+                     "every logged set is a working set). Columns: " +
                      labels.joined(separator: " · ") + "."]
         for group in groups {
             let cells = weekly.map { week -> String in
@@ -599,6 +726,10 @@ enum CoachContext {
         var research: String?
         /// A research fence is open but not yet closed.
         var isWritingResearch: Bool
+        /// A whole programme the coach has written, awaiting a save.
+        var program: String?
+        /// A program fence is open but not yet closed.
+        var isWritingProgram: Bool
         var prescriptions: [Prescription]
         /// A prescription fence is open but not yet closed.
         var isWritingPrescription: Bool
@@ -610,6 +741,8 @@ enum CoachContext {
              isWritingMemory: Bool = false,
              research: String? = nil,
              isWritingResearch: Bool = false,
+             program: String? = nil,
+             isWritingProgram: Bool = false,
              prescriptions: [Prescription] = [],
              isWritingPrescription: Bool = false) {
             self.prose = prose
@@ -619,6 +752,8 @@ enum CoachContext {
             self.isWritingMemory = isWritingMemory
             self.research = research
             self.isWritingResearch = isWritingResearch
+            self.program = program
+            self.isWritingProgram = isWritingProgram
             self.prescriptions = prescriptions
             self.isWritingPrescription = isWritingPrescription
         }
@@ -649,11 +784,14 @@ enum CoachContext {
         // lift out, an open one ends the text. Several blocks join as lines.
         let (memoryText, writingMemory) = lift(rememberFence, from: &remaining)
         let (researchText, writingResearch) = lift(researchFence, from: &remaining)
+        // A programme is a whole file like goals: one block, and it ends the prose.
+        let (programText, writingProgram) = lift(programFence, from: &remaining)
 
         guard let fence = remaining.range(of: goalsFence) else {
             return Reply(prose: remaining.trimmingCharacters(in: .whitespacesAndNewlines),
                          memory: memoryText, isWritingMemory: writingMemory,
                          research: researchText, isWritingResearch: writingResearch,
+                         program: programText, isWritingProgram: writingProgram,
                          prescriptions: prescriptions,
                          isWritingPrescription: writingPrescription)
         }
@@ -665,6 +803,7 @@ enum CoachContext {
             return Reply(prose: prose, isWritingGoals: true,
                          memory: memoryText, isWritingMemory: writingMemory,
                          research: researchText, isWritingResearch: writingResearch,
+                         program: programText, isWritingProgram: writingProgram,
                          prescriptions: prescriptions, isWritingPrescription: writingPrescription)
         }
         let goals = String(rest[..<close.lowerBound])
@@ -672,6 +811,7 @@ enum CoachContext {
         return Reply(prose: prose, goals: goals.isEmpty ? nil : goals,
                      memory: memoryText, isWritingMemory: writingMemory,
                      research: researchText, isWritingResearch: writingResearch,
+                     program: programText, isWritingProgram: writingProgram,
                      prescriptions: prescriptions, isWritingPrescription: writingPrescription)
     }
 
@@ -842,7 +982,7 @@ enum CoachContext {
     }
 
     /// The scheme the app answers for an evidence tag tapped in a bubble.
-    static let evidenceScheme = "liftlog"
+    static let evidenceScheme = "grepp"
 
     /// `[R3]` becomes a tappable link to that entry. A tag already inside a
     /// markdown link is left alone.
@@ -859,6 +999,7 @@ enum CoachContext {
     static let suggestedQuestions = [
         // First, because it's the one that ends in a "Log the session" button.
         "What session should I do today?",
+        "Write me a programme.",
         "What should my next squat session be?",
         "Which lifts have stalled, and what do I do about it?",
         "How is my squat progressing?",

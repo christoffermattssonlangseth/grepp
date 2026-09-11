@@ -8,6 +8,15 @@ struct TrendsView: View {
 
     // Persisted so Trends reopens on the lift you last looked at.
     @AppStorage("trends_exercise") private var exercise = ""
+    /// Two questions, two views: how a lift is going, and how the training
+    /// as a whole is going. One screen tried to answer both and the exercise
+    /// picker at the top made the second look like it belonged to the first.
+    private enum Mode: String, CaseIterable, Identifiable {
+        case lift, volume
+        var id: String { rawValue }
+        var title: String { self == .lift ? "Lift" : "Volume" }
+    }
+    @AppStorage("trends_mode") private var mode: Mode = .lift
     @AppStorage("muscle_map") private var muscleMap = MuscleMap()
     @State private var metric: Analytics.Metric = .topSet
     /// Where a finger is on the chart's x-axis, if it's on it at all.
@@ -55,12 +64,24 @@ struct TrendsView: View {
                     .padding(.top, 80)
                 } else {
                     VStack(spacing: 16) {
-                        exercisePicker
-                        if availableMetrics.count > 1 { metricPicker }
-                        chartCard
-                        statsRow
-                        weeksCard
-                        musclesCard
+                        Picker("view", selection: $mode) {
+                            ForEach(Mode.allCases) { Text($0.title).tag($0) }
+                        }
+                        .pickerStyle(.segmented)
+
+                        switch mode {
+                        case .lift:
+                            exercisePicker
+                            if availableMetrics.count > 1 { metricPicker }
+                            chartCard
+                            statsRow
+                            if let dose = DoseResponse.make(for: exercise, in: store.sessions, map: muscleMap) {
+                                doseCard(dose)
+                            }
+                        case .volume:
+                            weeksCard
+                            musclesCard
+                        }
                     }
                     .padding()
                 }
@@ -206,17 +227,97 @@ struct TrendsView: View {
         }
     }
 
+    // MARK: - Dose and response
+
+    /// The lift's weekly best over the last eight weeks, above the weekly sets
+    /// its main muscle got, on the same weeks — and one sentence naming the lever.
+    private func doseCard(_ dose: DoseResponse) -> some View {
+        PanelBox {
+            VStack(alignment: .leading, spacing: 10) {
+                HStack(alignment: .firstTextBaseline) {
+                    Text("work and result")
+                        .font(.caption).foregroundStyle(.secondary)
+                    Spacer()
+                    Text("\(dose.metric.rawValue.lowercased()) · sets of \(Theme.readableName(dose.exercise)), \(dose.muscle.rawValue) behind")
+                        .font(.caption2).foregroundStyle(.tertiary)
+                        .lineLimit(1).minimumScaleFactor(0.8)
+                }
+
+                // Result: the week's best, where the lift was done.
+                Chart {
+                    ForEach(dose.weeks) { week in
+                        if let best = week.best {
+                            LineMark(x: .value("Week", week.start), y: .value(dose.metric.rawValue, best))
+                                .interpolationMethod(.monotone)
+                                .foregroundStyle(.tint)
+                            PointMark(x: .value("Week", week.start), y: .value(dose.metric.rawValue, best))
+                                .foregroundStyle(.tint)
+                                .symbolSize(30)
+                        }
+                    }
+                }
+                .chartYScale(domain: .automatic(includesZero: false))
+                .chartXAxis(.hidden)
+                .chartYAxis {
+                    AxisMarks(values: .automatic(desiredCount: 3)) {
+                        AxisGridLine()
+                        AxisValueLabel()
+                    }
+                }
+                .frame(height: 90)
+
+                // Work: this lift's own sets as the bar, every set for its main
+                // muscle as a faint bar behind, against the band the total is judged by.
+                Chart {
+                    RectangleMark(yStart: .value("low", DoseResponse.band.lowerBound),
+                                  yEnd: .value("high", DoseResponse.band.upperBound))
+                        .foregroundStyle(Theme.accent.opacity(0.12))
+                    ForEach(dose.weeks) { week in
+                        BarMark(x: .value("Week", week.start), y: .value("Muscle sets", week.sets), width: .ratio(0.6))
+                            .foregroundStyle(Color.secondary.opacity(0.22))
+                            .cornerRadius(3)
+                        BarMark(x: .value("Week", week.start), y: .value("Lift sets", Double(week.liftSets)), width: .ratio(0.6))
+                            .foregroundStyle(Theme.accent)
+                            .cornerRadius(3)
+                    }
+                }
+                .chartYScale(domain: 0...max(DoseResponse.band.upperBound + 2, (dose.weeks.map(\.sets).max() ?? 0) + 2))
+                .chartXAxis {
+                    AxisMarks(values: .stride(by: .weekOfYear, count: 2)) {
+                        AxisValueLabel(format: .dateTime.day().month(.abbreviated))
+                    }
+                }
+                .chartYAxis {
+                    AxisMarks(values: [0, 10, 20]) {
+                        AxisGridLine()
+                        AxisValueLabel()
+                    }
+                }
+                .frame(height: 90)
+
+                Text(dose.summary)
+                    .font(.footnote)
+                    .foregroundStyle(.primary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
+
     // MARK: - Weeks
 
     /// Every day of the last few months as a dot: filled when you trained,
     /// deeper the more sets you did. A missed week is a blank column, visible
     /// without asking anyone.
     private var weeksCard: some View {
+        // A Monday with nothing logged yet shows the week just finished.
         let thisWeek = weeks.last
-        let lastFour = weeks.suffix(4)
+        let showingThisWeek = (thisWeek?.sessions ?? 0) > 0
+        let featured = showingThisWeek ? thisWeek : weeks.dropLast().last
+        let lastFour = weeks.dropLast().suffix(4)
         let perWeek = lastFour.isEmpty ? 0 : Double(lastFour.map(\.sessions).reduce(0, +)) / Double(lastFour.count)
         let setsPerWeek = lastFour.isEmpty ? 0 : Double(lastFour.map(\.sets).reduce(0, +)) / Double(lastFour.count)
-        let count = thisWeek?.sessions ?? 0
+        let count = featured?.sessions ?? 0
 
         return PanelBox {
             VStack(alignment: .leading, spacing: 12) {
@@ -225,16 +326,16 @@ struct TrendsView: View {
                 TrainingGrid(weeks: weeks)
                 HStack(alignment: .firstTextBaseline) {
                     VStack(alignment: .leading, spacing: 2) {
-                        Text("this week").font(.caption2).foregroundStyle(.tertiary)
+                        Text(showingThisWeek ? "this week" : "last week").font(.caption2).foregroundStyle(.tertiary)
                         Text(count == 1 ? "1 session" : "\(count) sessions")
                             .font(.subheadline.weight(.bold))
                             .contentTransition(.numericText())
-                        Text("\(thisWeek?.sets ?? 0) sets")
+                        Text("\(featured?.sets ?? 0) sets")
                             .font(.caption).foregroundStyle(.secondary).monospacedDigit()
                     }
                     Spacer()
                     VStack(alignment: .trailing, spacing: 2) {
-                        Text("last 4 weeks").font(.caption2).foregroundStyle(.tertiary)
+                        Text("previous 4 weeks").font(.caption2).foregroundStyle(.tertiary)
                         Text(String(format: "%.1f / week", perWeek))
                             .font(.subheadline.weight(.bold))
                             .monospacedDigit()
@@ -249,44 +350,48 @@ struct TrendsView: View {
 
     // MARK: - Sets per muscle
 
-    /// Weekly sets per muscle for the last six weeks — the number a programme
-    /// is written in. Tonnage isn't here on purpose: it rewards a light leg
-    /// press over a heavy triple and says nothing about where the work went.
+    /// Sets per muscle as bars, not a table: the week that matters against a
+    /// 10–20 band, with a thin marker for the four-week average. This week
+    /// while it has sets in it, else last week — a Monday shows the week just
+    /// done, not a column of dashes.
     private var musclesCard: some View {
-        let weekly = muscleMap.weeklySets(weeks: 6, in: store.sessions)
-        let groups = MuscleGroup.ordered.filter { g in weekly.contains { ($0[g] ?? 0) > 0 } }
+        let weekly = muscleMap.weeklySets(weeks: 5, in: store.sessions)
+        let current = weekly.last ?? [:]
+        let thisWeekHasSets = current.values.reduce(0, +) > 0
+        let shown = thisWeekHasSets ? current : (weekly.dropLast().last ?? [:])
+        let previous = Array(weekly.dropLast().suffix(4))
+        let groups = MuscleGroup.ordered.filter { g in
+            (shown[g] ?? 0) > 0 || previous.contains { ($0[g] ?? 0) > 0 }
+        }
         let unmapped = muscleMap.unmapped(in: store.sessions)
+        let scale = max(20, groups.map { shown[$0] ?? 0 }.max() ?? 0,
+                        groups.map { avg($0, in: previous) }.max() ?? 0)
 
         return PanelBox {
-            VStack(alignment: .leading, spacing: 10) {
-                Text("sets per muscle · per week")
-                    .font(.caption).foregroundStyle(.secondary)
+            VStack(alignment: .leading, spacing: 12) {
+                HStack(alignment: .firstTextBaseline) {
+                    Text("sets per muscle")
+                        .font(.caption).foregroundStyle(.secondary)
+                    Spacer()
+                    Text(thisWeekHasSets ? "this week so far" : "last week")
+                        .font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+                }
 
                 if groups.isEmpty {
                     Text("Nothing counted yet. Lifts the app doesn't know are assigned in Settings ▸ Muscles.")
                         .font(.footnote).foregroundStyle(.secondary)
                 } else {
-                    Grid(alignment: .trailing, horizontalSpacing: 6, verticalSpacing: 6) {
-                        GridRow {
-                            Text("").gridColumnAlignment(.leading)
-                            ForEach(Array(weekly.indices), id: \.self) { i in
-                                Text(i == weekly.count - 1 ? "now" : "-\(weekly.count - 1 - i)")
-                                    .font(.system(size: 10, weight: .bold))
-                                    .foregroundStyle(.tertiary)
-                            }
-                        }
+                    VStack(spacing: 8) {
                         ForEach(groups) { group in
-                            GridRow {
-                                Text(group.rawValue)
-                                    .font(.caption.weight(.semibold))
-                                    .gridColumnAlignment(.leading)
-                                ForEach(Array(weekly.indices), id: \.self) { i in
-                                    setCell(weekly[i][group] ?? 0, current: i == weekly.count - 1)
-                                }
-                            }
+                            muscleBar(group.rawValue, sets: shown[group] ?? 0,
+                                      average: avg(group, in: previous), scale: scale)
                         }
                     }
-                    .frame(maxWidth: .infinity, alignment: .leading)
+                    HStack(spacing: 14) {
+                        legendSwatch(Theme.accent.opacity(0.14), "10–20 sets a week")
+                        legendSwatch(Color.primary.opacity(0.55), "4-week average", thin: true)
+                    }
+                    .padding(.top, 2)
                 }
 
                 if !unmapped.isEmpty {
@@ -299,15 +404,59 @@ struct TrendsView: View {
         }
     }
 
-    /// A count, or a dash for none. The current week is the one to read, so
-    /// it's the accent; earlier weeks fade so the row reads as a trend.
-    private func setCell(_ sets: Double, current: Bool) -> some View {
-        let shown = sets == sets.rounded() ? String(Int(sets)) : String(format: "%.1f", sets)
-        return Text(sets > 0 ? shown : "–")
-            .font(.system(.caption, design: .rounded).weight(current ? .bold : .regular))
-            .monospacedDigit()
-            .foregroundStyle(sets > 0 ? (current ? Theme.accent : Color.primary) : Color.secondary.opacity(0.5))
-            .frame(minWidth: 26, alignment: .trailing)
+    private func avg(_ group: MuscleGroup, in weeks: [MuscleMap.Credits]) -> Double {
+        guard !weeks.isEmpty else { return 0 }
+        return weeks.map { $0[group] ?? 0 }.reduce(0, +) / Double(weeks.count)
+    }
+
+    /// One muscle: the name, a bar for the week against the band, the number.
+    private func muscleBar(_ name: String, sets: Double, average: Double, scale: Double) -> some View {
+        HStack(spacing: 10) {
+            Text(name)
+                .font(.subheadline.weight(.semibold))
+                .lineLimit(1)
+                .minimumScaleFactor(0.8)
+                .frame(width: 88, alignment: .leading)
+            GeometryReader { geo in
+                let w = geo.size.width
+                let x = { (v: Double) in CGFloat(min(v, scale) / scale) * w }
+                ZStack(alignment: .leading) {
+                    // The band a programme usually aims for.
+                    RoundedRectangle(cornerRadius: 4, style: .continuous)
+                        .fill(Theme.accent.opacity(0.14))
+                        .frame(width: max(0, x(20) - x(10)))
+                        .offset(x: x(10))
+                    RoundedRectangle(cornerRadius: 4, style: .continuous)
+                        .fill(Color.secondary.opacity(0.10))
+                    RoundedRectangle(cornerRadius: 4, style: .continuous)
+                        .fill(sets > 0 ? Theme.accent : Color.clear)
+                        .frame(width: max(sets > 0 ? 4 : 0, x(sets)))
+                    if average > 0 {
+                        Rectangle()
+                            .fill(Color.primary.opacity(0.55))
+                            .frame(width: 2, height: 18)
+                            .offset(x: x(average) - 1)
+                    }
+                }
+                .frame(height: 14)
+                .frame(maxHeight: .infinity, alignment: .center)
+            }
+            .frame(height: 18)
+            Text(sets == sets.rounded() ? String(Int(sets)) : String(format: "%.1f", sets))
+                .font(.subheadline.weight(.bold).monospacedDigit())
+                .foregroundStyle(sets > 0 ? Color.primary : Color.secondary)
+                .frame(width: 34, alignment: .trailing)
+                .contentTransition(.numericText())
+        }
+    }
+
+    private func legendSwatch(_ color: Color, _ label: String, thin: Bool = false) -> some View {
+        HStack(spacing: 5) {
+            RoundedRectangle(cornerRadius: 2)
+                .fill(color)
+                .frame(width: thin ? 2 : 14, height: thin ? 12 : 8)
+            Text(label).font(.caption2).foregroundStyle(.tertiary)
+        }
     }
 
     // MARK: - Helpers
@@ -346,19 +495,24 @@ struct TrendsView: View {
 }
 
 /// Columns are weeks, oldest on the left; rows are Monday down to Sunday.
-/// Sized to the width it's given — a wider phone simply shows more weeks.
+/// Only the weeks since the first logged session (eight at least), so a new
+/// log isn't a wall of empty squares, and the dots grow to fill the width.
 private struct TrainingGrid: View {
     let weeks: [Analytics.TrainingWeek]
 
-    private let dot: CGFloat = 12
-    private let gap: CGFloat = 4
-    private let labelWidth: CGFloat = 16
+    private let gap: CGFloat = 5
+    private let labelWidth: CGFloat = 18
     private let rowLabels = ["M", "", "W", "", "F", "", ""]
 
     var body: some View {
+        let firstTrained = weeks.firstIndex { $0.sessions > 0 } ?? max(0, weeks.count - 8)
+        let relevant = Array(weeks.suffix(max(8, weeks.count - firstTrained)))
+        let dot = dotSize(for: relevant.count)
+
         GeometryReader { geo in
-            let fit = Int((geo.size.width - labelWidth + gap) / (dot + gap))
-            let shown = Array(weeks.suffix(max(1, fit)))
+            let available = geo.size.width - labelWidth
+            let fit = max(1, Int((available + gap) / (dot + gap)))
+            let shown = Array(relevant.suffix(fit))
             let heaviest = shown.flatMap(\.days).compactMap { $0?.sets }.max() ?? 0
             let today = shown.last?.days.compactMap { $0 }.last?.key
 
@@ -374,7 +528,8 @@ private struct TrainingGrid: View {
                 ForEach(shown) { week in
                     VStack(spacing: gap) {
                         ForEach(0..<7, id: \.self) { row in
-                            cell(week.days[row], heaviest: heaviest, isToday: week.days[row]?.key == today)
+                            cell(week.days[row], heaviest: heaviest,
+                                 isToday: week.days[row]?.key == today, size: dot)
                         }
                     }
                 }
@@ -384,16 +539,21 @@ private struct TrainingGrid: View {
         .frame(height: 7 * dot + 6 * gap)
     }
 
-    private func cell(_ day: Analytics.TrainingDay?, heaviest: Int, isToday: Bool) -> some View {
-        RoundedRectangle(cornerRadius: 3, style: .continuous)
+    /// Big dots for a young log, smaller as the weeks pile up.
+    private func dotSize(for columns: Int) -> CGFloat {
+        columns <= 8 ? 20 : (columns <= 14 ? 16 : 12)
+    }
+
+    private func cell(_ day: Analytics.TrainingDay?, heaviest: Int, isToday: Bool, size: CGFloat) -> some View {
+        RoundedRectangle(cornerRadius: size * 0.28, style: .continuous)
             .fill(fill(day, heaviest: heaviest))
             .overlay {
                 if isToday {
-                    RoundedRectangle(cornerRadius: 3, style: .continuous)
+                    RoundedRectangle(cornerRadius: size * 0.28, style: .continuous)
                         .strokeBorder(Theme.accent, lineWidth: 1.5)
                 }
             }
-            .frame(width: dot, height: dot)
+            .frame(width: size, height: size)
     }
 
     /// Blank for the future, faint for a rest day, accent for a session — the
@@ -402,7 +562,7 @@ private struct TrainingGrid: View {
         guard let day else { return .clear }
         guard let sets = day.sets else { return Color.secondary.opacity(0.14) }
         let intensity = heaviest > 0 ? Double(sets) / Double(heaviest) : 1
-        return Theme.accent.opacity(0.4 + 0.6 * intensity)
+        return Theme.accent.opacity(0.45 + 0.55 * intensity)
     }
 }
 

@@ -25,6 +25,10 @@ struct CoachView: View {
     @State private var savedResearchText: String?
     @State private var savingResearch = false
     @State private var researchError: String?
+    @State private var savedProgramText: String?
+    @State private var savingProgram = false
+    @State private var programError: String?
+    @State private var showingProgramme = false
     /// Bumped per send, so the arrow bounces on fire.
     @State private var sent = 0
     @FocusState private var inputFocused: Bool
@@ -46,6 +50,10 @@ struct CoachView: View {
             .onAppear(perform: consumeBriefRequest)
             .sheet(isPresented: $showingEvidence) {
                 EvidenceView(focus: evidenceTag)
+                    .environmentObject(store)
+            }
+            .sheet(isPresented: $showingProgramme) {
+                ProgrammeView { question in ask(question) }
                     .environmentObject(store)
             }
             // A tapped [R3] in a bubble opens the evidence at that entry.
@@ -72,6 +80,11 @@ struct CoachView: View {
                         Label("Evidence", systemImage: "books.vertical")
                     }
                 }
+                ToolbarItem(placement: .topBarLeading) {
+                    Button { showingProgramme = true } label: {
+                        Label("Programme", systemImage: "calendar")
+                    }
+                }
                 ToolbarItem(placement: .topBarTrailing) {
                     Button {
                         coach.reset()
@@ -82,6 +95,8 @@ struct CoachView: View {
                         memoryError = nil
                         savedResearchText = nil
                         researchError = nil
+                        savedProgramText = nil
+                        programError = nil
                     } label: {
                         Label("New chat", systemImage: "square.and.pencil")
                     }
@@ -107,6 +122,9 @@ struct CoachView: View {
                 .dismissesKeyboardOnTap()
                 .onChange(of: coach.messages) { _, _ in scroll(proxy) }
                 .onChange(of: coach.errorText) { _, _ in scroll(proxy) }
+                // Coming back to a conversation lands on its latest answer, not
+                // its first question. Without animation: it's where you were.
+                .onAppear { proxy.scrollTo(bottomAnchor, anchor: .bottom) }
             }
             inputBar
         }
@@ -254,6 +272,9 @@ struct CoachView: View {
             } else if reply.isWritingResearch {
                 Label("writing an evidence entry…", systemImage: "square.and.pencil")
                     .font(.caption).foregroundStyle(.secondary)
+            } else if reply.isWritingProgram {
+                Label("writing your programme…", systemImage: "square.and.pencil")
+                    .font(.caption).foregroundStyle(.secondary)
             } else if reply.isWritingPrescription {
                 Label("writing a prescription…", systemImage: "square.and.pencil")
                     .font(.caption).foregroundStyle(.secondary)
@@ -284,6 +305,10 @@ struct CoachView: View {
         // Evidence the coach has written up from a paper you gave it.
         if let research = reply.research {
             researchCard(research)
+        }
+        // A whole programme: a file to save, like goals.
+        if let program = reply.program {
+            programCard(program)
         }
 
         // Each prescribed exercise is one tap from the Log tab — the advice
@@ -336,6 +361,72 @@ struct CoachView: View {
             .tint(Theme.accent)
         }
         .panel(cornerRadius: 14)
+    }
+
+    /// A programme the coach has written. Saving replaces program.md; from then
+    /// on the coach prescribes from it, and the Programme screen lists its days.
+    private func programCard(_ program: String) -> some View {
+        let saved = savedProgramText == program
+        let parsed = Programme.parse(program)
+
+        return VStack(alignment: .leading, spacing: 12) {
+            Label(store.programPath, systemImage: "calendar")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.secondary)
+
+            if parsed.isEmpty {
+                Text(program)
+                    .font(.system(.footnote, design: .monospaced))
+                    .textSelection(.enabled)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            } else {
+                if !parsed.title.isEmpty {
+                    Text(parsed.title).font(.headline)
+                }
+                ForEach(parsed.days) { day in
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text(day.title).font(.subheadline.weight(.bold))
+                        ForEach(day.exercises) { ex in
+                            HStack(alignment: .firstTextBaseline, spacing: 6) {
+                                Text(Theme.readableName(ex.name)).font(.footnote)
+                                Text(ex.scheme)
+                                    .font(.system(.footnote, design: .monospaced))
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+                    }
+                }
+            }
+
+            Button {
+                Task {
+                    savingProgram = true
+                    programError = nil
+                    if await store.save(program, to: .program) == .pushed {
+                        savedProgramText = program
+                    } else {
+                        programError = store.briefStatus
+                    }
+                    savingProgram = false
+                }
+            } label: {
+                HStack(spacing: 8) {
+                    if savingProgram { ProgressView().controlSize(.small) }
+                    Text(saved ? "Saved to \(store.programPath)" : "Save as my programme")
+                        .font(.subheadline.weight(.bold))
+                }
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 10)
+            }
+            .buttonStyle(.borderedProminent)
+            .tint(saved ? Color.secondary : Theme.accent)
+            .disabled(savingProgram || saved)
+
+            if let programError {
+                Text(programError).font(.caption2).foregroundStyle(.orange)
+            }
+        }
+        .glassCard(cornerRadius: 16)
     }
 
     /// Findings the coach has written up. Saving numbers them and appends them to
@@ -530,8 +621,9 @@ struct CoachView: View {
                 Text(coach.contextNote ?? model.blurb)
                     .font(.caption2)
                     .foregroundStyle(.secondary)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.7)
+                    .lineLimit(2)
+                    .minimumScaleFactor(0.8)
+                    .multilineTextAlignment(.trailing)
             }
 
             HStack(spacing: 10) {

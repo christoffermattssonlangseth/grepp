@@ -10,6 +10,18 @@ struct LogView: View {
     @EnvironmentObject var store: Store
 
     @State private var date = Date()
+    /// The date was picked on purpose — the pill, or a lift opened from
+    /// History — rather than inherited from a stale view or an old draft. Only
+    /// a deliberate date skips the wrong-day check at finish.
+    @State private var dateChosen = false
+    /// What was about to happen on a day that isn't today and wasn't chosen —
+    /// the first set of a lift, or finishing it — held while the dialog asks.
+    private enum DayCheck: Identifiable {
+        case set(WorkSet), finish
+        var id: String { if case .finish = self { return "finish" } else { return "set" } }
+    }
+    @State private var dayCheck: DayCheck?
+    @Environment(\.scenePhase) private var scenePhase
     @State private var name = ""
     @State private var sets: [WorkSet] = []
 
@@ -63,16 +75,24 @@ struct LogView: View {
     private var parsedReps: Int? { Int(repsText) }
     private var canAddSet: Bool { parsedReps != nil && (isBodyweight || parsedWeight != nil) }
     private var canFinish: Bool { !name.isEmpty && !sets.isEmpty && !store.isBusy }
+    private var isToday: Bool { Calendar.current.isDateInToday(date) }
+    /// "Tue 9 Sep" — the day in the pill, for the banner and the dialog.
+    private var dayLabel: String { date.formatted(.dateTime.weekday(.abbreviated).day().month(.abbreviated)) }
+    /// The catch: a day that isn't today, wasn't picked, and isn't a session
+    /// that ran past midnight is probably a mistake. Ask before it's a line.
+    private var needsDayCheck: Bool {
+        DayGuard.needsCheck(date: date, chosen: dateChosen, sessionStart: store.sessionStart(on: date))
+    }
 
     var body: some View {
         NavigationStack {
             ScrollView {
                 VStack(spacing: 16) {
                     if !todayExercises.isEmpty { todaySessionCard }
+                    if !isToday { dayBanner }
                     sectionLabel("add exercise")
                     exerciseCard
                     addSetCard
-                    if restStart != nil { restTimerCard }
                     if !sets.isEmpty { setsCard }
                     finishButton
                     if !queue.isEmpty { upNext }
@@ -83,6 +103,17 @@ struct LogView: View {
                 .padding()
             }
             .dismissesKeyboardOnTap()
+            // The rest clock is pinned, not scrolled: between sets it's the one
+            // thing on the screen you look at, and it must never be a swipe away.
+            .safeAreaInset(edge: .bottom) {
+                if restStart != nil {
+                    restTimerCard
+                        .padding(.horizontal)
+                        .padding(.bottom, 6)
+                        .transition(.move(edge: .bottom).combined(with: .opacity))
+                }
+            }
+            .animation(.snappy, value: restStart != nil)
             .background(Theme.backgroundView)
             .navigationTitle("Session")
             .sheet(isPresented: $showingPicker) {
@@ -100,9 +131,12 @@ struct LogView: View {
                 // The date as a compact pill up here, not a whole card under the
                 // title: on a gym screen that card-height belongs to the number pad.
                 ToolbarItem(placement: .topBarTrailing) {
-                    DatePicker("Date", selection: $date, displayedComponents: .date)
+                    DatePicker("Date",
+                               selection: Binding(get: { date },
+                                                  set: { date = $0; dateChosen = true }),
+                               displayedComponents: .date)
                         .labelsHidden()
-                        .tint(Theme.accent)
+                        .tint(isToday ? Theme.accent : .orange)
                 }
                 ToolbarItemGroup(placement: .keyboard) {
                     Spacer()
@@ -116,7 +150,24 @@ struct LogView: View {
             // medium one, which reads as "more" without a second haptic vocabulary.
             .sensoryFeedback(.impact(weight: .heavy, intensity: 1), trigger: recordSet)
             .refreshable { await store.load() }
-            .onAppear { restoreDraft(); applyEditRequest(); applyPrescription() }
+            .onAppear { restoreDraft(); applyEditRequest(); applyPrescription(); refreshDay() }
+            .onChange(of: scenePhase) { _, phase in if phase == .active { refreshDay() } }
+            .confirmationDialog(
+                "Logging \(Theme.readableName(name)) on \(dayLabel) — that isn't today.",
+                isPresented: Binding(get: { dayCheck != nil }, set: { if !$0 { dayCheck = nil } }),
+                titleVisibility: .visible, presenting: dayCheck
+            ) { check in
+                Button("Log on today instead") {
+                    date = Date()
+                    dateChosen = true
+                    resume(check)
+                }
+                Button("Keep \(dayLabel)") {
+                    dateChosen = true
+                    resume(check)
+                }
+                Button("Cancel", role: .cancel) {}
+            }
             // Everything in flight, saved on every change — one equatable value,
             // so it's one modifier rather than one per field.
             .onChange(of: currentDraft) { _, draft in store.saveDraft(draft) }
@@ -215,9 +266,37 @@ struct LogView: View {
         if let ex = store.sessions.first(where: { $0.dateString == key })?
             .exercises.first(where: { $0.name.caseInsensitiveCompare(req.name) == .orderedSame }) {
             date = req.date
+            dateChosen = true   // opened from that day on purpose
             loadForEditing(ex)
         }
         store.editRequest = nil
+    }
+
+    /// A view can outlive the day it was made on, and a lift opened from History
+    /// leaves its date behind. With nothing in flight, the date is today again.
+    private func refreshDay() {
+        let idle = name.isEmpty && sets.isEmpty && queue.isEmpty
+        if DayGuard.shouldReset(date: date, chosen: dateChosen, idle: idle) { date = Date() }
+    }
+
+    /// Said out loud whenever the sets are going somewhere other than today.
+    private var dayBanner: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "calendar.badge.exclamationmark")
+                .foregroundStyle(.orange)
+            Text("Logging for \(dayLabel), not today")
+                .font(.footnote.weight(.semibold))
+            Spacer()
+            Button("today") {
+                date = Date()
+                dateChosen = false
+            }
+            .font(.footnote.weight(.bold))
+            .buttonStyle(.bordered)
+            .tint(.orange)
+        }
+        .padding(.horizontal, 12).padding(.vertical, 8)
+        .background(.orange.opacity(0.12), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
     }
 
     // MARK: - Section label
@@ -247,12 +326,19 @@ struct LogView: View {
                         .font(.caption.weight(.semibold)).foregroundStyle(.secondary)
                 }
                 ForEach(todayExercises) { ex in
-                    VStack(alignment: .leading, spacing: 3) {
-                        Text(Theme.readableName(ex.name))
-                            .font(.subheadline.weight(.heavy)).tracking(0.5)
-                        Text(ex.sets.map(\.token).joined(separator: "  "))
-                            .font(.system(.footnote, design: .monospaced).weight(.medium))
-                            .foregroundStyle(.secondary)
+                    HStack(spacing: 8) {
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text(Theme.readableName(ex.name))
+                                .font(.subheadline.weight(.heavy)).tracking(0.5)
+                            Text(ex.sets.map(\.token).joined(separator: "  "))
+                                .font(.system(.footnote, design: .monospaced).weight(.medium))
+                                .foregroundStyle(.secondary)
+                        }
+                        Spacer(minLength: 0)
+                        // A tap loads the lift back into the fields to change it.
+                        Image(systemName: "pencil")
+                            .font(.footnote.weight(.semibold))
+                            .foregroundStyle(.tertiary)
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.vertical, 10)
@@ -383,7 +469,11 @@ struct LogView: View {
                     plateLine(load)
                 }
 
-                Button { addSet() } label: {
+                // The one thing you do most on this screen, so it's the one
+                // glass button — but only once there's a set to add: a disabled
+                // glass button fades to nothing and reads as broken, so until
+                // then it's a visible, muted pill.
+                let addSetButton = Button { addSet() } label: {
                     HStack(spacing: 6) {
                         Image(systemName: "plus")
                             .symbolEffect(.bounce, value: setAdded)
@@ -393,12 +483,13 @@ struct LogView: View {
                     .frame(maxWidth: .infinity)
                     .frame(height: 44)
                 }
-                // Bordered, not glass: a disabled glass button fades to nothing and
-                // reads as broken. Bordered stays a visible, muted pill — and keeps
-                // glass for the one primary action, finish.
-                .buttonStyle(.bordered)
                 .tint(Theme.accent)
                 .disabled(!canAddSet)
+                if canAddSet {
+                    addSetButton.buttonStyle(.glassProminent)
+                } else {
+                    addSetButton.buttonStyle(.bordered)
+                }
 
                 // Muted, secondary control — only relevant for the odd bodyweight lift.
                 Button {
@@ -425,36 +516,41 @@ struct LogView: View {
             let elapsed = restSeconds(at: context.date)
             let due = elapsed >= restTarget
             let label: String = due ? "READY" : "rest"
-            VStack(spacing: 12) {
-                HStack(spacing: 12) {
-                    VStack(alignment: .leading, spacing: 0) {
+            VStack(spacing: 8) {
+                HStack(spacing: 10) {
+                    // Label and clock on one line: the card is pinned over the
+                    // number pad, so every point of height comes out of that.
+                    HStack(alignment: .firstTextBaseline, spacing: 8) {
                         Text(label)
                             .font(.caption.weight(.heavy)).tracking(2)
                             .foregroundStyle(due ? Theme.onAccent : Color.secondary)
                         Text(clock(elapsed))
-                            .font(.system(size: 56, weight: .heavy))
+                            .font(.system(size: 34, weight: .heavy))
                             .fontWidth(.condensed)
                             .monospacedDigit()
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.6)
+                            .layoutPriority(1)
                             .foregroundStyle(due ? Theme.onAccent : Theme.accent)
                             // Digits roll over rather than snap — 0:59 to 1:00
                             // reads like a stopwatch, not a re-render.
                             .contentTransition(.numericText())
                             .animation(.snappy, value: elapsed)
                     }
-                    Spacer()
+                    Spacer(minLength: 8)
                     restTargetMenu
                     Button { restStart = Date() } label: {
                         Image(systemName: "arrow.counterclockwise")
-                            .font(.title3.weight(.bold))
-                            .frame(width: 44, height: 44)
+                            .font(.subheadline.weight(.bold))
+                            .frame(width: 34, height: 34)
                             .background(.ultraThinMaterial, in: Circle())
                     }
                     .buttonStyle(.plain)
                     Button { restStart = nil } label: {
                         Image(systemName: "xmark")
-                            .font(.subheadline.weight(.bold))
+                            .font(.caption.weight(.bold))
                             .foregroundStyle(.secondary)
-                            .frame(width: 44, height: 44)
+                            .frame(width: 34, height: 34)
                             .background(.ultraThinMaterial, in: Circle())
                     }
                     .buttonStyle(.plain)
@@ -465,7 +561,7 @@ struct LogView: View {
                     .tint(due ? Theme.onAccent : Theme.accent)
                     .animation(.linear(duration: 1), value: elapsed)
             }
-            .padding(16)
+            .padding(.horizontal, 14).padding(.vertical, 10)
             .frame(maxWidth: .infinity, alignment: .leading)
             // Due, the whole card goes solid accent. That's the "in your face":
             // not a label changing colour but the biggest thing on screen changing.
@@ -504,7 +600,7 @@ struct LogView: View {
                 .font(.footnote.weight(.heavy))
                 .monospacedDigit()
                 .padding(.horizontal, 10)
-                .frame(height: 44)
+                .frame(height: 34)
                 .background(.ultraThinMaterial, in: Capsule())
         }
         .buttonStyle(.plain)
@@ -584,7 +680,10 @@ struct LogView: View {
             .frame(maxWidth: .infinity)
             .frame(height: 48)
         }
-        .buttonStyle(.glassProminent)
+        // Quiet on purpose: it's pressed once a lift, and it sits right under
+        // the sets, where a thumb heading for "add set" lands. Add set is the
+        // loud one.
+        .buttonStyle(.bordered)
         .tint(Theme.accent)
         .disabled(!canFinish)
     }
@@ -615,7 +714,8 @@ struct LogView: View {
 
     private var finishTitle: String {
         let alreadyLogged = todayExercises.contains { $0.name.caseInsensitiveCompare(name) == .orderedSame }
-        return alreadyLogged ? "update exercise" : "finish exercise"
+        let verb = alreadyLogged ? "update exercise" : "finish exercise"
+        return isToday ? verb : "\(verb) · \(dayLabel)"
     }
 
     // MARK: - Helpers
@@ -655,9 +755,23 @@ struct LogView: View {
                      reps: reps))
     }
 
+    /// The day is settled: do what the dialog interrupted.
+    private func resume(_ check: DayCheck) {
+        switch check {
+        case .set(let set): land(set)
+        case .finish: Task { await finishExercise() }
+        }
+    }
+
     /// A set is done: record it, start the rest, feel it, and line up the next.
     /// The one path for both add-set and repeat-last.
     private func land(_ set: WorkSet) {
+        // The first set of a lift is where a wrong day gets caught — before
+        // anything is on the clock, not after the whole lift is done.
+        if sets.isEmpty, needsDayCheck {
+            dayCheck = .set(set)
+            return
+        }
         sets.append(set)
         store.noteSetLanded(on: date)
         if record(at: sets.count - 1) != nil { recordSet += 1 }
@@ -700,6 +814,8 @@ struct LogView: View {
             Label {
                 Text(text)
                     .font(.system(.footnote, design: .monospaced).weight(.semibold))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.75)
             } icon: {
                 Image(systemName: "circlebadge.2.fill")
             }
@@ -754,6 +870,12 @@ struct LogView: View {
     }
 
     private func finishExercise() async {
+        // Caught at the first set as a rule; this is for a lift whose sets came
+        // in some other way — a restored draft, the lock screen.
+        if needsDayCheck {
+            dayCheck = .finish
+            return
+        }
         let entry = ExerciseEntry(name: name.trimmingCharacters(in: .whitespaces), sets: sets)
         let result = await store.commit(entry, on: date,
                            message: "Log \(entry.name) \(Session.dateFormatter.string(from: date))")
@@ -764,6 +886,9 @@ struct LogView: View {
             if plan != nil { store.completePlan(entry, on: date) }
             exerciseFinished += 1
             focus = nil
+            // The day stays for the next lift — a backfill is several — but it
+            // has to be confirmed again: one lift on purpose isn't the next.
+            dateChosen = false
             if !queue.isEmpty {
                 // Straight on to the next prescribed lift, fields already filled.
                 load(prescription: queue.removeFirst())

@@ -89,6 +89,7 @@ struct LogView: View {
             ScrollView {
                 VStack(spacing: 16) {
                     if !todayExercises.isEmpty { todaySessionCard }
+                    if store.sessions.isEmpty && !store.isBusy { emptyLogCard }
                     if !isToday { dayBanner }
                     sectionLabel("add exercise")
                     exerciseCard
@@ -277,6 +278,44 @@ struct LogView: View {
     private func refreshDay() {
         let idle = name.isEmpty && sets.isEmpty && queue.isEmpty
         if DayGuard.shouldReset(date: date, chosen: dateChosen, idle: idle) { date = Date() }
+    }
+
+    /// Where the log lives, in the words the Files app or GitHub uses.
+    private var logHome: String {
+        store.storage == .icloud ? "Files ▸ Grepp ▸ training.md" : "\(store.owner)/\(store.repo) ▸ \(store.path)"
+    }
+
+    /// The first thing a new lifter sees. An empty file looks like a broken one
+    /// until someone says it's meant to be, so this says it, once, and goes the
+    /// moment the first exercise lands.
+    private var emptyLogCard: some View {
+        Panel {
+            VStack(alignment: .leading, spacing: 10) {
+                HStack(spacing: 8) {
+                    Barbell(height: 18)
+                    Text("your log is empty, and that's the point")
+                        .font(.caption.weight(.heavy)).tracking(1)
+                        .foregroundStyle(.secondary)
+                }
+                Text("It fills with what you lift, one line per exercise per day, in a text file you own at \(logHome). Nothing is in it that you didn't do.")
+                    .font(.subheadline)
+                Text("2026-09-11 squat 60x5 60x5 60x5")
+                    .font(.system(.footnote, design: .monospaced).weight(.medium))
+                    .foregroundStyle(.secondary)
+                    .padding(.horizontal, 10).padding(.vertical, 6)
+                    .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                Text("Add your first exercise below. Trained before? The Coach can bring your last few weeks in from notes or another app.")
+                    .font(.subheadline)
+                Button {
+                    store.selectedTab = 3
+                } label: {
+                    Label("bring my history in", systemImage: "bubble.left.and.bubble.right")
+                        .font(.footnote.weight(.bold))
+                }
+                .buttonStyle(.bordered)
+                .tint(Theme.accent)
+            }
+        }
     }
 
     /// Said out loud whenever the sets are going somewhere other than today.

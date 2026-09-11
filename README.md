@@ -152,19 +152,28 @@ Keychain. Switch either way later in Settings; the format is the same.
 **Claude.** A key from the [Claude Console](https://platform.claude.com/),
 pasted into Settings ▸ Coach. Keychain, never in source: this repo is public. A
 key not scoped to one workspace also needs the workspace ID. For the Simulator,
-an `ANTHROPIC_API_KEY` scheme variable or an untracked `LiftLog/Secrets.plist`
-works too. Questions and the log go to `api.anthropic.com` over TLS and nowhere
-else; usage bills to your account. A key inside a binary is extractable, so put a
-backend in front before giving the app to anyone else.
+an `ANTHROPIC_API_KEY` scheme environment variable works too. Questions and the
+log go to `api.anthropic.com` over TLS and nowhere else; usage bills to your
+account. Nothing is read from the app bundle, so a build never carries a key:
+everyone brings their own.
 
 **Strava.** Register an API app at strava.com/settings/api with `localhost` as
 the Authorization Callback Domain, paste its client ID and secret into
-Settings ▸ Strava (or `Secrets.plist` as `STRAVA_CLIENT_ID` and
-`STRAVA_CLIENT_SECRET`), and tap Connect. Tokens live in the Keychain.
+Settings ▸ Strava (or `STRAVA_CLIENT_ID` and `STRAVA_CLIENT_SECRET` scheme
+variables in the Simulator), and tap Connect. Tokens live in the Keychain.
 
 **Brief files.** Optional. `coaching.md`, `goals.md`, `program.md` and
 `research.md` sit beside the log, wherever it lives; create them from the app
 or by hand. Paths are in Settings ▸ Coach.
+
+## Shipping
+
+The groundwork for TestFlight and the App Store is in: privacy manifests for
+the app and the widget, export compliance declared, no key in any build, an
+iOS 26.0 floor, and a privacy policy and support page in [`docs/`](docs/).
+[`docs/app-store.md`](docs/app-store.md) is the step-by-step, from the App
+Store Connect record to the first external testers. Lifters bring their own
+Claude key, so the developer never holds one and pays for nothing.
 
 ## Tests
 

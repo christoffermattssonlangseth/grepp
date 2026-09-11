@@ -16,8 +16,8 @@ xcuserdata/
 .swiftpm/
 
 # Secrets — this repo is public. Never commit an API key.
-# The Coach tab reads the Claude key from the Keychain, the ANTHROPIC_API_KEY
-# environment variable, or an untracked LiftLog/Secrets.plist (see README ▸ Coach).
+# The Coach tab reads the Claude key from the Keychain or the ANTHROPIC_API_KEY
+# scheme variable. A Secrets.plist is ignored here and excluded from the build.
 Secrets.plist
 LiftLog/Secrets.plist
 .env

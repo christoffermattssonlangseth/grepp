@@ -34,18 +34,31 @@ enum MuscleGroup: String, CaseIterable, Codable, Identifiable {
 struct MuscleMap: Equatable, RawRepresentable {
     typealias Credits = [MuscleGroup: Double]
 
-    /// What a lift is for, and what it also trains.
+    /// What a lift is for, and what it also trains: each muscle with the
+    /// share of a set it gets. The table uses 1 and ½; a lifter can set any
+    /// share from Settings — a quarter for a muscle that only helps, three
+    /// quarters for one that nearly limits the lift.
     struct Share: Equatable {
-        /// A full set each.
-        var full: [MuscleGroup]
-        /// Half a set each.
-        var half: [MuscleGroup]
+        struct Part: Equatable {
+            var group: MuscleGroup
+            var weight: Double
+        }
+        /// In the order they're shown; the first is what the lift is for.
+        var parts: [Part]
 
-        /// The muscle a lift's own progress is read against.
-        var primary: MuscleGroup? { full.first }
+        /// The muscle a lift's own progress is read against: the heaviest
+        /// share, the first of them on a tie.
+        var primary: MuscleGroup? {
+            guard let top = parts.map(\.weight).max() else { return nil }
+            return parts.first { $0.weight == top }?.group
+        }
 
-        /// The lifter's list form: full ones first, then the halves.
-        var ordered: [MuscleGroup] { full + half }
+        /// The muscles in order — the lifter's list form.
+        var ordered: [MuscleGroup] { parts.map(\.group) }
+
+        func weight(of group: MuscleGroup) -> Double {
+            parts.first { $0.group == group }?.weight ?? 0
+        }
 
         /// One muscle it's for, the rest half.
         static func lift(_ full: MuscleGroup, half: MuscleGroup...) -> Share {
@@ -62,41 +75,85 @@ struct MuscleMap: Equatable, RawRepresentable {
         }
 
         init(full: [MuscleGroup], half: [MuscleGroup]) {
-            self.full = full
-            self.half = half
+            self.init(parts: full.map { Part(group: $0, weight: 1) } + half.map { Part(group: $0, weight: 0.5) })
+        }
+
+        /// Any weights, in body order, zeros dropped.
+        init(weights: Credits) {
+            self.init(parts: MuscleGroup.ordered.compactMap { g in
+                weights[g].flatMap { $0 > 0 ? Part(group: g, weight: $0) : nil }
+            })
+        }
+
+        init(parts: [Part]) {
+            // One entry per muscle: the first mention wins.
+            var seen = Set<MuscleGroup>()
+            self.parts = parts.filter { seen.insert($0.group).inserted && $0.weight > 0 }
         }
 
         var credits: Credits {
-            var credits: Credits = [:]
-            for group in full where credits[group] == nil { credits[group] = 1 }
-            for group in half where credits[group] == nil { credits[group] = 0.5 }
-            return credits
+            Dictionary(parts.map { ($0.group, $0.weight) }, uniquingKeysWith: { a, _ in a })
+        }
+
+        var isEmpty: Bool { parts.isEmpty }
+
+        /// A weight as stored: "1", "0.5", "0.25".
+        static func format(_ weight: Double) -> String {
+            weight == weight.rounded() ? String(Int(weight)) : String(format: "%g", weight)
+        }
+
+        /// A weight as shown: "1", "½", "¼", "¾", else the number.
+        static func label(_ weight: Double) -> String {
+            switch weight {
+            case 0.25: return "¼"
+            case 0.5: return "½"
+            case 0.75: return "¾"
+            default: return format(weight)
+            }
+        }
+
+        /// "chest 1 · triceps ½ · front delts ½"
+        var summary: String {
+            parts.map { "\($0.group.rawValue) \(Share.label($0.weight))" }.joined(separator: " · ")
         }
     }
 
-    /// The lifter's own assignments: primary first, then the halves.
-    var overrides: [String: [MuscleGroup]]
+    /// The lifter's own assignments.
+    var overrides: [String: Share]
 
-    init(overrides: [String: [MuscleGroup]] = [:]) { self.overrides = overrides }
+    init(overrides: [String: Share] = [:]) { self.overrides = overrides }
 
-    // MARK: - persistence ("seal-row=back+biceps;sled-push=quads")
+    // MARK: - persistence
+    //
+    // "seal-row=back:1+biceps:0.5;sled-push=quads:1+core:0.25". A muscle with
+    // no share written — how earlier versions stored it — is a full set for
+    // the first and half for the rest.
 
     init?(rawValue: String) {
-        var overrides: [String: [MuscleGroup]] = [:]
+        var overrides: [String: Share] = [:]
         for entry in rawValue.split(separator: ";") {
             let kv = entry.split(separator: "=")
             guard kv.count == 2 else { continue }
-            let groups = kv[1].split(separator: "+").compactMap { MuscleGroup(rawValue: String($0)) }
-            guard !groups.isEmpty else { continue }
-            overrides[MuscleMap.key(String(kv[0]))] = groups
+            var parts: [Share.Part] = []
+            for (i, item) in kv[1].split(separator: "+").enumerated() {
+                let gw = item.split(separator: ":", maxSplits: 1)
+                guard let group = MuscleGroup(rawValue: String(gw[0])) else { continue }
+                let weight = gw.count == 2 ? Double(gw[1]) ?? 0 : (i == 0 ? 1 : 0.5)
+                parts.append(Share.Part(group: group, weight: weight))
+            }
+            let share = Share(parts: parts)
+            guard !share.isEmpty else { continue }
+            overrides[MuscleMap.key(String(kv[0]))] = share
         }
         self.overrides = overrides
     }
 
     var rawValue: String {
-        overrides.keys.sorted()
-            .map { "\($0)=\((overrides[$0] ?? []).map(\.rawValue).joined(separator: "+"))" }
-            .joined(separator: ";")
+        overrides.keys.sorted().map { key in
+            let parts = (overrides[key]?.parts ?? []).map { "\($0.group.rawValue):\(Share.format($0.weight))" }
+            return "\(key)=\(parts.joined(separator: "+"))"
+        }
+        .joined(separator: ";")
     }
 
     // MARK: - lookup
@@ -106,10 +163,13 @@ struct MuscleMap: Equatable, RawRepresentable {
 
     /// What the lifter has said, or what the table says — for showing in Settings.
     func share(for exercise: String) -> Share? {
+        overrides[MuscleMap.key(exercise)] ?? MuscleMap.builtInShare(for: exercise)
+    }
+
+    /// The table's answer alone, aliases resolved — what "reset" goes back to.
+    static func builtInShare(for exercise: String) -> Share? {
         let key = MuscleMap.key(exercise)
-        if let groups = overrides[key] { return Share(groups) }
-        return MuscleMap.builtIn[key]
-            ?? MuscleMap.aliases[key].flatMap { MuscleMap.builtIn[$0] }
+        return builtIn[key] ?? aliases[key].flatMap { builtIn[$0] }
     }
 
     func isOverridden(_ exercise: String) -> Bool { overrides[MuscleMap.key(exercise)] != nil }
@@ -117,10 +177,23 @@ struct MuscleMap: Equatable, RawRepresentable {
     /// Assign, or clear with an empty list. The first group is the lift's own;
     /// the rest count half.
     mutating func set(_ groups: [MuscleGroup], for exercise: String) {
+        set(groups.isEmpty ? nil : Share(groups), for: exercise)
+    }
+
+    /// Assign any shares, or clear with nil or an empty share. Setting exactly
+    /// what the table says is a clear too: no point remembering the default.
+    mutating func set(_ share: Share?, for exercise: String) {
         let key = MuscleMap.key(exercise)
         guard !key.isEmpty else { return }
-        if groups.isEmpty { overrides.removeValue(forKey: key) } else { overrides[key] = groups }
+        if let share, !share.isEmpty, share != MuscleMap.builtInShare(for: exercise) {
+            overrides[key] = share
+        } else {
+            overrides.removeValue(forKey: key)
+        }
     }
+
+    /// Every lift the table knows, by its canonical name, in alphabetical order.
+    static var tableExercises: [String] { builtIn.keys.sorted() }
 
     /// Exercises in these sessions that count nowhere yet, most recent first.
     func unmapped(in sessions: [Session]) -> [String] {

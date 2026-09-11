@@ -103,9 +103,11 @@ prescribes a way out of a stall.
 *Volume*: a training-days grid, Monday to Sunday, and sets per muscle for the
 week as bars against a 10–20 band with the four-week average marked. A
 compound counts fully for what it's a lift for and half for each muscle that
-also works (bench is chest, half triceps, half front delts; an overhead press is
-front and side delts both, half triceps), every logged set is a working set, and lifts the app doesn't know are assigned once in
-Settings ▸ Muscles. No tonnage, on purpose.
+also works (bench is chest, half triceps, half front delts; an overhead press
+is front and side delts both, half triceps), every logged set is a working
+set, and lifts the app doesn't know are assigned once in Settings ▸ Muscles.
+Disagree with a share? Deeper in the same screen, every lift's shares can be
+set per muscle, in quarters. No tonnage, on purpose.
 
 **History.** Every day, newest first, with sets per muscle under each date and
 whether it's on Strava. Tap an exercise to edit, swipe to delete or to move

@@ -595,4 +595,42 @@ final class CoachContextTests: XCTestCase {
         XCTAssertTrue(text.contains("The log is empty"))
         XCTAssertFalse(text.contains("<training-log>\n2"), "no session lines to include")
     }
+
+    // MARK: - bringing history in
+
+    func testLogBlockBecomesSessionsToAdd() {
+        let reply = CoachContext.parseReply("""
+        Here's your last two weeks as I read them.
+        ```log
+        2026-08-25 squat 100x5 100x5 100x5
+        2026-08-25 bench 70x8 70x8
+        2026-08-27 deadlift 130x5
+        ```
+        Tap add and they're in the file.
+        """)
+        XCTAssertEqual(reply.log?.count, 2)
+        XCTAssertEqual(reply.log?.first?.exercises.map(\.name), ["squat", "bench"])
+        XCTAssertEqual(reply.log?.last?.dateString, "2026-08-27")
+        XCTAssertFalse(reply.isWritingLog)
+        XCTAssertFalse(reply.prose.contains("```"), reply.prose)
+        XCTAssertTrue(reply.prose.hasPrefix("Here's your last two weeks"), reply.prose)
+        XCTAssertTrue(reply.prose.hasSuffix("in the file."), reply.prose)
+    }
+
+    func testHalfArrivedLogBlockReadsAsWriting() {
+        let reply = CoachContext.parseReply("Bringing these in.\n```log\n2026-08-25 squat 100x5")
+        XCTAssertNil(reply.log)
+        XCTAssertTrue(reply.isWritingLog)
+        XCTAssertEqual(reply.prose, "Bringing these in.")
+    }
+
+    func testEmptyLogGetsTheFirstSessionBriefAndTheLogFence() {
+        let empty = CoachContext.systemPrompt(for: CoachContext.excerpt(from: []))
+        XCTAssertTrue(empty.contains("THE LOG IS EMPTY"))
+        XCTAssertTrue(empty.contains("`log`: sessions they have already done"))
+        let session = Session(date: Session.dateFormatter.date(from: "2026-09-01")!,
+                              exercises: [ExerciseEntry(name: "squat", sets: [WorkSet(weight: 100, added: nil, reps: 5)])])
+        let full = CoachContext.systemPrompt(for: CoachContext.excerpt(from: [session]))
+        XCTAssertFalse(full.contains("THE LOG IS EMPTY"))
+    }
 }

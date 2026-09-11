@@ -13,6 +13,10 @@ struct PendingWrite: Codable, Identifiable, Equatable {
         /// Move one exercise, or the whole day when `name` is nil, to another
         /// date. Logged on the wrong day, or the morning after.
         case move(name: String?, to: Date)
+        /// Whole sessions added at once — history brought in through the coach.
+        /// Each lift merges as if logged on its day; the write's own date is
+        /// the newest of them.
+        case merge(sessions: [Session])
     }
 
     var id = UUID()
@@ -39,6 +43,7 @@ struct PendingWrite: Codable, Identifiable, Equatable {
         case .upsert(let entry): return entry.name
         case .delete(let name): return name
         case .move(let name, _): return name ?? "the day"
+        case .merge(let sessions): return "\(sessions.count) \(sessions.count == 1 ? "session" : "sessions")"
         }
     }
 }
@@ -96,6 +101,10 @@ extension WorkoutParser {
         case .upsert(let entry): merge(entry, on: write.date, into: &base)
         case .delete(let name): remove(name, on: write.date, from: &base)
         case .move(let name, let target): move(name, on: write.date, to: target, in: &base)
+        case .merge(let sessions):
+            for session in sessions {
+                for entry in session.exercises { merge(entry, on: session.date, into: &base) }
+            }
         }
     }
 

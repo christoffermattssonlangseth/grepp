@@ -454,7 +454,22 @@ final class Store: ObservableObject {
         let from = Session.dateFormatter.string(from: date)
         let to = Session.dateFormatter.string(from: target)
         let message = name.map { "Move \($0) from \(from) to \(to)" } ?? "Move \(from) to \(to)"
-        return await perform(PendingWrite(operation: .move(name: name, to: target), date: date, message: message))
+        let result = await perform(PendingWrite(operation: .move(name: name, to: target), date: date, message: message))
+        guard result != .failed else { return result }
+        // What the app knows about the day goes with it: the plan verdicts,
+        // and for a whole day its clock. The Strava mark does not — the
+        // activity there keeps its old date, so the moved day is unposted.
+        plans.move(name: name, from: date, to: target)
+        savePlans()
+        if name == nil {
+            var starts = sessionStarts
+            if let start = starts.removeValue(forKey: from) { starts[to] = start }
+            sessionStarts = starts
+            if stravaPosts.removeValue(forKey: from) != nil {
+                defaults.set(try? JSONEncoder().encode(stravaPosts), forKey: stravaPostsKey)
+            }
+        }
+        return result
     }
 
     /// Push a single change (add/replace, delete or move) via merge-on-remote, or

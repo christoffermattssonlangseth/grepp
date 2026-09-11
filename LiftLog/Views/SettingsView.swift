@@ -101,7 +101,7 @@ struct SettingsView: View {
                     ForEach(unmapped + assigned, id: \.self) { name in
                         muscleRow(name)
                     }
-                    Text("Sets per muscle in Trends and for the coach. A lift counts fully for the first muscle and half for the second. Lifts the app already knows — squat, bench, chin-ups and the rest — need nothing here.")
+                    Text("Sets per muscle in Trends and for the coach. A lift the app doesn't know shows up here until you say what it trains; lifts it already knows — squat, bench, chin-ups and the rest — need nothing.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                     NavigationLink {
@@ -357,52 +357,20 @@ struct SettingsView: View {
         backfillStatus = summary
     }
 
-    /// One unknown lift: pick what it's for, and optionally what it also trains.
+    /// One lift the app doesn't know, or one the lifter has set: a row into
+    /// the share editor, with what it counts for today.
     private func muscleRow(_ name: String) -> some View {
-        let groups = muscleMap.share(for: name)?.ordered ?? []
-        return HStack {
-            Text(Theme.readableName(name))
-                .lineLimit(1)
-                .minimumScaleFactor(0.8)
-            Spacer()
-            musclePicker(current: groups.first, title: "muscle") { picked in
-                var next = groups
-                if let picked {
-                    next = [picked] + groups.dropFirst().filter { $0 != picked }
-                } else {
-                    next = []
-                }
-                muscleMap.set(next, for: name)
-            }
-            if let primary = groups.first {
-                musclePicker(current: groups.dropFirst().first, title: "+ half") { picked in
-                    muscleMap.set(picked.map { [primary, $0] } ?? [primary], for: name)
-                }
-            }
-        }
-    }
-
-    private func musclePicker(current: MuscleGroup?, title: String,
-                              onPick: @escaping (MuscleGroup?) -> Void) -> some View {
-        Menu {
-            ForEach(MuscleGroup.ordered) { group in
-                Button {
-                    onPick(group)
-                } label: {
-                    if group == current { Label(group.rawValue, systemImage: "checkmark") }
-                    else { Text(group.rawValue) }
-                }
-            }
-            if current != nil {
-                Divider()
-                Button("none", role: .destructive) { onPick(nil) }
-            }
+        NavigationLink {
+            ExerciseMuscleView(exercise: name)
         } label: {
-            Text(current?.rawValue ?? title)
-                .font(.subheadline.weight(current == nil ? .regular : .semibold))
-                .foregroundStyle(current == nil ? Color.secondary : Theme.accent)
-                .padding(.horizontal, 10).padding(.vertical, 6)
-                .background(.ultraThinMaterial, in: Capsule())
+            VStack(alignment: .leading, spacing: 2) {
+                Text(Theme.readableName(name))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.8)
+                Text(muscleMap.share(for: name)?.summary ?? "not counted yet — tap to say what it trains")
+                    .font(.caption)
+                    .foregroundStyle(muscleMap.share(for: name) == nil ? .orange : .secondary)
+            }
         }
     }
 

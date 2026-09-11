@@ -59,7 +59,7 @@ struct TrendsView: View {
                             Text("No data yet")
                         }
                     } description: {
-                        Text("Log some workouts to see trends.")
+                        Text("A lift's chart appears after its second session; sets per muscle after the first week. Both come from the log alone.")
                     }
                     .padding(.top, 80)
                 } else {

@@ -28,6 +28,9 @@ struct CoachView: View {
     @State private var savedProgramText: String?
     @State private var savingProgram = false
     @State private var programError: String?
+    @State private var addedLog: [Session]?
+    @State private var addingLog = false
+    @State private var logError: String?
     @State private var showingProgramme = false
     /// Bumped per send, so the arrow bounces on fire.
     @State private var sent = 0
@@ -190,7 +193,8 @@ struct CoachView: View {
             }
             .buttonStyle(.plain)
 
-            ForEach(CoachContext.suggestedQuestions, id: \.self) { question in
+            // An empty log gets its own questions: bring history in, or start.
+            ForEach(store.sessions.isEmpty ? CoachContext.firstQuestions : CoachContext.suggestedQuestions, id: \.self) { question in
                 Button {
                     ask(question)
                 } label: {
@@ -278,6 +282,9 @@ struct CoachView: View {
             } else if reply.isWritingPrescription {
                 Label("writing a prescription…", systemImage: "square.and.pencil")
                     .font(.caption).foregroundStyle(.secondary)
+            } else if reply.isWritingLog {
+                Label("writing your sessions…", systemImage: "square.and.pencil")
+                    .font(.caption).foregroundStyle(.secondary)
             } else if message.isStreaming, message.isLookup == true {
                 Label("reading the paper…", systemImage: "magnifyingglass")
                     .font(.caption).foregroundStyle(.secondary)
@@ -309,6 +316,10 @@ struct CoachView: View {
         // A whole programme: a file to save, like goals.
         if let program = reply.program {
             programCard(program)
+        }
+        // History the coach wrote as log lines: one tap and it's in the file.
+        if let log = reply.log {
+            logCard(log)
         }
 
         // Each prescribed exercise is one tap from the Log tab — the advice
@@ -424,6 +435,55 @@ struct CoachView: View {
 
             if let programError {
                 Text(programError).font(.caption2).foregroundStyle(.orange)
+            }
+        }
+        .glassCard(cornerRadius: 16)
+    }
+
+    /// Sessions the coach wrote from what the lifter told it. Adding merges them
+    /// into training.md as one commit, each lift on its own day — the file the
+    /// lifter was afraid was empty, full of their own history.
+    private func logCard(_ sessions: [Session]) -> some View {
+        let added = addedLog == sessions
+        let lifts = sessions.reduce(0) { $0 + $1.exercises.count }
+        return VStack(alignment: .leading, spacing: 12) {
+            Label("\(sessions.count) \(sessions.count == 1 ? "session" : "sessions") · \(lifts) \(lifts == 1 ? "lift" : "lifts")",
+                  systemImage: "text.badge.plus")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.secondary)
+
+            // The lines as they'll be in the file — check them before they're in it.
+            Text(WorkoutParser.serialize(sessions))
+                .font(.system(.caption, design: .monospaced))
+                .textSelection(.enabled)
+                .frame(maxWidth: .infinity, alignment: .leading)
+
+            Button {
+                Task {
+                    addingLog = true
+                    logError = nil
+                    if await store.importLog(sessions) != .failed {
+                        addedLog = sessions
+                    } else {
+                        logError = store.status
+                    }
+                    addingLog = false
+                }
+            } label: {
+                HStack(spacing: 8) {
+                    if addingLog { ProgressView().controlSize(.small) }
+                    Text(added ? "Added to your log" : "Add to my log")
+                        .font(.subheadline.weight(.bold))
+                }
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 10)
+            }
+            .buttonStyle(.borderedProminent)
+            .tint(added ? Color.secondary : Theme.accent)
+            .disabled(addingLog || added)
+
+            if let logError {
+                Text(logError).font(.caption2).foregroundStyle(.orange)
             }
         }
         .glassCard(cornerRadius: 16)

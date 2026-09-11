@@ -472,6 +472,17 @@ final class Store: ObservableObject {
         return result
     }
 
+    /// Add whole sessions the coach wrote from the lifter's history: one write,
+    /// one commit, every lift merged onto its own day.
+    @discardableResult
+    func importLog(_ sessions: [Session]) async -> CommitResult {
+        let sorted = sessions.sorted { $0.date < $1.date }
+        guard let first = sorted.first, let last = sorted.last else { return .failed }
+        let span = first.dateString == last.dateString ? first.dateString : "\(first.dateString) to \(last.dateString)"
+        let message = "Add \(sorted.count) \(sorted.count == 1 ? "session" : "sessions") (\(span))"
+        return await perform(PendingWrite(operation: .merge(sessions: sorted), date: last.date, message: message))
+    }
+
     /// Push a single change (add/replace, delete or move) via merge-on-remote, or
     /// queue it locally when offline. Shared by `commit`, `delete` and `move`.
     @discardableResult

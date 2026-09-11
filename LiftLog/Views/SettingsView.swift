@@ -104,6 +104,16 @@ struct SettingsView: View {
                     Text("Sets per muscle in Trends and for the coach. A lift counts fully for the first muscle and half for the second. Lifts the app already knows — squat, bench, chin-ups and the rest — need nothing here.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
+                    NavigationLink {
+                        MuscleMapView()
+                    } label: {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Every lift's shares")
+                            Text("Each muscle's share of a set, per lift — the table's defaults, or yours.")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
                 }
                 .listRowBackground(Rectangle().fill(.regularMaterial))
 

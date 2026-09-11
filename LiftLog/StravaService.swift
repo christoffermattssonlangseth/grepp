@@ -7,8 +7,9 @@ import UIKit
 /// refreshed when they lapse; then one call to create an activity and one
 /// to update it if the session grows after posting.
 ///
-/// The client ID and secret come from `Secrets.plist` (untracked; this repo
-/// is public) or the environment, never from source. Strava's token exchange
+/// The client ID and secret are pasted into Settings and kept in the Keychain
+/// (the scheme environment in the Simulator), never in source or the bundle:
+/// each lifter registers their own Strava API app. Strava's token exchange
 /// needs the secret on the client, which is what their mobile guidance does
 /// too — treat it as the dev-grade arrangement it is.
 @MainActor
@@ -61,7 +62,7 @@ final class StravaService: ObservableObject {
     // MARK: - Configuration
 
     /// The API app's ID and secret, pasted in Settings. Keychain, like the
-    /// Claude key; the environment and Secrets.plist are the dev-time fallbacks.
+    /// Claude key; scheme environment variables are the Simulator fallback.
     func storeCredentials(id: String, secret: String) {
         let id = id.trimmingCharacters(in: .whitespacesAndNewlines)
         let secret = secret.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -76,11 +77,7 @@ final class StravaService: ObservableObject {
         let account = key == "STRAVA_CLIENT_ID" ? "client_id" : "client_secret"
         if let kept = Keychain.get(account: account, service: service), !kept.isEmpty { return kept }
         if let env = ProcessInfo.processInfo.environment[key], !env.isEmpty { return env }
-        guard let url = Bundle.main.url(forResource: "Secrets", withExtension: "plist"),
-              let data = try? Data(contentsOf: url),
-              let plist = try? PropertyListSerialization.propertyList(from: data, format: nil) as? [String: Any],
-              let value = plist[key] as? String, !value.isEmpty else { return nil }
-        return value
+        return nil
     }
 
     // MARK: - Tokens

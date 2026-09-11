@@ -109,10 +109,11 @@ set, and lifts the app doesn't know are assigned once in Settings ▸ Muscles.
 Disagree with a share? Deeper in the same screen, every lift's shares can be
 set per muscle, in quarters. No tonnage, on purpose.
 
-**History.** Every day, newest first, with sets per muscle under each date and
+**History.** Every day, newest first, by month with older months folded, and
+a search that finds every day of a lift. Sets per muscle under each date, and
 whether it's on Strava. Tap an exercise to edit, swipe to delete or to move
 it to another day; the date itself is a menu that moves the whole day. A move
-is one commit.
+is one commit, and the coach's plan-versus-done record moves with it.
 
 **Widget.** *Last session* on the home screen: how long ago, the lifts and
 their sets, and **Up next** when a session is loaded and not yet lifted.

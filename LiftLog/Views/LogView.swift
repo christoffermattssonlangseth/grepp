@@ -78,14 +78,11 @@ struct LogView: View {
     private var isToday: Bool { Calendar.current.isDateInToday(date) }
     /// "Tue 9 Sep" — the day in the pill, for the banner and the dialog.
     private var dayLabel: String { date.formatted(.dateTime.weekday(.abbreviated).day().month(.abbreviated)) }
-    /// A session that started on that day within the last eight hours is
-    /// still that session: finishing a lift after midnight belongs to it.
-    private var sessionCrossedMidnight: Bool {
-        store.sessionStart(on: date).map { Date().timeIntervalSince($0) < 8 * 3600 } ?? false
-    }
     /// The catch: a day that isn't today, wasn't picked, and isn't a session
     /// that ran past midnight is probably a mistake. Ask before it's a line.
-    private var needsDayCheck: Bool { !isToday && !dateChosen && !sessionCrossedMidnight }
+    private var needsDayCheck: Bool {
+        DayGuard.needsCheck(date: date, chosen: dateChosen, sessionStart: store.sessionStart(on: date))
+    }
 
     var body: some View {
         NavigationStack {
@@ -278,8 +275,8 @@ struct LogView: View {
     /// A view can outlive the day it was made on, and a lift opened from History
     /// leaves its date behind. With nothing in flight, the date is today again.
     private func refreshDay() {
-        guard !isToday, !dateChosen, name.isEmpty, sets.isEmpty, queue.isEmpty else { return }
-        date = Date()
+        let idle = name.isEmpty && sets.isEmpty && queue.isEmpty
+        if DayGuard.shouldReset(date: date, chosen: dateChosen, idle: idle) { date = Date() }
     }
 
     /// Said out loud whenever the sets are going somewhere other than today.

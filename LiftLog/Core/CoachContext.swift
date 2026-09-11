@@ -232,6 +232,7 @@ enum CoachContext {
         diagnose it.
 
         \(mode == .coaching ? rememberBrief + "\n" + researchBrief + "\n" + programmeBrief : "")
+        \(mode == .coaching && excerpt.isEmpty ? emptyLogBrief : "")
         FORMATTING. Your answer renders in a chat bubble, which shows **bold**, \
         *italics*, `code` and dash-led lists — and nothing else. No headings, no \
         tables, no numbered lists. Prose and the occasional short list.
@@ -365,6 +366,10 @@ enum CoachContext {
     /// The fence a whole programme arrives in. Saved, it replaces program.md.
     static let programFence = "```program.md"
 
+    /// The fence past sessions arrive in: log lines, dated, in the log's own
+    /// format. Added, they merge into training.md like anything else logged.
+    static let logFence = "```log"
+
     /// How to design a programme, when asked for one. Our own wording; the
     /// numbers are the usual ones from Helms, Israetel and Nuckols, and they
     /// are defaults for the lifter's evidence brief to override.
@@ -473,6 +478,11 @@ enum CoachContext {
     change it: add today's session as a day, swap a lift, change a scheme, drop a day.
     - `remember`: a line or two appended to their coaching notes.
     - `research`: findings, one per line, appended to their evidence.
+    - `log`: sessions they have already done, to add to the log itself — one line \
+    per lift per day in the log's own format, `2026-08-30 squat 100x5 100x5 100x5`, \
+    dated. Only sessions they tell you about, from memory, notes or another app; \
+    never invented and never today's plan, which is a prescription. If they only \
+    know the week, use its Monday and say so.
     Never put one file's content in another's fence. A `prescription` block is not a \
     file; it's today's session for the Log tab.
 
@@ -733,6 +743,10 @@ enum CoachContext {
         var prescriptions: [Prescription]
         /// A prescription fence is open but not yet closed.
         var isWritingPrescription: Bool
+        /// Past sessions the coach has written as log lines, awaiting an add.
+        var log: [Session]?
+        /// A log fence is open but not yet closed.
+        var isWritingLog: Bool
 
         init(prose: String,
              goals: String? = nil,
@@ -744,8 +758,12 @@ enum CoachContext {
              program: String? = nil,
              isWritingProgram: Bool = false,
              prescriptions: [Prescription] = [],
-             isWritingPrescription: Bool = false) {
+             isWritingPrescription: Bool = false,
+             log: [Session]? = nil,
+             isWritingLog: Bool = false) {
             self.prose = prose
+            self.log = log
+            self.isWritingLog = isWritingLog
             self.goals = goals
             self.isWritingGoals = isWritingGoals
             self.memory = memory
@@ -786,6 +804,9 @@ enum CoachContext {
         let (researchText, writingResearch) = lift(researchFence, from: &remaining)
         // A programme is a whole file like goals: one block, and it ends the prose.
         let (programText, writingProgram) = lift(programFence, from: &remaining)
+        // Past sessions: log lines the parser reads like the file itself.
+        let (logText, writingLog) = lift(logFence, from: &remaining)
+        let logSessions = logText.map { WorkoutParser.parse($0) }.flatMap { $0.isEmpty ? nil : $0 }
 
         guard let fence = remaining.range(of: goalsFence) else {
             return Reply(prose: remaining.trimmingCharacters(in: .whitespacesAndNewlines),
@@ -793,7 +814,8 @@ enum CoachContext {
                          research: researchText, isWritingResearch: writingResearch,
                          program: programText, isWritingProgram: writingProgram,
                          prescriptions: prescriptions,
-                         isWritingPrescription: writingPrescription)
+                         isWritingPrescription: writingPrescription,
+                         log: logSessions, isWritingLog: writingLog)
         }
         let prose = String(remaining[..<fence.lowerBound])
             .trimmingCharacters(in: .whitespacesAndNewlines)
@@ -804,7 +826,8 @@ enum CoachContext {
                          memory: memoryText, isWritingMemory: writingMemory,
                          research: researchText, isWritingResearch: writingResearch,
                          program: programText, isWritingProgram: writingProgram,
-                         prescriptions: prescriptions, isWritingPrescription: writingPrescription)
+                         prescriptions: prescriptions, isWritingPrescription: writingPrescription,
+                     log: logSessions, isWritingLog: writingLog)
         }
         let goals = String(rest[..<close.lowerBound])
             .trimmingCharacters(in: .whitespacesAndNewlines)
@@ -812,7 +835,8 @@ enum CoachContext {
                      memory: memoryText, isWritingMemory: writingMemory,
                      research: researchText, isWritingResearch: writingResearch,
                      program: programText, isWritingProgram: writingProgram,
-                     prescriptions: prescriptions, isWritingPrescription: writingPrescription)
+                     prescriptions: prescriptions, isWritingPrescription: writingPrescription,
+                     log: logSessions, isWritingLog: writingLog)
     }
 
     /// Pull every complete block behind `fence` out of the text, joined by
@@ -993,6 +1017,27 @@ enum CoachContext {
                            withTemplate: "[$1](\(evidenceScheme)://evidence/$1)")
         return ns as String
     }
+
+    /// What to do with a lifter whose log has nothing in it yet.
+    static let emptyLogBrief = """
+    THE LOG IS EMPTY. This is their first session with the app, and an empty file \
+    looks like a broken one. Two moves, in this order. First: most lifters have \
+    history somewhere — another app, notes, memory. Ask for their last few weeks in \
+    any form, then write it as a `log` block so the file starts full and Trends has \
+    something to draw; ask for what's missing (dates, loads) rather than guessing. \
+    Second: if there is nothing to bring in, or they're new, don't interview them at \
+    length — prescribe a first session of three lifts as a `prescription`, loads \
+    they can certainly make, and say the numbers will be right by the third session. \
+    Either way, one thing at a time; the first answer should end in something to tap.
+
+    """
+
+    /// Starter questions for a log with nothing in it: bring history in, or start.
+    static let firstQuestions = [
+        "I've trained before. Help me bring my last few weeks into the log.",
+        "I'm new to lifting. Where do I start?",
+        "Write me a first session.",
+    ]
 
     /// Starter questions offered on an empty Coach screen. Weighted towards "what
     /// should I do next", since that's what a coach is for.

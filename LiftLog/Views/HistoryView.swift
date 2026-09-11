@@ -261,7 +261,7 @@ struct HistoryView: View {
                             Text("No sessions yet")
                         }
                     } description: {
-                        Text("Log a workout, or pull to refresh.")
+                        Text("Your first finished exercise appears here, under its date. Every day in the file, newest first.")
                     }
                 }
             }

@@ -143,6 +143,17 @@ final class PendingWritesTests: XCTestCase {
         XCTAssertEqual(base, before)
     }
 
+    func testMergeAddsWholeSessionsOntoTheirDays() {
+        var base = twoDays()
+        let brought = [
+            Session(date: date("2026-09-01"), exercises: [entry("squat", [WorkSet(weight: 90, added: nil, reps: 5)])]),
+            Session(date: date("2026-09-07"), exercises: [entry("deadlift", [WorkSet(weight: 130, added: nil, reps: 5)])]),
+        ]
+        WorkoutParser.apply(PendingWrite(operation: .merge(sessions: brought), date: date("2026-09-07"), message: "Add 2 sessions"), to: &base)
+        XCTAssertEqual(base.map(\.dateString), ["2026-09-01", "2026-09-07", "2026-09-08"])
+        XCTAssertEqual(base[1].exercises.map(\.name), ["squat", "bench", "deadlift"], "joins the day already there")
+    }
+
     func testPendingWriteCodableRoundTrip() throws {
         let original = [
             PendingWrite(entry: entry("chin-ups", [WorkSet(weight: nil, added: 5, reps: 6)]),
@@ -151,6 +162,8 @@ final class PendingWritesTests: XCTestCase {
                          date: date("2026-08-02"), message: "Delete squat 2026-08-02"),
             PendingWrite(operation: .move(name: nil, to: date("2026-08-01")),
                          date: date("2026-08-02"), message: "Move 2026-08-02 to 2026-08-01"),
+            PendingWrite(operation: .merge(sessions: [Session(date: date("2026-07-30"), exercises: [entry("squat", [WorkSet(weight: 80, added: nil, reps: 5)])])]),
+                         date: date("2026-07-30"), message: "Add 1 session (2026-07-30)"),
         ]
         let data = try JSONEncoder().encode(original)
         let decoded = try JSONDecoder().decode([PendingWrite].self, from: data)

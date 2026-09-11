@@ -83,6 +83,12 @@ button each. The design rules it follows are the usual evidence-based ones
 deloads), stated as defaults your evidence brief overrides; Liftosaur's
 programme-design guide was the checklist for what to cover.
 
+**An empty log.** The first run says what the file is and shows one line of
+it; nothing is faked. Trained before? Tell the coach what you did in any form,
+from notes, another app or memory, and it writes the sessions as log lines with
+an **Add to my log** button: one commit, each lift on its day, and Trends has
+something to draw. New to lifting? It prescribes a first session instead.
+
 **Evidence.** `research.md` holds one finding per line, tagged `[R1]`, `[R2]`…
 The coach cites the tag when an answer rests on one, and the tag is a link to
 the entry. Hand it a paper, an abstract or a DOI and it writes the entry, with

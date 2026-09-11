@@ -519,14 +519,16 @@ struct LogView: View {
             let elapsed = restSeconds(at: context.date)
             let due = elapsed >= restTarget
             let label: String = due ? "READY" : "rest"
-            VStack(spacing: 12) {
-                HStack(spacing: 12) {
-                    VStack(alignment: .leading, spacing: 0) {
+            VStack(spacing: 8) {
+                HStack(spacing: 10) {
+                    // Label and clock on one line: the card is pinned over the
+                    // number pad, so every point of height comes out of that.
+                    HStack(alignment: .firstTextBaseline, spacing: 8) {
                         Text(label)
                             .font(.caption.weight(.heavy)).tracking(2)
                             .foregroundStyle(due ? Theme.onAccent : Color.secondary)
                         Text(clock(elapsed))
-                            .font(.system(size: 52, weight: .heavy))
+                            .font(.system(size: 34, weight: .heavy))
                             .fontWidth(.condensed)
                             .monospacedDigit()
                             .lineLimit(1)
@@ -542,16 +544,16 @@ struct LogView: View {
                     restTargetMenu
                     Button { restStart = Date() } label: {
                         Image(systemName: "arrow.counterclockwise")
-                            .font(.body.weight(.bold))
-                            .frame(width: 40, height: 40)
+                            .font(.subheadline.weight(.bold))
+                            .frame(width: 34, height: 34)
                             .background(.ultraThinMaterial, in: Circle())
                     }
                     .buttonStyle(.plain)
                     Button { restStart = nil } label: {
                         Image(systemName: "xmark")
-                            .font(.footnote.weight(.bold))
+                            .font(.caption.weight(.bold))
                             .foregroundStyle(.secondary)
-                            .frame(width: 40, height: 40)
+                            .frame(width: 34, height: 34)
                             .background(.ultraThinMaterial, in: Circle())
                     }
                     .buttonStyle(.plain)
@@ -562,7 +564,7 @@ struct LogView: View {
                     .tint(due ? Theme.onAccent : Theme.accent)
                     .animation(.linear(duration: 1), value: elapsed)
             }
-            .padding(16)
+            .padding(.horizontal, 14).padding(.vertical, 10)
             .frame(maxWidth: .infinity, alignment: .leading)
             // Due, the whole card goes solid accent. That's the "in your face":
             // not a label changing colour but the biggest thing on screen changing.
@@ -601,7 +603,7 @@ struct LogView: View {
                 .font(.footnote.weight(.heavy))
                 .monospacedDigit()
                 .padding(.horizontal, 10)
-                .frame(height: 44)
+                .frame(height: 34)
                 .background(.ultraThinMaterial, in: Capsule())
         }
         .buttonStyle(.plain)

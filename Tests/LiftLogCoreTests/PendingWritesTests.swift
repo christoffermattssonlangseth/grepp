@@ -92,12 +92,65 @@ final class PendingWritesTests: XCTestCase {
 
     // MARK: - Codable round-trip (queue is persisted as JSON)
 
+    // MARK: - move
+
+    private func twoDays() -> [Session] {
+        [Session(date: date("2026-09-07"), exercises: [
+            entry("squat", [WorkSet(weight: 100, added: nil, reps: 5)]),
+            entry("bench", [WorkSet(weight: 60, added: nil, reps: 8)]),
+         ]),
+         Session(date: date("2026-09-08"), exercises: [
+            entry("deadlift", [WorkSet(weight: 140, added: nil, reps: 5)]),
+         ])]
+    }
+
+    func testMoveOneExerciseToAnotherDay() {
+        var base = twoDays()
+        WorkoutParser.move("Bench", on: date("2026-09-07"), to: date("2026-09-08"), in: &base)
+        XCTAssertEqual(base.map(\.dateString), ["2026-09-07", "2026-09-08"])
+        XCTAssertEqual(base[0].exercises.map(\.name), ["squat"])
+        XCTAssertEqual(base[1].exercises.map(\.name), ["deadlift", "bench"], "appended to the day it joins")
+    }
+
+    func testMoveWholeDayMergesAndDropsTheEmptyDay() {
+        var base = twoDays()
+        WorkoutParser.move(nil, on: date("2026-09-08"), to: date("2026-09-07"), in: &base)
+        XCTAssertEqual(base.map(\.dateString), ["2026-09-07"])
+        XCTAssertEqual(base[0].exercises.map(\.name), ["squat", "bench", "deadlift"])
+    }
+
+    func testMoveToNewDateCreatesItInOrder() {
+        var base = twoDays()
+        WorkoutParser.move(nil, on: date("2026-09-08"), to: date("2026-09-01"), in: &base)
+        XCTAssertEqual(base.map(\.dateString), ["2026-09-01", "2026-09-07"])
+        XCTAssertEqual(base[0].exercises.map(\.name), ["deadlift"])
+    }
+
+    func testMoveReplacesSameLiftOnTargetDay() {
+        var base = twoDays()
+        base[1].exercises.append(entry("squat", [WorkSet(weight: 90, added: nil, reps: 5)]))
+        WorkoutParser.move("squat", on: date("2026-09-07"), to: date("2026-09-08"), in: &base)
+        XCTAssertEqual(base[1].exercises.map(\.name), ["deadlift", "squat"], "one squat, not two")
+        XCTAssertEqual(base[1].exercises[1].sets.first?.weight, 100, "the moved one wins")
+    }
+
+    func testMoveSameDayOrMissingIsNoOp() {
+        var base = twoDays()
+        let before = base
+        WorkoutParser.move("squat", on: date("2026-09-07"), to: date("2026-09-07"), in: &base)
+        WorkoutParser.move("curl", on: date("2026-09-07"), to: date("2026-09-08"), in: &base)
+        WorkoutParser.move(nil, on: date("2026-09-09"), to: date("2026-09-08"), in: &base)
+        XCTAssertEqual(base, before)
+    }
+
     func testPendingWriteCodableRoundTrip() throws {
         let original = [
             PendingWrite(entry: entry("chin-ups", [WorkSet(weight: nil, added: 5, reps: 6)]),
                          date: date("2026-08-01"), message: "Log chin-ups 2026-08-01"),
             PendingWrite(operation: .delete(name: "squat"),
                          date: date("2026-08-02"), message: "Delete squat 2026-08-02"),
+            PendingWrite(operation: .move(name: nil, to: date("2026-08-01")),
+                         date: date("2026-08-02"), message: "Move 2026-08-02 to 2026-08-01"),
         ]
         let data = try JSONEncoder().encode(original)
         let decoded = try JSONDecoder().decode([PendingWrite].self, from: data)

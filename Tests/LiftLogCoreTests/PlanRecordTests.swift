@@ -11,6 +11,23 @@ final class PlanRecordTests: XCTestCase {
         ExerciseEntry(name: name, sets: sets(tokens))
     }
 
+    // MARK: - moving with the log
+
+    func testMoveFollowsALiftOrAWholeDay() {
+        var plans: [PlanRecord] = []
+        plans.prescribe([entry("squat", "100x5 100x5"), entry("bench", "60x8")], on: date("2026-09-07"))
+        plans.complete(entry("squat", "100x5 100x5"), on: date("2026-09-07"))
+        plans.complete(entry("bench", "60x8"), on: date("2026-09-07"))
+
+        plans.move(name: "Squat", from: date("2026-09-07"), to: date("2026-09-06"))
+        XCTAssertEqual(plans.first { $0.name == "squat" }?.done, date("2026-09-06"))
+        XCTAssertEqual(plans.first { $0.name == "bench" }?.done, date("2026-09-07"), "the other lift stays")
+
+        plans.move(name: nil, from: date("2026-09-07"), to: date("2026-09-05"))
+        XCTAssertEqual(plans.first { $0.name == "bench" }?.done, date("2026-09-05"))
+        XCTAssertEqual(plans.first { $0.name == "squat" }?.done, date("2026-09-06"), "already moved, not on that day")
+    }
+
     // MARK: - verdicts
 
     private func verdict(plan: String, did: String) -> String? {

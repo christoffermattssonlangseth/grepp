@@ -13,6 +13,9 @@ final class MuscleMapTests: XCTestCase {
         XCTAssertEqual(map.credits(for: "chin-ups"), [.back: 1, .biceps: 0.5])
         XCTAssertEqual(map.credits(for: "bench-press"), [.chest: 1, .triceps: 0.5, .frontDelts: 0.5])
         XCTAssertEqual(map.credits(for: "lateral-raise"), [.sideDelts: 1])
+        XCTAssertEqual(map.credits(for: "over-head-press"), [.frontDelts: 1, .sideDelts: 1, .triceps: 0.5],
+                       "a press is a full set for both delt heads")
+        XCTAssertEqual(map.share(for: "over-head-press")?.primary, .frontDelts)
         XCTAssertEqual(map.credits(for: "seal-row"), [.back: 1, .biceps: 0.5, .rearDelts: 0.5])
         XCTAssertNil(map.credits(for: "sled-push"), "unknown lifts count nowhere")
     }
@@ -35,12 +38,32 @@ final class MuscleMapTests: XCTestCase {
         XCTAssertFalse(map.isOverridden("squat"))
 
         let raw = map.rawValue
-        XCTAssertEqual(raw, "seal-row=chest;sled-push=quads+core")
+        XCTAssertEqual(raw, "seal-row=chest:1;sled-push=quads:1+core:0.5")
         XCTAssertEqual(MuscleMap(rawValue: raw), map)
+        XCTAssertEqual(MuscleMap(rawValue: "seal-row=chest;sled-push=quads+core"), map,
+                       "the earlier form, without shares, still reads")
 
         map.set([], for: "seal-row")
         XCTAssertEqual(map.credits(for: "seal-row"), [.back: 1, .biceps: 0.5, .rearDelts: 0.5], "cleared — back to the table")
         XCTAssertEqual(MuscleMap(rawValue: "junk;x=;y=nothing")?.overrides, [:])
+    }
+
+    func testAnyShareCanBeSetAndTheTableDefaultIsForgotten() {
+        var map = MuscleMap()
+        map.set(MuscleMap.Share(weights: [.chest: 1, .triceps: 0.75, .frontDelts: 0.25, .core: 0]), for: "bench-press")
+        XCTAssertEqual(map.credits(for: "bench"), [.chest: 1, .triceps: 0.75, .frontDelts: 0.25], "alias sees the override")
+        XCTAssertEqual(map.share(for: "bench-press")?.summary, "chest 1 · triceps ¾ · front delts ¼")
+        XCTAssertEqual(map.rawValue, "bench-press=chest:1+triceps:0.75+front delts:0.25")
+        XCTAssertEqual(MuscleMap(rawValue: map.rawValue), map)
+
+        map.set(MuscleMap.Share.lift(.chest, half: .triceps, .frontDelts), for: "bench-press")
+        XCTAssertFalse(map.isOverridden("bench-press"), "exactly the table's shares is no override")
+
+        map.set(MuscleMap.Share(weights: [.sideDelts: 1, .frontDelts: 0.75]), for: "arnold-press")
+        XCTAssertEqual(map.share(for: "arnold-press")?.primary, .sideDelts, "the biggest share reads progress")
+        XCTAssertEqual(map.share(for: "arnold-press")?.ordered, [.sideDelts, .frontDelts], "and comes first")
+        map.set(nil as MuscleMap.Share?, for: "arnold-press")
+        XCTAssertNil(map.credits(for: "arnold-press"))
     }
 
     func testSetsPerMuscleForASession() {

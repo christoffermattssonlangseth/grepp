@@ -2,6 +2,7 @@ import SwiftUI
 
 struct ContentView: View {
     @EnvironmentObject var store: Store
+    @State private var showingFirstRun = false
 
     var body: some View {
         TabView(selection: $store.selectedTab) {
@@ -22,6 +23,11 @@ struct ContentView: View {
                 .tag(4)
         }
         .tint(Theme.accent)
+        // A fresh install: ask where the log lives before anything tries to load it.
+        .onAppear { showingFirstRun = store.needsSetup }
+        .fullScreenCover(isPresented: $showingFirstRun) {
+            FirstRunView().environmentObject(store)
+        }
     }
 }
 

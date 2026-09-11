@@ -23,7 +23,10 @@ enum MuscleGroup: String, CaseIterable, Codable, Identifiable {
 /// set, half a triceps set and half a front-delt set; squat a quad set and
 /// half a glute set; a row a back set, half biceps, half rear delts. That's
 /// the convention weekly set counts are usually kept in, and it stops a bench
-/// day reading as zero triceps work. Isolation lifts count once, for one muscle.
+/// day reading as zero triceps work. A lift can be *for* more than one
+/// muscle: an overhead press is a full set for the front and the side delts
+/// both, since the side head works as hard as the front in it. Isolation
+/// lifts count once, for one muscle.
 ///
 /// The built-in table covers the exercise library and the usual aliases. A
 /// lift it doesn't know is *unmapped* and counted nowhere — shown as such
@@ -31,49 +34,151 @@ enum MuscleGroup: String, CaseIterable, Codable, Identifiable {
 struct MuscleMap: Equatable, RawRepresentable {
     typealias Credits = [MuscleGroup: Double]
 
-    /// The lifter's own assignments: primary first, then the halves.
-    var overrides: [String: [MuscleGroup]]
+    /// What a lift is for, and what it also trains: each muscle with the
+    /// share of a set it gets. The table uses 1 and ½; a lifter can set any
+    /// share from Settings — a quarter for a muscle that only helps, three
+    /// quarters for one that nearly limits the lift.
+    struct Share: Equatable {
+        struct Part: Equatable {
+            var group: MuscleGroup
+            var weight: Double
+        }
+        /// In the order they're shown; the first is what the lift is for.
+        var parts: [Part]
 
-    init(overrides: [String: [MuscleGroup]] = [:]) { self.overrides = overrides }
+        /// The muscle a lift's own progress is read against: the heaviest
+        /// share, the first of them on a tie.
+        var primary: MuscleGroup? {
+            guard let top = parts.map(\.weight).max() else { return nil }
+            return parts.first { $0.weight == top }?.group
+        }
 
-    // MARK: - persistence ("seal-row=back+biceps;sled-push=quads")
+        /// The muscles in order — the lifter's list form.
+        var ordered: [MuscleGroup] { parts.map(\.group) }
+
+        func weight(of group: MuscleGroup) -> Double {
+            parts.first { $0.group == group }?.weight ?? 0
+        }
+
+        /// One muscle it's for, the rest half.
+        static func lift(_ full: MuscleGroup, half: MuscleGroup...) -> Share {
+            Share(full: [full], half: half)
+        }
+
+        static func lift(full: [MuscleGroup], half: [MuscleGroup]) -> Share {
+            Share(full: full, half: half)
+        }
+
+        /// A lifter's ordered list: the first is what it's for, the rest half.
+        init(_ groups: [MuscleGroup]) {
+            self.init(full: Array(groups.prefix(1)), half: Array(groups.dropFirst()))
+        }
+
+        init(full: [MuscleGroup], half: [MuscleGroup]) {
+            self.init(parts: full.map { Part(group: $0, weight: 1) } + half.map { Part(group: $0, weight: 0.5) })
+        }
+
+        /// Any weights: biggest share first, body order on a tie, zeros dropped.
+        init(weights: Credits) {
+            let parts = MuscleGroup.ordered.compactMap { g in
+                weights[g].flatMap { $0 > 0 ? Part(group: g, weight: $0) : nil }
+            }
+            // A stable sort: equal shares keep body order.
+            self.init(parts: parts.enumerated().sorted {
+                $0.element.weight > $1.element.weight
+                    || ($0.element.weight == $1.element.weight && $0.offset < $1.offset)
+            }.map(\.element))
+        }
+
+        init(parts: [Part]) {
+            // One entry per muscle: the first mention wins.
+            var seen = Set<MuscleGroup>()
+            self.parts = parts.filter { seen.insert($0.group).inserted && $0.weight > 0 }
+        }
+
+        var credits: Credits {
+            Dictionary(parts.map { ($0.group, $0.weight) }, uniquingKeysWith: { a, _ in a })
+        }
+
+        var isEmpty: Bool { parts.isEmpty }
+
+        /// A weight as stored: "1", "0.5", "0.25".
+        static func format(_ weight: Double) -> String {
+            weight == weight.rounded() ? String(Int(weight)) : String(format: "%g", weight)
+        }
+
+        /// A weight as shown: "1", "½", "¼", "¾", else the number.
+        static func label(_ weight: Double) -> String {
+            switch weight {
+            case 0.25: return "¼"
+            case 0.5: return "½"
+            case 0.75: return "¾"
+            default: return format(weight)
+            }
+        }
+
+        /// "chest 1 · triceps ½ · front delts ½"
+        var summary: String {
+            parts.map { "\($0.group.rawValue) \(Share.label($0.weight))" }.joined(separator: " · ")
+        }
+    }
+
+    /// The lifter's own assignments.
+    var overrides: [String: Share]
+
+    init(overrides: [String: Share] = [:]) { self.overrides = overrides }
+
+    // MARK: - persistence
+    //
+    // "seal-row=back:1+biceps:0.5;sled-push=quads:1+core:0.25". A muscle with
+    // no share written — how earlier versions stored it — is a full set for
+    // the first and half for the rest.
 
     init?(rawValue: String) {
-        var overrides: [String: [MuscleGroup]] = [:]
+        var overrides: [String: Share] = [:]
         for entry in rawValue.split(separator: ";") {
             let kv = entry.split(separator: "=")
             guard kv.count == 2 else { continue }
-            let groups = kv[1].split(separator: "+").compactMap { MuscleGroup(rawValue: String($0)) }
-            guard !groups.isEmpty else { continue }
-            overrides[MuscleMap.key(String(kv[0]))] = groups
+            var parts: [Share.Part] = []
+            for (i, item) in kv[1].split(separator: "+").enumerated() {
+                let gw = item.split(separator: ":", maxSplits: 1)
+                guard let group = MuscleGroup(rawValue: String(gw[0])) else { continue }
+                let weight = gw.count == 2 ? Double(gw[1]) ?? 0 : (i == 0 ? 1 : 0.5)
+                parts.append(Share.Part(group: group, weight: weight))
+            }
+            let share = Share(parts: parts)
+            guard !share.isEmpty else { continue }
+            overrides[MuscleMap.key(String(kv[0]))] = share
         }
         self.overrides = overrides
     }
 
     var rawValue: String {
-        overrides.keys.sorted()
-            .map { "\($0)=\((overrides[$0] ?? []).map(\.rawValue).joined(separator: "+"))" }
-            .joined(separator: ";")
+        overrides.keys.sorted().map { key in
+            let parts = (overrides[key]?.parts ?? []).map { "\($0.group.rawValue):\(Share.format($0.weight))" }
+            return "\(key)=\(parts.joined(separator: "+"))"
+        }
+        .joined(separator: ";")
     }
 
     // MARK: - lookup
 
     /// The credits for an exercise; nil when it's unmapped.
-    func credits(for exercise: String) -> Credits? {
-        let key = MuscleMap.key(exercise)
-        if let groups = overrides[key] { return MuscleMap.credits(groups) }
-        if let groups = MuscleMap.builtIn[key] { return MuscleMap.credits(groups) }
-        if let alias = MuscleMap.aliases[key], let groups = MuscleMap.builtIn[alias] {
-            return MuscleMap.credits(groups)
-        }
-        return nil
-    }
+    func credits(for exercise: String) -> Credits? { share(for: exercise)?.credits }
 
     /// What the lifter has said, or what the table says — for showing in Settings.
-    func groups(for exercise: String) -> [MuscleGroup]? {
+    func share(for exercise: String) -> Share? {
         let key = MuscleMap.key(exercise)
-        return overrides[key] ?? MuscleMap.builtIn[key]
-            ?? MuscleMap.aliases[key].flatMap { MuscleMap.builtIn[$0] }
+        // An override on the table's name covers the spellings that point to it.
+        return overrides[key]
+            ?? MuscleMap.aliases[key].flatMap { overrides[$0] }
+            ?? MuscleMap.builtInShare(for: exercise)
+    }
+
+    /// The table's answer alone, aliases resolved — what "reset" goes back to.
+    static func builtInShare(for exercise: String) -> Share? {
+        let key = MuscleMap.key(exercise)
+        return builtIn[key] ?? aliases[key].flatMap { builtIn[$0] }
     }
 
     func isOverridden(_ exercise: String) -> Bool { overrides[MuscleMap.key(exercise)] != nil }
@@ -81,10 +186,23 @@ struct MuscleMap: Equatable, RawRepresentable {
     /// Assign, or clear with an empty list. The first group is the lift's own;
     /// the rest count half.
     mutating func set(_ groups: [MuscleGroup], for exercise: String) {
+        set(groups.isEmpty ? nil : Share(groups), for: exercise)
+    }
+
+    /// Assign any shares, or clear with nil or an empty share. Setting exactly
+    /// what the table says is a clear too: no point remembering the default.
+    mutating func set(_ share: Share?, for exercise: String) {
         let key = MuscleMap.key(exercise)
         guard !key.isEmpty else { return }
-        if groups.isEmpty { overrides.removeValue(forKey: key) } else { overrides[key] = groups }
+        if let share, !share.isEmpty, share != MuscleMap.builtInShare(for: exercise) {
+            overrides[key] = share
+        } else {
+            overrides.removeValue(forKey: key)
+        }
     }
+
+    /// Every lift the table knows, by its canonical name, in alphabetical order.
+    static var tableExercises: [String] { builtIn.keys.sorted() }
 
     /// Exercises in these sessions that count nowhere yet, most recent first.
     func unmapped(in sessions: [Session]) -> [String] {
@@ -142,74 +260,66 @@ struct MuscleMap: Equatable, RawRepresentable {
             .replacingOccurrences(of: "_", with: "-")
     }
 
-    private static func credits(_ groups: [MuscleGroup]) -> Credits {
-        var credits: Credits = [:]
-        for (i, group) in groups.enumerated() where credits[group] == nil {
-            credits[group] = i == 0 ? 1 : 0.5
-        }
-        return credits
-    }
-
-    /// Primary first, then what counts half.
-    static let builtIn: [String: [MuscleGroup]] = [
+    /// What each lift is for, and what it also trains.
+    static let builtIn: [String: Share] = [
         // Legs
-        "squat": [.quads, .glutes],
-        "front-squat": [.quads, .glutes],
-        "hack-squat": [.quads, .glutes],
-        "leg-press": [.quads, .glutes],
-        "lunge": [.quads, .glutes],
-        "bulgarian-split-squat": [.quads, .glutes],
-        "leg-extension": [.quads],
-        "romanian-deadlift": [.hamstrings, .glutes],
-        "stiff-leg-deadlift": [.hamstrings, .glutes],
-        "good-morning": [.hamstrings, .back],
-        "leg-curl": [.hamstrings],
-        "deadlift": [.hamstrings, .glutes, .back],
-        "sumo-deadlift": [.glutes, .hamstrings, .quads],
-        "trap-bar-deadlift": [.quads, .glutes, .back],
-        "hip-thrust": [.glutes, .hamstrings],
-        "glute-bridge": [.glutes, .hamstrings],
-        "calf-raise": [.calves],
+        "squat": .lift(.quads, half: .glutes),
+        "front-squat": .lift(.quads, half: .glutes),
+        "hack-squat": .lift(.quads, half: .glutes),
+        "leg-press": .lift(.quads, half: .glutes),
+        "lunge": .lift(.quads, half: .glutes),
+        "bulgarian-split-squat": .lift(.quads, half: .glutes),
+        "leg-extension": .lift(.quads),
+        "romanian-deadlift": .lift(.hamstrings, half: .glutes),
+        "stiff-leg-deadlift": .lift(.hamstrings, half: .glutes),
+        "good-morning": .lift(.hamstrings, half: .back),
+        "leg-curl": .lift(.hamstrings),
+        "deadlift": .lift(.hamstrings, half: .glutes, .back),
+        "sumo-deadlift": .lift(.glutes, half: .hamstrings, .quads),
+        "trap-bar-deadlift": .lift(.quads, half: .glutes, .back),
+        "hip-thrust": .lift(.glutes, half: .hamstrings),
+        "glute-bridge": .lift(.glutes, half: .hamstrings),
+        "calf-raise": .lift(.calves),
         // Push
-        "bench-press": [.chest, .triceps, .frontDelts],
-        "incline-bench-press": [.chest, .frontDelts, .triceps],
-        "dumbbell-bench-press": [.chest, .triceps, .frontDelts],
-        "close-grip-bench-press": [.triceps, .chest],
-        "push-ups": [.chest, .triceps],
-        "dips": [.chest, .triceps],
-        "chest-fly": [.chest],
-        "over-head-press": [.frontDelts, .triceps, .sideDelts],
-        "push-press": [.frontDelts, .triceps, .sideDelts],
-        "dumbbell-shoulder-press": [.frontDelts, .triceps, .sideDelts],
-        "lateral-raise": [.sideDelts],
-        "front-raise": [.frontDelts],
-        "tricep-pushdown": [.triceps],
-        "skull-crusher": [.triceps],
-        "overhead-tricep-extension": [.triceps],
+        "bench-press": .lift(.chest, half: .triceps, .frontDelts),
+        "incline-bench-press": .lift(.chest, half: .frontDelts, .triceps),
+        "dumbbell-bench-press": .lift(.chest, half: .triceps, .frontDelts),
+        "close-grip-bench-press": .lift(.triceps, half: .chest),
+        "push-ups": .lift(.chest, half: .triceps),
+        "dips": .lift(.chest, half: .triceps),
+        "chest-fly": .lift(.chest),
+        "over-head-press": .lift(full: [.frontDelts, .sideDelts], half: [.triceps]),
+        "push-press": .lift(full: [.frontDelts, .sideDelts], half: [.triceps]),
+        "dumbbell-shoulder-press": .lift(full: [.frontDelts, .sideDelts], half: [.triceps]),
+        "lateral-raise": .lift(.sideDelts),
+        "front-raise": .lift(.frontDelts),
+        "tricep-pushdown": .lift(.triceps),
+        "skull-crusher": .lift(.triceps),
+        "overhead-tricep-extension": .lift(.triceps),
         // Pull
-        "barbell-row": [.back, .biceps, .rearDelts],
-        "pendlay-row": [.back, .biceps, .rearDelts],
-        "seal-row": [.back, .biceps, .rearDelts],
-        "dumbbell-row": [.back, .biceps, .rearDelts],
-        "cable-row": [.back, .biceps, .rearDelts],
-        "chest-supported-row": [.back, .biceps, .rearDelts],
-        "upright-row": [.sideDelts, .back],
-        "pull-ups": [.back, .biceps],
-        "chin-ups": [.back, .biceps],
-        "lat-pulldown": [.back, .biceps],
-        "face-pull": [.rearDelts, .back],
-        "rear-delt-fly": [.rearDelts],
-        "shrug": [.back],
-        "dumbbell-curl": [.biceps],
-        "barbell-curl": [.biceps],
-        "hammer-curl": [.biceps],
-        "preacher-curl": [.biceps],
+        "barbell-row": .lift(.back, half: .biceps, .rearDelts),
+        "pendlay-row": .lift(.back, half: .biceps, .rearDelts),
+        "seal-row": .lift(.back, half: .biceps, .rearDelts),
+        "dumbbell-row": .lift(.back, half: .biceps, .rearDelts),
+        "cable-row": .lift(.back, half: .biceps, .rearDelts),
+        "chest-supported-row": .lift(.back, half: .biceps, .rearDelts),
+        "upright-row": .lift(.sideDelts, half: .back),
+        "pull-ups": .lift(.back, half: .biceps),
+        "chin-ups": .lift(.back, half: .biceps),
+        "lat-pulldown": .lift(.back, half: .biceps),
+        "face-pull": .lift(.rearDelts, half: .back),
+        "rear-delt-fly": .lift(.rearDelts),
+        "shrug": .lift(.back),
+        "dumbbell-curl": .lift(.biceps),
+        "barbell-curl": .lift(.biceps),
+        "hammer-curl": .lift(.biceps),
+        "preacher-curl": .lift(.biceps),
         // Core
-        "plank": [.core],
-        "hanging-leg-raise": [.core],
-        "ab-wheel": [.core],
-        "crunch": [.core],
-        "cable-crunch": [.core],
+        "plank": .lift(.core),
+        "hanging-leg-raise": .lift(.core),
+        "ab-wheel": .lift(.core),
+        "crunch": .lift(.core),
+        "cable-crunch": .lift(.core),
     ]
 
     /// The way people actually write them in a log.

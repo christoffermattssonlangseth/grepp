@@ -22,7 +22,7 @@ final class StravaService: ObservableObject {
     @Published private(set) var isConfigured = false
 
     private static let service = "com.liftlog.strava"
-    private static let redirect = "liftlog://localhost/strava"
+    private static let redirect = "grepp://localhost/strava"
     private static let scope = "activity:write"
 
     struct Tokens: Codable {
@@ -119,7 +119,7 @@ final class StravaService: ObservableObject {
             .init(name: "approval_prompt", value: "auto"),
             .init(name: "scope", value: Self.scope),
         ]
-        let callback = try await WebAuth.run(url: parts.url!, scheme: "liftlog")
+        let callback = try await WebAuth.run(url: parts.url!, scheme: "grepp")
         guard let code = URLComponents(url: callback, resolvingAgainstBaseURL: false)?
                 .queryItems?.first(where: { $0.name == "code" })?.value else {
             throw StravaError.cancelled
@@ -238,10 +238,14 @@ private enum WebAuth {
     private final class Anchor: NSObject, ASWebAuthenticationPresentationContextProviding {
         static let shared = Anchor()
         func presentationAnchor(for session: ASWebAuthenticationSession) -> ASPresentationAnchor {
-            UIApplication.shared.connectedScenes
-                .compactMap { $0 as? UIWindowScene }
-                .flatMap(\.windows)
-                .first { $0.isKeyWindow } ?? ASPresentationAnchor()
+            let scenes = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
+            if let key = scenes.compactMap(\.keyWindow).first { return key }
+            // The sheet is only ever asked for from a button on screen, so a
+            // window exists; without one there is nothing to present from anyway.
+            guard let window = scenes.flatMap(\.windows).first else {
+                preconditionFailure("Strava sign-in needs a window")
+            }
+            return window
         }
     }
 }

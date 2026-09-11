@@ -10,6 +10,9 @@ struct PendingWrite: Codable, Identifiable, Equatable {
     enum Operation: Codable, Equatable {
         case upsert(ExerciseEntry)     // add or replace an exercise
         case delete(name: String)      // remove an exercise (and the day if it empties)
+        /// Move one exercise, or the whole day when `name` is nil, to another
+        /// date. Logged on the wrong day, or the morning after.
+        case move(name: String?, to: Date)
     }
 
     var id = UUID()
@@ -35,6 +38,7 @@ struct PendingWrite: Codable, Identifiable, Equatable {
         switch operation {
         case .upsert(let entry): return entry.name
         case .delete(let name): return name
+        case .move(let name, _): return name ?? "the day"
         }
     }
 }
@@ -70,11 +74,28 @@ extension WorkoutParser {
         if base[idx].exercises.isEmpty { base.remove(at: idx) }
     }
 
+    /// Move an exercise — or every exercise of the day, when `name` is nil —
+    /// from one date to another. Merges into the target day like a fresh log
+    /// would, so a same-named lift already there is replaced. A no-op when the
+    /// dates are the same day or nothing matches.
+    static func move(_ name: String?, on date: Date, to target: Date, in base: inout [Session]) {
+        let key = Session.dateFormatter.string(from: date)
+        guard Session.dateFormatter.string(from: target) != key,
+              let idx = base.firstIndex(where: { $0.dateString == key }) else { return }
+        let moving = base[idx].exercises.filter { ex in
+            name.map { ex.name.caseInsensitiveCompare($0) == .orderedSame } ?? true
+        }
+        guard !moving.isEmpty else { return }
+        for ex in moving { remove(ex.name, on: date, from: &base) }
+        for ex in moving { merge(ex, on: target, into: &base) }
+    }
+
     /// Apply one pending write to a session array.
     static func apply(_ write: PendingWrite, to base: inout [Session]) {
         switch write.operation {
         case .upsert(let entry): merge(entry, on: write.date, into: &base)
         case .delete(let name): remove(name, on: write.date, from: &base)
+        case .move(let name, let target): move(name, on: write.date, to: target, in: &base)
         }
     }
 

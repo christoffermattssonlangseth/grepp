@@ -12,6 +12,10 @@ nonisolated struct SameAgainIntent: LiveActivityIntent {
         "Lands the next planned set, or repeats the last one, and restarts the rest clock.")
     static var openAppWhenRun = false
     static var isDiscoverable = false
+    /// Runs from the lock screen without unlocking: the default policy wants
+    /// authentication, which on a locked phone turns the tap into nothing.
+    /// Landing one more set of the lift you're already doing is fine unlocked.
+    static var authenticationPolicy: IntentAuthenticationPolicy = .alwaysAllowed
 
     @MainActor static var handler: (() -> Void)?
 

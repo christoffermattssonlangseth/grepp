@@ -206,7 +206,7 @@ struct HistoryView: View {
                 Button("Cancel", role: .cancel) {}
             }
             .sheet(item: $pendingMove) { target in
-                MoveSheet(target: target.name.map(Theme.readableName) ?? "the whole day", from: target.date) { newDate in
+                MoveSheet(target: target.name.map { Theme.readableName($0) } ?? "the whole day", from: target.date) { newDate in
                     Task { await store.move(exercise: target.name, on: target.date, to: newDate) }
                 }
             }

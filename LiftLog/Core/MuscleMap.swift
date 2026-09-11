@@ -78,11 +78,16 @@ struct MuscleMap: Equatable, RawRepresentable {
             self.init(parts: full.map { Part(group: $0, weight: 1) } + half.map { Part(group: $0, weight: 0.5) })
         }
 
-        /// Any weights, in body order, zeros dropped.
+        /// Any weights: biggest share first, body order on a tie, zeros dropped.
         init(weights: Credits) {
-            self.init(parts: MuscleGroup.ordered.compactMap { g in
+            let parts = MuscleGroup.ordered.compactMap { g in
                 weights[g].flatMap { $0 > 0 ? Part(group: g, weight: $0) : nil }
-            })
+            }
+            // A stable sort: equal shares keep body order.
+            self.init(parts: parts.enumerated().sorted {
+                $0.element.weight > $1.element.weight
+                    || ($0.element.weight == $1.element.weight && $0.offset < $1.offset)
+            }.map(\.element))
         }
 
         init(parts: [Part]) {
@@ -163,7 +168,11 @@ struct MuscleMap: Equatable, RawRepresentable {
 
     /// What the lifter has said, or what the table says — for showing in Settings.
     func share(for exercise: String) -> Share? {
-        overrides[MuscleMap.key(exercise)] ?? MuscleMap.builtInShare(for: exercise)
+        let key = MuscleMap.key(exercise)
+        // An override on the table's name covers the spellings that point to it.
+        return overrides[key]
+            ?? MuscleMap.aliases[key].flatMap { overrides[$0] }
+            ?? MuscleMap.builtInShare(for: exercise)
     }
 
     /// The table's answer alone, aliases resolved — what "reset" goes back to.

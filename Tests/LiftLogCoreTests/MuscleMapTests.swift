@@ -61,6 +61,7 @@ final class MuscleMapTests: XCTestCase {
 
         map.set(MuscleMap.Share(weights: [.sideDelts: 1, .frontDelts: 0.75]), for: "arnold-press")
         XCTAssertEqual(map.share(for: "arnold-press")?.primary, .sideDelts, "the biggest share reads progress")
+        XCTAssertEqual(map.share(for: "arnold-press")?.ordered, [.sideDelts, .frontDelts], "and comes first")
         map.set(nil as MuscleMap.Share?, for: "arnold-press")
         XCTAssertNil(map.credits(for: "arnold-press"))
     }

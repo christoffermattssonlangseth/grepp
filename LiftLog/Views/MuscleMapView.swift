@@ -10,7 +10,7 @@ struct MuscleMapView: View {
 
     /// Lifts from the log first, then the rest of the table.
     private var logged: [String] {
-        store.knownExercises.map(MuscleMap.key).sorted()
+        store.knownExercises.map { MuscleMap.key($0) }.sorted()
     }
     private var table: [String] {
         let seen = Set(logged)

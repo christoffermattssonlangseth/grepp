@@ -11,15 +11,11 @@ import Foundation
 ///    (Product ▸ Scheme ▸ Edit Scheme ▸ Run ▸ Arguments ▸ Environment Variables),
 ///    which is stored in `xcuserdata/` and already gitignored. Handy in the
 ///    Simulator; it does not exist for an app launched from the home screen.
-/// 3. **`Secrets.plist`** — an untracked file in `LiftLog/` with a single
-///    `ANTHROPIC_API_KEY` string. Gitignored, but note it *is* copied into the
-///    app bundle, so treat it as dev-only convenience: a key in a bundle is
-///    extractable from the binary exactly like a hardcoded one.
 ///
-/// All three are development-grade: a key that reaches the app can be pulled back
-/// out of the binary. Before this app goes to anyone else, put a backend in front
-/// that holds the key server-side and forwards requests, and point
-/// `ClaudeService` at it instead of `api.anthropic.com`.
+/// Nothing is read from the app bundle: a file in a bundle is readable by anyone
+/// with the binary, so `Secrets.plist` is kept out of the build on purpose
+/// (an exception in the project), and a shipped build has only the Keychain.
+/// Every lifter brings their own key; the developer never holds one.
 enum CoachCredentials {
     static let account = "anthropic_api_key"
 
@@ -51,13 +47,6 @@ enum CoachCredentials {
             return env.trimmingCharacters(in: .whitespacesAndNewlines)
         }
 
-        if let url = Bundle.main.url(forResource: "Secrets", withExtension: "plist"),
-           let data = try? Data(contentsOf: url),
-           let plist = try? PropertyListSerialization.propertyList(from: data, format: nil) as? [String: Any],
-           let key = plist["ANTHROPIC_API_KEY"] as? String,
-           !key.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            return key.trimmingCharacters(in: .whitespacesAndNewlines)
-        }
 
         return nil
     }

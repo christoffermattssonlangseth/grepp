@@ -502,10 +502,11 @@ struct LogView: View {
                              keyboard: .numberPad, focusValue: .reps)
                 }
 
-                // What to load, the moment there's a weight in the field.
-                if !isBodyweight, let target = parsedWeight,
-                   let load = PlateMath.load(target, bar: effectiveBar, inventory: inventory) {
-                    plateLine(load)
+                // What to load, the moment there's a weight in the field — and the
+                // bar menu with it, even when the weight is under the bar, since
+                // that is exactly when a lighter bar needs picking.
+                if !isBodyweight, let target = parsedWeight {
+                    plateLine(PlateMath.load(target, bar: effectiveBar, inventory: inventory))
                 }
 
                 // The one thing you do most on this screen, so it's the one
@@ -840,14 +841,16 @@ struct LogView: View {
     /// "per side  25 · 5 · 2.5 · 1.25" for the weight in the field, or "empty bar".
     /// When the exact weight can't be made from a standard set, the nearest load
     /// below and what it actually weighs: "per side  25 · 5 · 2.5  ≈ 85".
-    private func plateLine(_ load: PlateMath.Load) -> some View {
+    private func plateLine(_ load: PlateMath.Load?) -> some View {
         let text: String
-        if load.perSide.isEmpty {
+        if let load, load.perSide.isEmpty {
             text = "empty bar"
-        } else {
+        } else if let load {
             let plates = load.perSide.map { PlateMath.label($0) }.joined(separator: " · ")
             let approx = load.isApproximate ? "  ≈ \(PlateMath.label(load.total))" : ""
             text = "per side  " + plates + approx
+        } else {
+            text = "lighter than the bar"
         }
         return HStack(spacing: 8) {
             Label {

@@ -92,6 +92,14 @@ final class CoachService: ObservableObject {
     // the conversation. Saved when a message lands or finishes, never per
     // streamed chunk.
     private let chatKey = "coach_chat"
+    private let seenKey = "coach_seen_log"
+
+    /// The log lines as they stood at the last send, so the next send can say
+    /// what's new. Kept across launches with the chat; cleared with it.
+    private var seenLines: Set<String> {
+        get { Set(UserDefaults.standard.stringArray(forKey: seenKey) ?? []) }
+        set { UserDefaults.standard.set(Array(newValue), forKey: seenKey) }
+    }
     private struct Saved: Codable {
         var messages: [CoachMessage]
         var mode: CoachContext.Mode
@@ -142,6 +150,7 @@ final class CoachService: ObservableObject {
         task?.cancel()
         task = nil
         messages = []
+        seenLines = []
         errorText = nil
         contextNote = nil
         isResponding = false
@@ -191,14 +200,21 @@ final class CoachService: ObservableObject {
         // Rebuilt per question rather than pinned at the start of the chat, so a
         // workout logged mid-conversation is picked up on the next answer.
         let excerpt = CoachContext.excerpt(from: sessions)
-        let system = CoachContext.systemPrompt(for: excerpt, brief: brief, mode: mode)
+        let system = CoachContext.systemPrompt(for: excerpt, brief: brief, mode: mode,
+                                               digest: mode == .coaching ? CoachContext.liftDigest(from: sessions) : nil)
+        // What entered the log since the last answer in this chat — lines the
+        // model has not been told about, whatever it said before them.
+        let lines = Set(WorkoutParser.serialize(sessions).split(separator: "\n").map(String.init).filter { !$0.isEmpty })
+        let newLines = messages.isEmpty ? [] : lines.subtracting(seenLines).sorted()
+        seenLines = lines
         // The lift in the lifter's hands right now, which the log doesn't have
         // yet, and how recent prescriptions went. Sent as its own uncached block
         // so the log's cache holds.
         var live = mode == .coaching
             ? CoachContext.liveNote(draft: draft, plans: plans,
                                     weeklySets: muscleMap.weeklySets(weeks: 4, in: sessions),
-                                    unmapped: muscleMap.unmapped(in: sessions))
+                                    unmapped: muscleMap.unmapped(in: sessions),
+                                    newLines: newLines)
             : nil
         if lookup != nil { live = [live, CoachContext.lookupBrief].compactMap { $0 }.joined(separator: "\n\n") }
         // Say what's in play — otherwise there's no way to tell from the answers

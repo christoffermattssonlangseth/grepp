@@ -21,8 +21,16 @@ enum RestLiveActivity {
                                                         end: end, nextUp: nextUp, landLabel: landLabel)
         let content = ActivityContent(state: state, staleDate: end)
 
-        if let current = Activity<RestActivityAttributes>.activities.first(where: { $0.activityState == .active }) {
+        // Past its stale date — the countdown reached READY — the activity is
+        // "stale", not "active", and it is still ours to update: the next set's
+        // rest goes into it. Asking for a new one instead is refused while the
+        // old one is up, which left READY on the lock screen all session.
+        let live = Activity<RestActivityAttributes>.activities.filter {
+            $0.activityState == .active || $0.activityState == .stale
+        }
+        if let current = live.first {
             Task { await current.update(content) }
+            for extra in live.dropFirst() { Task { await extra.end(nil, dismissalPolicy: .immediate) } }
             return
         }
         guard ActivityAuthorizationInfo().areActivitiesEnabled else { return }

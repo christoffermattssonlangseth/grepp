@@ -136,7 +136,8 @@ enum CoachContext {
     static func systemPrompt(for excerpt: LogExcerpt,
                              brief: Brief = .none,
                              mode: Mode = .coaching,
-                             today: Date = Date()) -> String {
+                             today: Date = Date(),
+                             digest: String? = nil) -> String {
         let todayString = Session.dateFormatter.string(from: today)
 
         let coverage: String
@@ -238,6 +239,7 @@ enum CoachContext {
         tables, no numbered lists. Prose and the occasional short list.
 
         \(standingBrief(brief))
+        \(digest.map { $0 + "\n\n" + readingHistoryBrief } ?? "")
         <training-log>
         \(excerpt.text)</training-log>
         \(mode == .goalsInterview ? interviewBrief(hasGoals: !trimmed(brief.goals).text.isEmpty) : "")
@@ -713,11 +715,22 @@ enum CoachContext {
     /// hand, the recent plans, and this month's sets. Sent uncached, after the log.
     static func liveNote(draft: SessionDraft?, plans: [PlanRecord],
                          weeklySets: [MuscleMap.Credits] = [], unmapped: [String] = [],
+                         newLines: [String] = [],
                          now: Date = Date()) -> String? {
-        let parts = [inProgressNote(draft, now: now),
+        let parts = [logUpdate(newLines),
+                     inProgressNote(draft, now: now),
                      planReview(plans, now: now),
                      muscleReview(weekly: weeklySets, unmapped: unmapped)].compactMap { $0 }
         return parts.isEmpty ? nil : parts.joined(separator: "\n\n")
+    }
+
+    /// Lines that entered the log since the previous answer in this chat, so
+    /// the newest session is never the one that gets missed.
+    static func logUpdate(_ newLines: [String]) -> String? {
+        guard !newLines.isEmpty else { return nil }
+        return "LOG UPDATE. Since your previous answer these lines were added to the log; " +
+            "they are in the log and the digest already, and anything you said before them " +
+            "may be out of date:\n" + newLines.joined(separator: "\n")
     }
 
     struct Reply: Equatable {
@@ -1016,6 +1029,68 @@ enum CoachContext {
         tag.replaceMatches(in: ns, range: NSRange(location: 0, length: ns.length),
                            withTemplate: "[$1](\(evidenceScheme)://evidence/$1)")
         return ns as String
+    }
+
+    /// How to treat numbers from the past: the app's digest over a model's
+    /// reading of a long column of near-identical lines, and the log over
+    /// anything said earlier in the chat.
+    static let readingHistoryBrief = """
+    READING HISTORY. The digest above is computed by the app from the log; it does \
+    not misread. The raw log below is there for detail. When the two seem to differ, \
+    the digest is right. When you state a number from the past — a last session, a \
+    best, how many times something was done — give its date and quote the line, so \
+    a slip is visible. Earlier messages in this conversation were true on the day \
+    they were written; the log and the digest are what is true now, and where they \
+    disagree with something you said before, say so and go with the log. If the \
+    lifter corrects you about their history, find the line before you agree or hold.
+    """
+
+    /// Per-lift facts, computed rather than read: what was done last and when,
+    /// the best top set ever, how often lately. Most recent lift first.
+    static func liftDigest(from sessions: [Session], today: Date = Date(),
+                           calendar: Calendar = .current, limit: Int = 40) -> String? {
+        struct Row { var name: String; var last: Session; var lastEntry: ExerciseEntry; var all: [(Session, ExerciseEntry)]; var order: Int }
+        var rows: [String: Row] = [:]
+        for session in sessions.sorted(by: { $0.date < $1.date }) {
+            for (i, entry) in session.exercises.enumerated() {
+                let key = entry.name.lowercased()
+                if var row = rows[key] {
+                    row.last = session; row.lastEntry = entry; row.all.append((session, entry)); row.order = i
+                    rows[key] = row
+                } else {
+                    rows[key] = Row(name: entry.name, last: session, lastEntry: entry, all: [(session, entry)], order: i)
+                }
+            }
+        }
+        guard !rows.isEmpty else { return nil }
+        // Newest first; lifts from the same day in the order they were done.
+        let recent = rows.values.sorted {
+            $0.last.date != $1.last.date ? $0.last.date > $1.last.date : $0.order < $1.order
+        }.prefix(limit)
+        let fourWeeksAgo = calendar.date(byAdding: .day, value: -28, to: today) ?? today
+        let start = calendar.startOfDay(for: today)
+
+        var lines = ["LIFT DIGEST. Computed by the app from every line of the log. Most recent lift first."]
+        for row in recent {
+            let days = calendar.dateComponents([.day], from: calendar.startOfDay(for: row.last.date), to: start).day ?? 0
+            let ago = days == 0 ? "today" : (days == 1 ? "yesterday" : "\(days) days ago")
+            let lastSets = row.lastEntry.sets.map(\.token).joined(separator: " ")
+
+            // The best top set: heaviest load, then most reps at it. Bodyweight
+            // lifts compare added load the same way.
+            let allSets = row.all.flatMap { pair in pair.1.sets.map { (pair.0.dateString, $0) } }
+            let best = allSets.max { a, b in
+                let la = a.1.weight ?? a.1.added ?? 0, lb = b.1.weight ?? b.1.added ?? 0
+                return la < lb || (la == lb && a.1.reps < b.1.reps)
+            }
+            let inFourWeeks = row.all.filter { $0.0.date >= fourWeeksAgo }.count
+            var line = "- \(row.name): last \(row.last.dateString) (\(ago)) \(lastSets)"
+            if let best { line += " · best \(best.1.token) on \(best.0)" }
+            line += " · \(inFourWeeks) \(inFourWeeks == 1 ? "session" : "sessions") in the last 4 weeks, \(row.all.count) ever"
+            lines.append(line)
+        }
+        if rows.count > limit { lines.append("(\(rows.count - limit) lifts not done lately are left out; they are in the log.)") }
+        return lines.joined(separator: "\n")
     }
 
     /// What to do with a lifter whose log has nothing in it yet.

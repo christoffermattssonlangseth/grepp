@@ -649,8 +649,8 @@ final class CoachContextTests: XCTestCase {
         ]
         var utc = Calendar(identifier: .gregorian); utc.timeZone = TimeZone(identifier: "UTC")!
         let digest = CoachContext.liftDigest(from: sessions, today: day("2026-09-11"), calendar: utc)!
-        XCTAssertTrue(digest.contains("- squat: last 2026-09-08 (3 days ago) 102.5x5 102.5x5 102.5x4 · best 110x3 on 2026-08-20 · 2 sessions in the last 4 weeks, 3 ever"), digest)
-        XCTAssertTrue(digest.contains("- chin-ups: last 2026-09-08 (3 days ago) bwx8 bw+5x6 · best bw+10x5 on 2026-08-20"), digest)
+        XCTAssertTrue(digest.contains("- squat: last 2026-09-08 (3 days ago) 102.5x5 102.5x5 102.5x4 · best 110x3 on 2026-08-20 · 3 sessions in the last 4 weeks, 3 ever"), digest)
+        XCTAssertTrue(digest.contains("- chin-ups: last 2026-09-08 (3 days ago) bwx8 bw+5x6 · best bw+10x5 on 2026-08-20 · 2 sessions in the last 4 weeks, 2 ever"), digest)
         XCTAssertLessThan(digest.range(of: "- squat")!.lowerBound, digest.range(of: "- chin-ups")!.lowerBound, "same day: stable order")
         XCTAssertNil(CoachContext.liftDigest(from: []))
     }

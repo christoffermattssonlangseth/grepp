@@ -887,14 +887,20 @@ struct LogView: View {
                 Text("Default · \(PlateMath.label(barWeight)) kg")
             }
         } label: {
-            HStack(spacing: 3) {
+            // A pill with its own background, like the rest-target menu: a bare
+            // text label in a Menu drew as nothing on iOS 26.
+            HStack(spacing: 4) {
                 Text("\(PlateMath.label(effectiveBar)) bar")
                     .font(.system(.footnote, design: .monospaced).weight(.semibold))
                 Image(systemName: "chevron.up.chevron.down")
-                    .font(.caption2)
+                    .font(.caption2.weight(.bold))
             }
             .foregroundStyle(barOverrides.bar(for: name) == nil ? Color.secondary : Theme.accent)
+            .padding(.horizontal, 10).padding(.vertical, 6)
+            .background(.ultraThinMaterial, in: Capsule())
+            .fixedSize()
         }
+        .buttonStyle(.plain)
         .disabled(name.isEmpty)
     }
 

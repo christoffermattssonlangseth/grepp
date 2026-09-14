@@ -172,8 +172,17 @@ struct ClaudeService {
                     onEvent(.usage(usage))
                 }
             case "error":
-                let message = (event["error"] as? [String: Any])?["message"] as? String
-                throw ClaudeError.api(status: http.statusCode, message: message ?? "")
+                // Mid-stream, the HTTP status is 200; the type says what it is.
+                let detail = event["error"] as? [String: Any]
+                let message = detail?["message"] as? String
+                let status: Int
+                switch detail?["type"] as? String {
+                case "overloaded_error": status = 529
+                case "rate_limit_error": status = 429
+                case "authentication_error", "permission_error": status = 401
+                default: status = 500
+                }
+                throw ClaudeError.api(status: status, message: message ?? "")
             default:
                 continue
             }
@@ -202,14 +211,7 @@ struct ClaudeService {
 
     /// Where the coach may read: journals, indexes, preprint servers, DOI
     /// resolution. A search that can't leave these can't cite a blog.
-    static let researchDomains = [
-        "doi.org", "pubmed.ncbi.nlm.nih.gov", "pmc.ncbi.nlm.nih.gov", "europepmc.org",
-        "link.springer.com", "journals.lww.com", "tandfonline.com", "sciencedirect.com",
-        "onlinelibrary.wiley.com", "nature.com", "frontiersin.org", "mdpi.com", "bjsm.bmj.com",
-        "journals.physiology.org", "academic.oup.com", "journals.sagepub.com", "cambridge.org",
-        "journals.humankinetics.com", "jssm.org", "sportrxiv.org", "osf.io", "biorxiv.org",
-        "medrxiv.org", "semanticscholar.org", "researchgate.net",
-    ]
+    static let researchDomains = CoachContext.researchHosts
 
     /// Answer with web search and fetch available, the whole reply at once.
     ///

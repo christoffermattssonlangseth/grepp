@@ -35,9 +35,10 @@ struct ProgrammeView: View {
         let due = programme.dueDayIndex(in: store.sessions)
 
         return List {
-            ForEach(Array(programme.days.enumerated()), id: \.element.id) { index, day in
+            // By position: an upper/lower programme has two days called Upper.
+            ForEach(Array(programme.days.enumerated()), id: \.offset) { index, day in
                 Section {
-                    ForEach(day.exercises) { ex in
+                    ForEach(Array(day.exercises.enumerated()), id: \.offset) { _, ex in
                         VStack(alignment: .leading, spacing: 2) {
                             HStack(alignment: .firstTextBaseline) {
                                 Text(Theme.readableName(ex.name)).font(.body.weight(.semibold))

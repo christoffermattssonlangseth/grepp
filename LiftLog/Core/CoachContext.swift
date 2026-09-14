@@ -517,14 +517,33 @@ enum CoachContext {
             let found = String(message[r]).trimmingCharacters(in: CharacterSet(charactersIn: ".,;"))
             return LookupTarget(url: "https://doi.org/\(found)")
         }
-        if message.range(of: "https?://", options: .regularExpression) != nil {
-            return LookupTarget(url: nil)
+        // A link is a paper only when it points at a journal, PubMed, a
+        // preprint server or doi.org — the hosts the fetch tool may read. A
+        // video, a Strava activity or the lifter's own repo is just a link.
+        if let m = message.range(of: "https?://[^\\s)>\"']+", options: .regularExpression) {
+            let host = String(message[m]).replacingOccurrences(of: "https?://", with: "", options: .regularExpression)
+                .split(separator: "/").first.map(String.init)?.lowercased() ?? ""
+            if researchHosts.contains(where: { host == $0 || host.hasSuffix("." + $0) }) {
+                return LookupTarget(url: nil)
+            }
         }
         let lowered = message.lowercased()
         let asks = ["look up", "lookup", "find the paper", "find this paper", "search for the paper",
                     "search the literature", "what does the research say", "what does the evidence say"]
         return asks.contains { lowered.contains($0) } ? LookupTarget(url: nil) : nil
     }
+
+    /// Where a paper can be read from: journals, PubMed, preprint servers,
+    /// doi.org. The fetch tool is restricted to these, and a link in a
+    /// message counts as a paper only when it points at one of them.
+    static let researchHosts = [
+        "doi.org", "pubmed.ncbi.nlm.nih.gov", "pmc.ncbi.nlm.nih.gov", "europepmc.org",
+        "link.springer.com", "journals.lww.com", "tandfonline.com", "sciencedirect.com",
+        "onlinelibrary.wiley.com", "nature.com", "frontiersin.org", "mdpi.com", "bjsm.bmj.com",
+        "journals.physiology.org", "academic.oup.com", "journals.sagepub.com", "cambridge.org",
+        "journals.humankinetics.com", "jssm.org", "sportrxiv.org", "osf.io", "biorxiv.org",
+        "medrxiv.org", "semanticscholar.org", "researchgate.net",
+    ]
 
     /// The heading the saved notes gather under in coaching.md.
     static let notesHeading = "## Coach's notes"
@@ -794,8 +813,14 @@ enum CoachContext {
     ///
     /// Called on every streamed chunk, so a partial block has to read as "still
     /// writing" rather than as prose with a stray fence in it.
-    static func parseReply(_ text: String) -> Reply {
+    static func parseReply(_ text: String, final: Bool = false) -> Reply {
         var remaining = text
+        // A reply that ended mid-block — stopped, cut off, cut by the token
+        // limit — must not read as "still writing" for good: once the stream
+        // is over, an open fence is closed and what arrived becomes the card.
+        if final, remaining.components(separatedBy: "```").count % 2 == 0 {
+            remaining += "\n```"
+        }
         var prescriptions: [Prescription] = []
         var writingPrescription = false
 
@@ -983,9 +1008,14 @@ enum CoachContext {
                 tokens.removeFirst()
             }
             guard tokens.count >= 2 else { return nil }
-            let sets = tokens[1...].compactMap { WorkoutParser.parseSet($0) }
-            guard !sets.isEmpty else { return nil }
-            return Prescription(name: tokens[0].lowercased(), sets: sets)
+            // The name is everything before the first set: "bench press 60x5"
+            // is bench-press, as the file would have it.
+            guard let firstSet = tokens.indices.dropFirst().first(where: { WorkoutParser.parseSet(tokens[$0]) != nil })
+            else { return nil }
+            let sets = tokens[firstSet...].compactMap { WorkoutParser.parseSet($0) }
+            let name = MuscleMap.key(tokens[..<firstSet].joined(separator: " "))
+            guard !name.isEmpty, !sets.isEmpty else { return nil }
+            return Prescription(name: name, sets: sets)
         }
     }
 

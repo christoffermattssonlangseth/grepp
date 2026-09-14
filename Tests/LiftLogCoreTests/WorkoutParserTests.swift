@@ -106,4 +106,30 @@ final class WorkoutParserTests: XCTestCase {
         let early = Session.dateFormatter.date(from: "2026-07-01")!
         XCTAssertNil(WorkoutParser.lastEntry(for: "squat", in: sessions, before: early))
     }
+
+    // MARK: - nothing lost quietly
+
+    func testWindowsLineEndingsAndABOMDontEatTheLastSet() {
+        let text = "\u{FEFF}2026-09-01 squat 100x5 100x5\r\n2026-09-01 bench 60x8\r\n"
+        let sessions = WorkoutParser.parse(text)
+        XCTAssertEqual(sessions.count, 1)
+        XCTAssertEqual(sessions[0].exercises.map(\.name), ["squat", "bench"])
+        XCTAssertEqual(sessions[0].exercises[0].sets.count, 2)
+        XCTAssertEqual(sessions[0].exercises[1].sets.count, 1)
+        XCTAssertTrue(WorkoutParser.unreadableLines(in: text).isEmpty)
+    }
+
+    func testAMultiWordNameIsOneLiftWithDashes() {
+        let sessions = WorkoutParser.parse("2026-09-01 bench press 60x5 60x5\n2026-09-01 leg press 100x10")
+        XCTAssertEqual(sessions[0].exercises.map(\.name), ["bench-press", "leg-press"])
+        XCTAssertEqual(sessions[0].exercises[0].sets.count, 2)
+    }
+
+    func testUnreadableLinesAreNamedNotDropped() {
+        let text = "2026-09-01 squat 100x5\n\n# a note\n2026-9-1 bench 60x8\n2026-09-02 row 50x\n2026-09-02 row 50x8"
+        let bad = WorkoutParser.unreadableLines(in: text)
+        XCTAssertEqual(bad.map(\.number), [3, 4, 5])
+        XCTAssertEqual(bad[0].text, "# a note")
+        XCTAssertEqual(WorkoutParser.parse(text).flatMap(\.exercises).map(\.name), ["squat", "row"])
+    }
 }

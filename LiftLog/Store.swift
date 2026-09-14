@@ -171,18 +171,36 @@ final class Store: ObservableObject {
 
     private enum StoreError: LocalizedError {
         case unsafeMerge
+        /// The file couldn't be found, but this phone holds a copy with history
+        /// in it: creating a new file would leave that history behind.
+        case missingRemote(String, Int)
+        /// Lines the parser can't read. A save rewrites the file from what was
+        /// parsed, so writing now would delete them.
+        case unreadable([(number: Int, text: String)])
         var errorDescription: String? {
-            "Aborted: couldn't parse the remote file safely."
+            switch self {
+            case .unsafeMerge:
+                return "Aborted: couldn't parse the remote file safely."
+            case .missingRemote(let path, let count):
+                return "No file at \(path), but this phone has \(count) sessions from it. Check the path and branch (or wait for iCloud to sync) before saving."
+            case .unreadable(let lines):
+                let shown = lines.prefix(3).map { "line \($0.number): \($0.text)" }.joined(separator: "; ")
+                return "Not saved: the file has \(lines.count) \(lines.count == 1 ? "line" : "lines") the app can't read and would lose — \(shown). Fix them in the file first."
+            }
         }
     }
 
-    // UserDefaults keys for the offline cache + queue.
-    private let cacheKey = "gh_cache"
-    private let coachingCacheKey = "gh_coaching_cache"
-    private let goalsCacheKey = "gh_goals_cache"
-    private let researchCacheKey = "gh_research_cache"
-    private let programCacheKey = "gh_program_cache"
-    private let pendingKey = "gh_pending"
+    // UserDefaults keys for the offline cache + queue — one set per backend,
+    // so a switch never shows one file's history under the other's name, or
+    // replays writes queued for GitHub into iCloud. The GitHub keys keep
+    // their first names so an existing install carries on.
+    private var keyPrefix: String { storage == .github ? "gh" : "icloud" }
+    private var cacheKey: String { "\(keyPrefix)_cache" }
+    private var coachingCacheKey: String { "\(keyPrefix)_coaching_cache" }
+    private var goalsCacheKey: String { "\(keyPrefix)_goals_cache" }
+    private var researchCacheKey: String { "\(keyPrefix)_research_cache" }
+    private var programCacheKey: String { "\(keyPrefix)_program_cache" }
+    private var pendingKey: String { "\(keyPrefix)_pending" }
     private let draftKey = "session_draft"
     private let plansKey = "plan_records"
     private let sessionStartsKey = "session_starts"
@@ -248,7 +266,7 @@ final class Store: ObservableObject {
     /// looking at it, so a plain failure you can retry beats a silent queue.
     @discardableResult
     func save(_ text: String, to file: BriefFile) async -> CommitResult {
-        guard !isBusy else { return .failed }
+        guard !isBusy else { briefStatus = "Still syncing — try again in a moment."; return .failed }
         let path = self.path(for: file).trimmingCharacters(in: .whitespacesAndNewlines)
         guard !path.isEmpty else {
             briefStatus = "No \(file.rawValue) file set — add a path in Settings."
@@ -385,26 +403,54 @@ final class Store: ObservableObject {
             : WidgetSnapshot(day: last?.dateString ?? "", lines: lines, plan: plan)
         guard force || snapshot != WidgetSnapshot.load() else { return }
         WidgetSnapshot.save(snapshot)
-        widgetReload?.cancel()
         if force {
+            // On the way out, reload only if one is owed: a coalesced reload
+            // still pending, or a snapshot the widget hasn't been shown. A
+            // reload from the background counts against the system's daily
+            // ration; twenty screen locks a session must not spend it.
+            guard widgetReload != nil || snapshot != lastReloaded else { return }
+            widgetReload?.cancel(); widgetReload = nil
+            lastReloaded = snapshot
             WidgetCenter.shared.reloadTimelines(ofKind: WidgetSnapshot.kind)
         } else {
+            widgetReload?.cancel()
             widgetReload = Task {
                 try? await Task.sleep(for: .seconds(2))
                 guard !Task.isCancelled else { return }
+                lastReloaded = snapshot
+                widgetReload = nil
                 WidgetCenter.shared.reloadTimelines(ofKind: WidgetSnapshot.kind)
             }
         }
     }
     private var widgetReload: Task<Void, Never>?
+    private var lastReloaded: WidgetSnapshot?
 
     /// The app is leaving the screen: make sure the widget has what it shows.
     func refreshWidget() { publishWidgetSnapshot(force: true) }
 
     // MARK: - Load
 
+    /// The load in flight, so a second caller — the storage picker, a
+    /// pull-to-refresh — waits for it rather than being dropped.
+    private var loadTask: Task<Void, Never>?
+
     func load() async {
-        guard !isBusy, !needsSetup else { return }   // don't overlap with an in-flight save/load
+        if let running = loadTask { await running.value }
+        guard !isBusy, !needsSetup else { return }   // don't overlap with an in-flight save
+        let task = Task { await performLoad() }
+        loadTask = task
+        await task.value
+        loadTask = nil
+    }
+
+    /// Can't reach the backend, or iCloud isn't there: the queue and the cache
+    /// carry on, and the lift is not lost.
+    private func isOffline(_ error: Error) -> Bool {
+        error is URLError || (error as? ICloudBackend.ICloudError) == .unavailable
+    }
+
+    private func performLoad() async {
         isBusy = true; status = "Loading…"
         defer { isBusy = false }
         do {
@@ -414,6 +460,15 @@ final class Store: ObservableObject {
                 // Show queued-but-unsynced writes layered on top of the fresh remote.
                 sessions = WorkoutParser.applying(pending, to: WorkoutParser.parse(state.content))
                 status = "Loaded \(sessions.count) sessions.\(pendingSuffix)"
+                let bad = WorkoutParser.unreadableLines(in: state.content)
+                if !bad.isEmpty { status += " \(bad.count) \(bad.count == 1 ? "line" : "lines") couldn't be read; saving is held until they're fixed." }
+            } else if cachedSessions().count > 1 {
+                // The file is gone but this phone remembers it: a wrong path, a
+                // token scoped to another repo, or iCloud still syncing. Show what
+                // we have and say so; nothing is written over it.
+                fileSHA = nil
+                sessions = WorkoutParser.applying(pending, to: cachedSessions())
+                status = "No file at \(path) — showing this phone's copy. Check the path and branch before saving.\(pendingSuffix)"
             } else {
                 cacheContent("")
                 fileSHA = nil
@@ -422,7 +477,7 @@ final class Store: ObservableObject {
             }
             await loadBrief()
             await flushPending()
-        } catch is URLError {
+        } catch let error where isOffline(error) {
             // Offline: fall back to the cache so the app still shows history.
             sessions = WorkoutParser.applying(pending, to: cachedSessions())
             status = "Offline — showing cached data.\(pendingSuffix)"
@@ -487,20 +542,31 @@ final class Store: ObservableObject {
     /// queue it locally when offline. Shared by `commit`, `delete` and `move`.
     @discardableResult
     private func perform(_ write: PendingWrite) async -> CommitResult {
-        guard !isBusy else { return .failed }
+        guard !isBusy else { status = "Still syncing — try again in a moment."; return .failed }
         isBusy = true; status = "Saving…"
         defer { isBusy = false }
+
+        let done = storage == .github ? "Pushed ✓" : "Saved ✓"
+        // Writes queued while offline go first, in the order they were made:
+        // pushing this one ahead of them would let an older queued copy of the
+        // same lift land on top of it. This one joins the back of the queue and
+        // the queue drains.
+        if !pending.isEmpty {
+            enqueue(write)
+            await flushPending()
+            sessions = WorkoutParser.applying(pending, to: cachedSessions())
+            if pending.isEmpty { status = done; return .pushed }
+            status = "Offline — saved locally, will sync (\(pending.count) queued)"
+            return .queued
+        }
 
         do {
             let base = try await push(write)
             cacheContent(WorkoutParser.serialize(base))
-            // A successful reach means we can drain anything queued earlier, too.
-            await flushPending()
-            sessions = WorkoutParser.applying(pending, to: base)
-            let done = storage == .github ? "Pushed ✓" : "Saved ✓"
-            status = pending.isEmpty ? done : "\(done) — \(pending.count) still queued"
+            sessions = WorkoutParser.applying(pending, to: cachedSessions())
+            status = done
             return .pushed
-        } catch is URLError {
+        } catch let error where isOffline(error) {
             enqueue(write)
             status = "Offline — saved locally, will sync (\(pending.count) queued)"
             return .queued
@@ -519,6 +585,13 @@ final class Store: ObservableObject {
         for attempt in 1...maxAttempts {
             do {
                 let remote = try await service.fetch()
+                if remote == nil, cachedSessions().count > 1 {
+                    throw StoreError.missingRemote(path, cachedSessions().count)
+                }
+                if let content = remote?.content {
+                    let bad = WorkoutParser.unreadableLines(in: content)
+                    if !bad.isEmpty { throw StoreError.unreadable(bad) }
+                }
                 var base = remote.map { WorkoutParser.parse($0.content) } ?? []
 
                 // Safety net: refuse to act on a non-trivial file we couldn't parse.
@@ -562,7 +635,7 @@ final class Store: ObservableObject {
                 cacheContent(WorkoutParser.serialize(base))
                 pending.removeFirst()
                 savePending()
-            } catch is URLError {
+            } catch let error where isOffline(error) {
                 return   // still offline — leave the queue intact
             } catch {
                 status = "Sync paused — \(error.localizedDescription)"
@@ -655,14 +728,34 @@ final class Store: ObservableObject {
     /// The lock-screen button: land the next planned set, or the last one
     /// again, and restart the rest — straight into the persisted draft, since
     /// the Log screen may not exist when the system wakes us for this.
-    func sameAgain() {
+    func sameAgain() async {
         guard var d = draft, let set = d.sameAgainSet else { return }
+        // A READY card left on the lock screen for hours is not a rest any
+        // more (the Log screen drops one older than half an hour too): a tap
+        // on it ends it rather than landing a phantom set.
+        if let start = d.restStart, Date().timeIntervalSince(start) > 30 * 60 {
+            await RestSignals.syncAndWait(nil)
+            return
+        }
         d.sets.append(WorkSet(weight: set.weight, added: set.added, reps: set.reps))
         d.restStart = Date()
         noteSetLanded(on: d.date)
         saveDraft(d)
         draftRevision += 1
-        RestSignals.sync(d)
+        // Awaited: the system may suspend the process the moment the intent
+        // returns, and the lock screen must have its new clock by then.
+        await RestSignals.syncAndWait(d)
+    }
+
+    /// The Keychain is sealed while the phone is locked, and the lock-screen
+    /// button can be what launches the app: a launch then reads no token and
+    /// no key. Read again when the app is in front, and write them back so
+    /// they're readable after the first unlock from now on.
+    func reloadCredentials() {
+        if token.isEmpty, let kept = Keychain.get(account: "token") { token = kept }
+        if anthropicKey.isEmpty, let kept = CoachCredentials.stored { anthropicKey = kept }
+        if !token.isEmpty { Keychain.set(token, account: "token") }
+        if !anthropicKey.isEmpty { CoachCredentials.store(anthropicKey) }
     }
 
     func saveDraft(_ new: SessionDraft?) {

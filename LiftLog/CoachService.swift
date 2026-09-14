@@ -205,8 +205,12 @@ final class CoachService: ObservableObject {
         // What entered the log since the last answer in this chat — lines the
         // model has not been told about, whatever it said before them.
         let lines = Set(WorkoutParser.serialize(sessions).split(separator: "\n").map(String.init).filter { !$0.isEmpty })
-        let newLines = messages.isEmpty ? [] : lines.subtracting(seenLines).sorted()
-        seenLines = lines
+        // Nothing to compare against on a fresh chat, or one that predates
+        // this note: reporting the whole log as "new" would be noise.
+        let newLines = (messages.isEmpty || seenLines.isEmpty) ? [] : lines.subtracting(seenLines).sorted()
+        // Committed only once an answer has arrived: a failed request must
+        // not count as the model having been told.
+        let seenAfterReply = lines
         // The lift in the lifter's hands right now, which the log doesn't have
         // yet, and how recent prescriptions went. Sent as its own uncached block
         // so the log's cache holds.
@@ -260,8 +264,11 @@ final class CoachService: ObservableObject {
                     }
                 }
                 }
+                self?.seenLines = seenAfterReply
             } catch is CancellationError {
                 // Left the partial answer in place on purpose.
+            } catch let error as URLError where error.code == .cancelled {
+                // Stop during a lookup: the request is cancelled, not failed.
             } catch {
                 // Surface the failure, not the request: ClaudeError carries the
                 // status and the API's reason — never the prompt or the log.

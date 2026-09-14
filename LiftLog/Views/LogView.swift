@@ -21,6 +21,13 @@ struct LogView: View {
         var id: String { if case .finish = self { return "finish" } else { return "set" } }
     }
     @State private var dayCheck: DayCheck?
+    /// Something wants the input area — a prescription, a lift opened to edit
+    /// — while sets are landed in it. Held until the lifter says which wins.
+    private enum Replace: Identifiable {
+        case prescription, edit(ExerciseEntry, Date)
+        var id: String { if case .edit(let ex, _) = self { return "edit-\(ex.name)" } else { return "rx" } }
+    }
+    @State private var pendingReplace: Replace?
     @Environment(\.scenePhase) private var scenePhase
     @State private var name = ""
     @State private var sets: [WorkSet] = []
@@ -151,7 +158,17 @@ struct LogView: View {
             // medium one, which reads as "more" without a second haptic vocabulary.
             .sensoryFeedback(.impact(weight: .heavy, intensity: 1), trigger: recordSet)
             .refreshable { await store.load() }
-            .onAppear { restoreDraft(); applyEditRequest(); applyPrescription(); refreshDay() }
+            .onAppear { restoreDraft(); refreshDay(); applyEditRequest(); applyPrescription() }
+            .confirmationDialog(
+                "Discard \(sets.count) landed \(sets.count == 1 ? "set" : "sets") of \(Theme.readableName(name))?",
+                isPresented: Binding(get: { pendingReplace != nil }, set: { if !$0 { pendingReplace = nil } }),
+                titleVisibility: .visible, presenting: pendingReplace
+            ) { replace in
+                Button("Discard and continue", role: .destructive) { resume(replace) }
+                Button("Keep them", role: .cancel) {
+                    if case .prescription = replace { store.prescriptionRequest = [] }
+                }
+            }
             .onChange(of: scenePhase) { _, phase in if phase == .active { refreshDay() } }
             .confirmationDialog(
                 "Logging \(Theme.readableName(name)) on \(dayLabel) — that isn't today.",
@@ -232,6 +249,12 @@ struct LogView: View {
     /// each one prefilling the next — 3x5 becomes tap, tap, tap.
     private func applyPrescription() {
         guard let first = store.prescriptionRequest.first else { return }
+        // Sets landed for another lift are not thrown away for a plan: ask.
+        // The request stays in the store until the answer.
+        if !sets.isEmpty && !name.isEmpty {
+            pendingReplace = .prescription
+            return
+        }
         store.recordPlan(store.prescriptionRequest, on: date)
         queue = Array(store.prescriptionRequest.dropFirst())
         store.prescriptionRequest = []
@@ -248,6 +271,8 @@ struct LogView: View {
         plan = rx.sets
         isBodyweight = rx.sets.first?.isBodyweight ?? false
         prefill(rx.sets.first)
+        // The lock screen names the lift and its next set; both just changed.
+        syncRest()
     }
 
     private func prefill(_ set: WorkSet?) {
@@ -266,9 +291,7 @@ struct LogView: View {
         let key = Session.dateFormatter.string(from: req.date)
         if let ex = store.sessions.first(where: { $0.dateString == key })?
             .exercises.first(where: { $0.name.caseInsensitiveCompare(req.name) == .orderedSame }) {
-            date = req.date
-            dateChosen = true   // opened from that day on purpose
-            loadForEditing(ex)
+            edit(ex, on: req.date)
         }
         store.editRequest = nil
     }
@@ -364,7 +387,7 @@ struct LogView: View {
                     Text("\(todayExercises.count) ex · \(todaySetCount) sets")
                         .font(.caption.weight(.semibold)).foregroundStyle(.secondary)
                 }
-                ForEach(todayExercises) { ex in
+                ForEach(todayExercises, id: \.name) { ex in
                     HStack(spacing: 8) {
                         VStack(alignment: .leading, spacing: 3) {
                             Text(Theme.readableName(ex.name))
@@ -389,7 +412,7 @@ struct LogView: View {
                             .frame(width: 4)
                             .padding(.vertical, 8)
                     }
-                    .onTapGesture { loadForEditing(ex) }
+                    .onTapGesture { edit(ex, on: date) }
                 }
                 if strava.isConnected { stravaRow }
             }
@@ -788,8 +811,6 @@ struct LogView: View {
     private func addSet() {
         guard let reps = parsedReps else { return }
         let added = isBodyweight ? parsedAdded : nil
-        repsText = ""
-        focus = nil
         land(WorkSet(weight: isBodyweight ? nil : parsedWeight,
                      added: (added ?? 0) > 0 ? added : nil,
                      reps: reps))
@@ -813,7 +834,12 @@ struct LogView: View {
             return
         }
         sets.append(set)
-        store.noteSetLanded(on: date)
+        // Only now do the typed reps go: a Cancel in the day dialog keeps them.
+        repsText = ""
+        focus = nil
+        // The day's clock starts only for today's session — a set corrected on
+        // a past day must not make that day "the session in progress".
+        if isToday { store.noteSetLanded(on: date) }
         if record(at: sets.count - 1) != nil { recordSet += 1 }
         restStart = Date()   // start resting the moment a set lands
         setAdded += 1
@@ -907,6 +933,30 @@ struct LogView: View {
     /// Row label for a logged set: "82.5 kg", "BW +5 kg" or "Bodyweight".
     private func loadLabel(_ set: WorkSet) -> String { set.loadLabel }
 
+    /// Open a logged lift for editing — unless sets for another lift are
+    /// landed and unfinished, in which case ask before they go.
+    private func edit(_ ex: ExerciseEntry, on day: Date) {
+        if !sets.isEmpty, ex.name.caseInsensitiveCompare(name) != .orderedSame {
+            pendingReplace = .edit(ex, day)
+            return
+        }
+        date = day
+        dateChosen = true   // opened from that day on purpose
+        loadForEditing(ex)
+    }
+
+    /// The lifter chose: what was held goes ahead, over the landed sets.
+    private func resume(_ replace: Replace) {
+        switch replace {
+        case .prescription:
+            sets = []
+            applyPrescription()
+        case .edit(let ex, let day):
+            sets = []
+            edit(ex, on: day)
+        }
+    }
+
     /// Load an already-logged exercise back into the input area so its sets can be edited.
     private func loadForEditing(_ ex: ExerciseEntry) {
         name = ex.name
@@ -915,6 +965,7 @@ struct LogView: View {
         weightText = ""; addedText = ""; repsText = ""
         plan = nil
         restStart = nil
+        syncRest()
     }
 
     private func finishExercise() async {
@@ -924,7 +975,7 @@ struct LogView: View {
             dayCheck = .finish
             return
         }
-        let entry = ExerciseEntry(name: name.trimmingCharacters(in: .whitespaces), sets: sets)
+        let entry = ExerciseEntry(name: MuscleMap.key(name), sets: sets)
         let result = await store.commit(entry, on: date,
                            message: "Log \(entry.name) \(Session.dateFormatter.string(from: date))")
         // Reset on a push OR an offline queue — both keep the entry; only a hard
@@ -944,6 +995,7 @@ struct LogView: View {
                 name = ""; sets = []; weightText = ""; addedText = ""; repsText = ""; isBodyweight = false
                 plan = nil
                 restStart = nil
+                refreshDay()
             }
         }
     }

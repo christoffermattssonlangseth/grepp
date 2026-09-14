@@ -34,6 +34,9 @@ enum WorkoutParser {
     static func lines(of text: String) -> [String] {
         var text = text
         if text.hasPrefix("\u{FEFF}") { text.removeFirst() }
+        // "\r\n" is one Character to Swift, so a split on "\n" would never
+        // find it: normalise the endings first.
+        text = text.replacingOccurrences(of: "\r\n", with: "\n").replacingOccurrences(of: "\r", with: "\n")
         return text.split(separator: "\n", omittingEmptySubsequences: false)
             .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
     }

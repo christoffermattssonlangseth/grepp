@@ -126,7 +126,7 @@ final class WorkoutParserTests: XCTestCase {
     }
 
     func testUnreadableLinesAreNamedNotDropped() {
-        let text = "2026-09-01 squat 100x5\n\n# a note\n2026-9-1 bench 60x8\n2026-09-02 row 50x\n2026-09-02 row 50x8"
+        let text = "2026-09-01 squat 100x5\n\n# a note\nyesterday bench 60x8\n2026-09-02 row 50x\n2026-09-02 row 50x8"
         let bad = WorkoutParser.unreadableLines(in: text)
         XCTAssertEqual(bad.map(\.number), [3, 4, 5])
         XCTAssertEqual(bad[0].text, "# a note")

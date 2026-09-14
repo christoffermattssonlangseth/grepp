@@ -5,7 +5,7 @@ final class DoseResponseTests: XCTestCase {
 
     private var utc: Calendar {
         var c = Calendar(identifier: .gregorian)
-        c.timeZone = TimeZone(identifier: "UTC")!
+        c.timeZone = Session.dateFormatter.timeZone
         return c
     }
     private func date(_ s: String) -> Date { Session.dateFormatter.date(from: s)! }

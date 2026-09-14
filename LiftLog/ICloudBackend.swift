@@ -32,8 +32,7 @@ nonisolated struct ICloudBackend: LogBackend {
     /// the device is signed in, iCloud Drive is on for the app, and the build
     /// carries the entitlement. Touches the disk, so it's async.
     static func available() async -> Bool {
-        if isAvailable { return true }
-        return await documents() != nil
+        await documents() != nil
     }
 
     /// The Documents folder of the app's container. Resolving it can touch the
@@ -87,8 +86,10 @@ nonisolated struct ICloudBackend: LogBackend {
             var failure: Error?
             var coordinationError: NSError?
             NSFileCoordinator().coordinate(writingItemAt: url, options: .forReplacing, error: &coordinationError) { writeURL in
-                // Refuse to write over a newer file: another device got there first.
-                if let version, fm.fileExists(atPath: writeURL.path), Self.version(of: writeURL) != version {
+                // Refuse to write over a newer file: another device got there
+                // first — or the file has arrived since a read said there was
+                // none, which on a fresh install is the whole log syncing down.
+                if fm.fileExists(atPath: writeURL.path), version == nil || Self.version(of: writeURL) != version {
                     failure = ICloudError.stale
                     return
                 }

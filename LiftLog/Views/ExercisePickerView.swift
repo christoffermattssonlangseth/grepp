@@ -10,8 +10,10 @@ struct ExercisePickerView: View {
     @Environment(\.dismiss) private var dismiss
     @State private var query = ""
 
+    /// What the file will call it: lowercase, spaces and underscores as "-",
+    /// so "leg press" finds and becomes `leg-press`.
     private var normalizedQuery: String {
-        query.trimmingCharacters(in: .whitespaces).lowercased()
+        MuscleMap.key(query)
     }
 
     private var filteredHistory: [String] {

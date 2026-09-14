@@ -15,7 +15,13 @@ import Foundation
 @MainActor
 enum RestLiveActivity {
     static func sync(start: Date?, target: Int, exercise: String, nextUp: String?, landLabel: String?) {
-        guard let start else { end(); return }
+        Task { await syncAndWait(start: start, target: target, exercise: exercise, nextUp: nextUp, landLabel: landLabel) }
+    }
+
+    /// The same, finished before it returns — for the intent, which must not
+    /// return before the lock screen has its clock.
+    static func syncAndWait(start: Date?, target: Int, exercise: String, nextUp: String?, landLabel: String?) async {
+        guard let start else { await endAndWait(); return }
         let end = max(start.addingTimeInterval(TimeInterval(target)), start)
         let state = RestActivityAttributes.ContentState(exercise: exercise, start: start,
                                                         end: end, nextUp: nextUp, landLabel: landLabel)
@@ -29,8 +35,8 @@ enum RestLiveActivity {
             $0.activityState == .active || $0.activityState == .stale
         }
         if let current = live.first {
-            Task { await current.update(content) }
-            for extra in live.dropFirst() { Task { await extra.end(nil, dismissalPolicy: .immediate) } }
+            await current.update(content)
+            for extra in live.dropFirst() { await extra.end(nil, dismissalPolicy: .immediate) }
             return
         }
         guard ActivityAuthorizationInfo().areActivitiesEnabled else { return }
@@ -41,8 +47,12 @@ enum RestLiveActivity {
     }
 
     static func end() {
+        Task { await endAndWait() }
+    }
+
+    static func endAndWait() async {
         for activity in Activity<RestActivityAttributes>.activities {
-            Task { await activity.end(nil, dismissalPolicy: .immediate) }
+            await activity.end(nil, dismissalPolicy: .immediate)
         }
     }
 }
@@ -61,19 +71,24 @@ enum RestSignals {
     }
 
     static func sync(_ draft: SessionDraft?, target: Int = RestSignals.target) {
+        Task { await syncAndWait(draft, target: target) }
+    }
+
+    /// Finished before it returns; the intent needs that.
+    static func syncAndWait(_ draft: SessionDraft?, target: Int = RestSignals.target) async {
         guard let draft, let start = draft.restStart else {
-            RestLiveActivity.end()
+            await RestLiveActivity.endAndWait()
             RestNotifier.cancel()
             return
         }
         let exercise = Theme.readableName(draft.name)
         let next = draft.nextPlanned.map { "\($0.loadLabel) × \($0.reps)" }
         let land = draft.sameAgainSet.map { "\($0.loadLabel) × \($0.reps)" }
-        RestLiveActivity.sync(start: start, target: target, exercise: exercise,
-                              nextUp: next, landLabel: land)
+        await RestLiveActivity.syncAndWait(start: start, target: target, exercise: exercise,
+                                           nextUp: next, landLabel: land)
 
         let remaining = target - Int(Date().timeIntervalSince(start))
         guard remaining > 0 else { RestNotifier.cancel(); return }
-        RestNotifier.schedule(in: remaining, next: next.map { "\(exercise) · \($0)" })
+        await RestNotifier.schedule(in: remaining, next: next.map { "\(exercise) · \($0)" })
     }
 }

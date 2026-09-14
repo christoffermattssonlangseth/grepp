@@ -125,7 +125,7 @@ struct HistoryView: View {
             ForEach(months) { month in
                 if months.count > 1 || !isOpen(month) { monthRow(month) }
                 if isOpen(month) {
-                    ForEach(month.sessions) { session in daySection(session) }
+                    ForEach(month.sessions, id: \.dateString) { session in daySection(session) }
                 }
             }
         }
@@ -158,23 +158,28 @@ struct HistoryView: View {
     /// One day: its lifts, under a header with the date and where the sets went.
     private func daySection(_ session: Session) -> some View {
         Section {
-            ForEach(session.exercises) { ex in
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(ex.name).font(.headline)
-                    // Mono, because this *is* the line from the file.
-                    Text(ex.sets.map(\.token).joined(separator: "  "))
-                        .font(.system(.subheadline, design: .monospaced))
-                        .foregroundStyle(.secondary)
+            ForEach(session.exercises, id: \.name) { ex in
+                // A button, not a tap gesture: tapping a row to close a swipe
+                // you changed your mind about must not open the lift.
+                Button {
+                    store.requestEdit(exercise: ex.name, on: session.date)
+                } label: {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(ex.name).font(.headline)
+                        // Mono, because this *is* the line from the file.
+                        Text(ex.sets.map(\.token).joined(separator: "  "))
+                            .font(.system(.subheadline, design: .monospaced))
+                            .foregroundStyle(.secondary)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .contentShape(Rectangle())
                 }
-                .contentShape(Rectangle())
+                .buttonStyle(.plain)
                 .listRowBackground(
                     RoundedRectangle(cornerRadius: 12, style: .continuous)
                         .fill(.regularMaterial)
                         .padding(.vertical, 2)
                 )
-                .onTapGesture {
-                    store.requestEdit(exercise: ex.name, on: session.date)
-                }
                 .swipeActions(edge: .leading) {
                     Button {
                         store.requestEdit(exercise: ex.name, on: session.date)
@@ -222,12 +227,18 @@ struct HistoryView: View {
                             pendingMove = MoveTarget(name: nil, date: session.date)
                         } label: { Label("Move the whole day", systemImage: "calendar") }
                     } label: {
+                        // A pill with its own background: a bare label in a
+                        // Menu has drawn as nothing on iOS 26.
                         HStack(spacing: 4) {
                             Text(session.dateString)
                             Image(systemName: "chevron.down")
                                 .font(.caption2.weight(.bold))
                                 .foregroundStyle(.tertiary)
                         }
+                        .textCase(nil)
+                        .padding(.horizontal, 8).padding(.vertical, 3)
+                        .background(.ultraThinMaterial, in: Capsule())
+                        .fixedSize()
                     }
                     .buttonStyle(.plain)
                     .foregroundStyle(.secondary)

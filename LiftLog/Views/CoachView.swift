@@ -28,7 +28,9 @@ struct CoachView: View {
     @State private var savedProgramText: String?
     @State private var savingProgram = false
     @State private var programError: String?
-    @State private var addedLog: [Session]?
+    /// The log lines as added, compared as text: a parsed session gets a new
+    /// id on every render, so the sessions themselves never compare equal.
+    @State private var addedLog: String?
     @State private var addingLog = false
     @State private var logError: String?
     @State private var showingProgramme = false
@@ -123,11 +125,14 @@ struct CoachView: View {
                     .padding(16)
                 }
                 .dismissesKeyboardOnTap()
-                .onChange(of: coach.messages) { _, _ in scroll(proxy) }
+                // Per message and at the end of an answer — not per streamed
+                // chunk, which yanked the transcript back while you re-read.
+                .onChange(of: coach.messages.count) { _, _ in scroll(proxy) }
+                .onChange(of: coach.isResponding) { _, responding in if !responding { scroll(proxy) } }
                 .onChange(of: coach.errorText) { _, _ in scroll(proxy) }
                 // Coming back to a conversation lands on its latest answer, not
                 // its first question. Without animation: it's where you were.
-                .onAppear { proxy.scrollTo(bottomAnchor, anchor: .bottom) }
+                .onAppear { if !coach.isEmpty { proxy.scrollTo(bottomAnchor, anchor: .bottom) } }
             }
             inputBar
         }
@@ -259,7 +264,7 @@ struct CoachView: View {
 
     @ViewBuilder
     private func coachBubble(_ message: CoachMessage) -> some View {
-        let reply = CoachContext.parseReply(message.text)
+        let reply = CoachContext.parseReply(message.text, final: !message.isStreaming)
 
         VStack(alignment: .leading, spacing: 6) {
             if !reply.prose.isEmpty {
@@ -267,22 +272,22 @@ struct CoachView: View {
                     .font(.body)
                     .textSelection(.enabled)
             }
-            if reply.isWritingGoals {
+            if message.isStreaming, reply.isWritingGoals {
                 Label("writing your goals…", systemImage: "square.and.pencil")
                     .font(.caption).foregroundStyle(.secondary)
-            } else if reply.isWritingMemory {
+            } else if message.isStreaming, reply.isWritingMemory {
                 Label("making a note…", systemImage: "square.and.pencil")
                     .font(.caption).foregroundStyle(.secondary)
-            } else if reply.isWritingResearch {
+            } else if message.isStreaming, reply.isWritingResearch {
                 Label("writing an evidence entry…", systemImage: "square.and.pencil")
                     .font(.caption).foregroundStyle(.secondary)
-            } else if reply.isWritingProgram {
+            } else if message.isStreaming, reply.isWritingProgram {
                 Label("writing your programme…", systemImage: "square.and.pencil")
                     .font(.caption).foregroundStyle(.secondary)
-            } else if reply.isWritingPrescription {
+            } else if message.isStreaming, reply.isWritingPrescription {
                 Label("writing a prescription…", systemImage: "square.and.pencil")
                     .font(.caption).foregroundStyle(.secondary)
-            } else if reply.isWritingLog {
+            } else if message.isStreaming, reply.isWritingLog {
                 Label("writing your sessions…", systemImage: "square.and.pencil")
                     .font(.caption).foregroundStyle(.secondary)
             } else if message.isStreaming, message.isLookup == true {
@@ -394,7 +399,7 @@ struct CoachView: View {
                 if !parsed.title.isEmpty {
                     Text(parsed.title).font(.headline)
                 }
-                ForEach(parsed.days) { day in
+                ForEach(Array(parsed.days.enumerated()), id: \.offset) { _, day in
                     VStack(alignment: .leading, spacing: 3) {
                         Text(day.title).font(.subheadline.weight(.bold))
                         ForEach(day.exercises) { ex in
@@ -444,7 +449,8 @@ struct CoachView: View {
     /// into training.md as one commit, each lift on its own day — the file the
     /// lifter was afraid was empty, full of their own history.
     private func logCard(_ sessions: [Session]) -> some View {
-        let added = addedLog == sessions
+        let lines = WorkoutParser.serialize(sessions)
+        let added = addedLog == lines
         let lifts = sessions.reduce(0) { $0 + $1.exercises.count }
         return VStack(alignment: .leading, spacing: 12) {
             Label("\(sessions.count) \(sessions.count == 1 ? "session" : "sessions") · \(lifts) \(lifts == 1 ? "lift" : "lifts")",
@@ -463,7 +469,7 @@ struct CoachView: View {
                     addingLog = true
                     logError = nil
                     if await store.importLog(sessions) != .failed {
-                        addedLog = sessions
+                        addedLog = lines
                     } else {
                         logError = store.status
                     }

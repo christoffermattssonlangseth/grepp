@@ -17,12 +17,15 @@ nonisolated struct SameAgainIntent: LiveActivityIntent {
     /// Landing one more set of the lift you're already doing is fine unlocked.
     static var authenticationPolicy: IntentAuthenticationPolicy = .alwaysAllowed
 
-    @MainActor static var handler: (() -> Void)?
+    /// Async, and awaited: when the phone is locked the system launches the
+    /// app just to run this and may suspend it the moment `perform` returns,
+    /// so the lock-screen update and the notification must be done by then.
+    @MainActor static var handler: (() async -> Void)?
 
     init() {}
 
     func perform() async throws -> some IntentResult {
-        await MainActor.run { Self.handler?() }
+        if let handler = await Self.handler { await handler() }
         return .result()
     }
 }

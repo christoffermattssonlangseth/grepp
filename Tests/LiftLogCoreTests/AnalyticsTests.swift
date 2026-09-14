@@ -118,7 +118,7 @@ final class AnalyticsTests: XCTestCase {
 
     private var utc: Calendar {
         var c = Calendar(identifier: .gregorian)
-        c.timeZone = TimeZone(identifier: "UTC")!
+        c.timeZone = Session.dateFormatter.timeZone
         return c
     }
 

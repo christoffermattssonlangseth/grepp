@@ -7,7 +7,7 @@ struct LiftLogApp: App {
 
     init() {
         // The lock-screen button lands in the store, whether or not a screen is up.
-        SameAgainIntent.handler = { Store.shared.sameAgain() }
+        SameAgainIntent.handler = { await Store.shared.sameAgain() }
     }
 
     var body: some Scene {
@@ -19,6 +19,7 @@ struct LiftLogApp: App {
                 // reload on the way out whatever happened to the ones before.
                 .onChange(of: scenePhase) { _, phase in
                     if phase == .background { store.refreshWidget() }
+                    if phase == .active { store.reloadCredentials() }
                 }
         }
     }

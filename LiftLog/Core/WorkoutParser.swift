@@ -72,7 +72,9 @@ enum WorkoutParser {
 
     static func parseSet(_ token: String) -> WorkSet? {
         let parts = token.lowercased().split(separator: "x")
-        guard parts.count == 2, let reps = Int(parts[1]) else { return nil }
+        // A rep count is a positive whole number: "100x-5" and "100x0" are typos
+        // to be named as unreadable, not sets to be charted.
+        guard parts.count == 2, let reps = Int(parts[1]), reps > 0 else { return nil }
         let load = parts[0]
         if load == "bw" {
             return WorkSet(weight: nil, added: nil, reps: reps)

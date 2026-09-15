@@ -725,4 +725,38 @@ final class CoachContextTests: XCTestCase {
         XCTAssertTrue(prompt.prompt.contains("EARLIER IN THIS CHAT:\nLifter: what should I squat\nCoach: 100x5"))
         XCTAssertTrue(prompt.prompt.contains("The log is empty"))
     }
+
+    func testOnDeviceToolsAnswerFromTheLog() {
+        let sessions = [
+            Session(date: day("2026-08-20"), exercises: [lift("squat", "110x3 100x5")]),
+            Session(date: day("2026-09-01"), exercises: [lift("squat", "100x5 100x5 100x5"), lift("bench", "70x8")]),
+            Session(date: day("2026-09-08"), exercises: [lift("squat", "102.5x5 102.5x5 102.5x4")]),
+        ]
+        let squat = CoachContext.liftLines("Squat", in: sessions, count: 2)
+        XCTAssertTrue(squat.hasPrefix("2026-09-08 squat 102.5x5 102.5x5 102.5x4\n2026-09-01 squat 100x5 100x5 100x5"), squat)
+        XCTAssertTrue(squat.contains("3 sessions of Squat in all; best 110x3 on 2026-08-20"), squat)
+        XCTAssertEqual(CoachContext.liftLines("ohp", in: sessions, count: 3), "No sessions of ohp in the log.")
+
+        let recent = CoachContext.recentLines(days: 10, in: sessions, today: day("2026-09-10"))
+        XCTAssertEqual(recent, "2026-09-01 squat 100x5 100x5 100x5\n2026-09-01 bench 70x8\n2026-09-08 squat 102.5x5 102.5x5 102.5x4")
+        XCTAssertTrue(CoachContext.muscleSetLines(weeks: 2, in: sessions, map: MuscleMap(), today: day("2026-09-10")).hasPrefix("quads:"))
+    }
+
+    func testGeneratedLiftsBecomeTheSameFencesClaudeWrites() {
+        let squat = CoachContext.GeneratedLift(name: "Back Squat", sets: [(kg: 102.5, reps: 5), (kg: 102.5, reps: 5)])
+        let chins = CoachContext.GeneratedLift(name: "chin-ups", sets: [(kg: 0, reps: 8)])
+        let text = CoachContext.prescriptionReply(note: "Squat got every rep on 2026-09-08, so 105.", lifts: [squat, chins])
+        let reply = CoachContext.parseReply(text)
+        XCTAssertEqual(reply.prose, "Squat got every rep on 2026-09-08, so 105.")
+        XCTAssertEqual(reply.prescriptions.map(\.name), ["back-squat", "chin-ups"])
+        XCTAssertEqual(reply.prescriptions[0].sets.map(\.token), ["102.5x5", "102.5x5"])
+        XCTAssertEqual(reply.prescriptions[1].sets.map(\.token), ["bwx8"])
+
+        let imported = CoachContext.importReply(note: "Took Monday as the 7th.",
+                                                days: [(date: "2026-09-07", lifts: [squat]), (date: "not a date", lifts: [chins])])
+        let parsed = CoachContext.parseReply(imported)
+        XCTAssertEqual(parsed.log?.count, 1)
+        XCTAssertEqual(parsed.log?.first?.dateString, "2026-09-07")
+        XCTAssertEqual(CoachContext.prescriptionReply(note: "Nothing to plan.", lifts: []), "Nothing to plan.")
+    }
 }

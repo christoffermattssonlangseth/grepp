@@ -60,9 +60,12 @@ notification says when rest is up too.
 **Coach.** A chat with Claude that has your log in front of it. Sonnet 5 by
 default, Opus 5 a tap away, and on a phone that runs Apple Intelligence a
 third choice, **On device**: Apple's model, free and private, with no key
-needed. It is small, so it gets a digest and the last few sessions rather
-than the whole log, and it prescribes but doesn't design programmes or
-read papers. It prescribes with numbers, and each exercise it
+needed. It is small, so instead of the log it gets a digest and the last few
+sessions plus three tools it can call back into the app with — one lift's
+history, the last days of the log, sets per muscle — and it answers "what
+should I do today" and "here's what I did" as typed output, so a session or
+a set of log lines can't come back malformed. It doesn't design programmes
+or read papers; that's Claude's. It prescribes with numbers, and each exercise it
 prescribes is a card with a **Log** button, or one button for the whole session
 (**Load for next session** once you've already trained today). Mid-session it
 also sees the lift in your hands: the sets landed a minute ago, the plan, the

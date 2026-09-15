@@ -31,8 +31,8 @@ enum CoachModelChoice: String, CaseIterable, Identifiable, Codable {
 
     var label: String {
         switch self {
-        case .sonnet: return "Sonnet 5"
-        case .opus: return "Opus 5"
+        case .sonnet: return "Sonnet"
+        case .opus: return "Opus"
         case .onDevice: return "On device"
         }
     }

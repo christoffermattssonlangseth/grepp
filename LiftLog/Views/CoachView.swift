@@ -679,7 +679,8 @@ struct CoachView: View {
                     ForEach(CoachModelChoice.offered) { Text($0.label).tag($0) }
                 }
                 .pickerStyle(.segmented)
-                .frame(maxWidth: model.isOnDevice || AppleCoach.isSupported ? 260 : 220)
+                .frame(maxWidth: AppleCoach.isSupported ? 290 : 200)
+                .fixedSize(horizontal: true, vertical: false)
                 .disabled(coach.isResponding)
                 Spacer()
                 // Before the first question there's no context to report yet, so

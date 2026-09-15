@@ -102,7 +102,7 @@ final class TrendsTests: XCTestCase {
         let sessions = WorkoutParser.parse("2026-09-01 squat 100x-5\n2026-09-08 squat 100x5\n")
         XCTAssertEqual(WorkoutParser.serialize(sessions), "2026-09-01 squat 100x-5\n\n2026-09-08 squat 100x5\n")
         XCTAssertEqual(Analytics.series("squat", metric: .maxReps, in: sessions).map(\.value), [5])
-        XCTAssertEqual(Analytics.series("squat", metric: .oneRepMax, in: sessions).map(\.value), [100])
+        XCTAssertEqual(Analytics.series("squat", metric: .oneRepMax, in: sessions).map(\.value), [Analytics.epley(weight: 100, reps: 5)])
     }
 
     // MARK: - every lift
@@ -171,7 +171,7 @@ final class TrendsTests: XCTestCase {
 
     func testAnOverrideOnOneSpellingCountsForEverySpelling() {
         var map = MuscleMap()
-        map.set(.lift(.chest, half: .triceps, .frontDelts), for: "bench")
+        map.set(.lift(.chest, half: .triceps), for: "bench")   // not the table's own share, which is forgotten
         XCTAssertTrue(map.isOverridden("bench-press"))
         XCTAssertTrue(map.isOverridden("Bench"))
         XCTAssertEqual(map.share(for: "bench-press"), map.share(for: "bench"))

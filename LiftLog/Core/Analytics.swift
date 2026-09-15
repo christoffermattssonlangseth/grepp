@@ -184,13 +184,13 @@ enum Analytics {
 
     /// One value per session date for the chosen metric, every line of the
     /// lift that day counted. A line dated after `today` is a typo, not a
-    /// forecast, and stays off the chart.
+    /// forecast, and stays off the chart; so does a set with no reps in it.
     static func series(_ name: String, metric: Metric, in sessions: [Session],
                        through today: Date = Date()) -> [TrendPoint] {
         sessions.compactMap { session -> TrendPoint? in
             guard session.date <= today else { return nil }
             let day = entries(name, in: session)
-            let sets = day.flatMap(\.sets)
+            let sets = day.flatMap(\.sets).filter { $0.reps > 0 }
             guard !sets.isEmpty else { return nil }
 
             let value: Double?

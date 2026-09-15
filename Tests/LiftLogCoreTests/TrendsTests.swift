@@ -96,10 +96,13 @@ final class TrendsTests: XCTestCase {
         XCTAssertLessThan(Analytics.epley(weight: 70, reps: 25), Analytics.epley(weight: 100, reps: 5))
     }
 
-    func testNegativeOrZeroRepsAreUnreadable() {
-        XCTAssertNil(WorkoutParser.parseSet("100x-5"))
-        XCTAssertNil(WorkoutParser.parseSet("100x0"))
-        XCTAssertEqual(WorkoutParser.unreadableLines(in: "2026-09-01 squat 100x-5\n").map(\.number), [1])
+    func testATypoedRepCountRoundTripsButNeverCharts() {
+        // "100x-5" is kept as written — the file is never rewritten — but the
+        // chart doesn't read a negative rep count as a session.
+        let sessions = WorkoutParser.parse("2026-09-01 squat 100x-5\n2026-09-08 squat 100x5\n")
+        XCTAssertEqual(WorkoutParser.serialize(sessions), "2026-09-01 squat 100x-5\n\n2026-09-08 squat 100x5\n")
+        XCTAssertEqual(Analytics.series("squat", metric: .maxReps, in: sessions).map(\.value), [5])
+        XCTAssertEqual(Analytics.series("squat", metric: .oneRepMax, in: sessions).map(\.value), [100])
     }
 
     // MARK: - every lift

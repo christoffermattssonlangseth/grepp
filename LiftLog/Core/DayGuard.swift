@@ -14,7 +14,11 @@ enum DayGuard {
     static func needsCheck(date: Date, chosen: Bool, sessionStart: Date?,
                            now: Date = Date(), calendar: Calendar = .current) -> Bool {
         if chosen || calendar.isDate(date, inSameDayAs: now) { return false }
-        if let start = sessionStart, now.timeIntervalSince(start) < sameSessionWindow, start <= now {
+        // Only a session that began on that day, recently, is still that
+        // session. A set landed today on a past day opened for editing must
+        // not turn that day into "the session in progress".
+        if let start = sessionStart, calendar.isDate(start, inSameDayAs: date),
+           now.timeIntervalSince(start) < sameSessionWindow, start <= now {
             return false
         }
         return true

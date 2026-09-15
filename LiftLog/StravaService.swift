@@ -218,15 +218,21 @@ final class StravaService: ObservableObject {
 
 /// The system sign-in sheet, wrapped for async/await.
 private enum WebAuth {
+    /// Held while the sheet is up: a session nothing retains can be torn
+    /// down under the user.
+    @MainActor private static var current: ASWebAuthenticationSession?
+
     @MainActor
     static func run(url: URL, scheme: String) async throws -> URL {
         try await withCheckedThrowingContinuation { continuation in
             let session = ASWebAuthenticationSession(url: url, callback: .customScheme(scheme)) { callback, error in
+                Task { @MainActor in current = nil }
                 if let callback { continuation.resume(returning: callback) }
                 else { continuation.resume(throwing: StravaService.StravaError.cancelled) }
             }
             session.presentationContextProvider = Anchor.shared
             session.prefersEphemeralWebBrowserSession = false
+            current = session
             session.start()
         }
     }

@@ -1125,11 +1125,13 @@ enum CoachContext {
 
     // MARK: - On device
 
-    /// The most recent sessions the on-device coach is shown, at most.
-    static let onDeviceSessions = 8
+    /// The most recent sessions the on-device coach is shown up front; it
+    /// has tools to ask for more.
+    static let onDeviceSessions = 4
     /// Characters of context the on-device prompt is built to, instructions
-    /// aside: about a third of the model's window, leaving room to answer.
-    static let onDeviceBudget = 6_000
+    /// aside: about a quarter of the model's window, leaving room for tool
+    /// results and the answer.
+    static let onDeviceBudget = 4_000
 
     struct OnDevicePrompt: Equatable {
         let instructions: String
@@ -1144,17 +1146,36 @@ enum CoachContext {
     82.5 kg for 8 reps, `bwx6` is bodyweight for 6, `bw+5x6` bodyweight plus 5 kg.
 
     Answer in under 120 words, plainly, with numbers. Use only the lifter's own \
-    numbers from the context; if something isn't there, say so rather than guess. \
-    When you say what was done before, give the date.
+    numbers; the context has a digest and the last few sessions, and you have \
+    tools for more: liftHistory for one lift's past sessions and best, \
+    recentSessions for the last days of the log, muscleSets for sets per muscle \
+    per week. Call one when a question needs history the context doesn't show; \
+    never guess a number. When you say what was done before, give the date.
 
-    When asked what to do next, end with the session in this exact form, one line \
-    per lift, loads chosen from what they did last:
-    ```prescription
-    squat 100x5 100x5 100x5
-    bench 70x8 70x8 70x8
-    ```
     Progress by 2.5 kg on a lift that got all its reps last time; repeat the load \
     when it didn't; about 3 lifts a session. No headings, no tables.
+    """
+
+    /// For the structured "what should I do" call: the same rules, and the
+    /// shape comes from the type rather than a fence.
+    static let onDevicePlanInstructions = """
+    You are a strength coach prescribing today's session from one lifter's own log. \
+    Loads are kilograms. Choose two to four lifts they already do, in the order \
+    they usually do them. For each lift look at what they did last (the context \
+    and the liftHistory tool): the same load plus 2.5 kg if they got every rep, \
+    the same load if they didn't, three to five working sets, reps as they \
+    usually do. Bodyweight lifts are 0 kg. The note is one or two sentences \
+    naming the numbers the plan rests on, with their dates.
+    """
+
+    /// For turning what the lifter says they did into log lines.
+    static let onDeviceImportInstructions = """
+    Turn what the lifter says they did into training-log entries: one day per \
+    date, one lift per line, sets as load in kilograms and reps. Dates are \
+    yyyy-MM-dd; use the context's Today to resolve "yesterday" or "Monday", and \
+    if only a week is known use its Monday. Lift names lowercase with hyphens, as \
+    the log has them. Bodyweight sets are 0 kg. Include only what they said; put \
+    anything you had to assume in the note, in one sentence.
     """
 
     /// The prompt for the on-device model: today, a short digest, the last few
@@ -1195,6 +1216,89 @@ enum CoachContext {
         }
         parts.append(tail)
         return OnDevicePrompt(instructions: onDeviceInstructions, prompt: parts.joined(separator: "\n\n"))
+    }
+
+    // MARK: - On-device tools and assembled replies
+
+    /// One lift's last sessions as log lines, newest first, and its best set:
+    /// what the on-device model asks for when a question needs history.
+    static func liftLines(_ lift: String, in sessions: [Session], count: Int) -> String {
+        let key = MuscleMap.key(lift)
+        let matching = sessions.sorted { $0.date > $1.date }.compactMap { session -> (Session, ExerciseEntry)? in
+            session.exercises.first { MuscleMap.key($0.name) == key || MuscleMap.aliases[MuscleMap.key($0.name)] == key }
+                .map { (session, $0) }
+        }
+        guard !matching.isEmpty else { return "No sessions of \(lift) in the log." }
+        let lines = matching.prefix(max(1, count)).map { "\($0.0.dateString) \($0.1.name) \($0.1.sets.map(\.token).joined(separator: " "))" }
+        let allSets = matching.flatMap { pair in pair.1.sets.map { (pair.0.dateString, $0) } }
+        let best = allSets.max { a, b in
+            let la = a.1.weight ?? a.1.added ?? 0, lb = b.1.weight ?? b.1.added ?? 0
+            return la < lb || (la == lb && a.1.reps < b.1.reps)
+        }
+        var out = lines.joined(separator: "\n") + "\n(\(matching.count) sessions of \(lift) in all"
+        if let best { out += "; best \(best.1.token) on \(best.0)" }
+        return out + ")"
+    }
+
+    /// The log's own lines from the last `days` days, oldest first, capped.
+    static func recentLines(days: Int, in sessions: [Session], today: Date = Date(), limit: Int = 24) -> String {
+        let since = today.addingTimeInterval(-Double(max(1, days)) * 86_400)
+        let recent = sessions.filter { $0.date >= since }.sorted { $0.date < $1.date }
+        guard !recent.isEmpty else { return "Nothing logged in the last \(days) days." }
+        let lines = recent.flatMap { session in session.exercises.map { "\(session.dateString) \($0.name) \($0.sets.map(\.token).joined(separator: " "))" } }
+        return lines.suffix(limit).joined(separator: "\n")
+    }
+
+    /// Sets per muscle for each of the last `weeks` weeks, oldest first.
+    static func muscleSetLines(weeks: Int, in sessions: [Session], map: MuscleMap, today: Date = Date()) -> String {
+        let weekly = map.weeklySets(weeks: max(1, weeks), endingOn: today, in: sessions)
+        let groups = MuscleGroup.ordered.filter { g in weekly.contains { ($0[g] ?? 0) > 0 } }
+        guard !groups.isEmpty else { return "No sets counted yet." }
+        return groups.map { g in
+            let cells = weekly.map { week -> String in
+                let n = week[g] ?? 0
+                return n == n.rounded() ? String(Int(n)) : String(format: "%.1f", n)
+            }
+            return "\(g.rawValue): " + cells.joined(separator: " · ")
+        }.joined(separator: "\n") + "\n(columns: oldest week to this week; a compound counts fully for what it's for and half for what it also trains)"
+    }
+
+    /// A lift the on-device model generated, in the app's own terms.
+    struct GeneratedLift: Equatable {
+        var name: String
+        var sets: [(kg: Double, reps: Int)]
+        static func == (a: GeneratedLift, b: GeneratedLift) -> Bool {
+            a.name == b.name && a.sets.map(\.kg) == b.sets.map(\.kg) && a.sets.map(\.reps) == b.sets.map(\.reps)
+        }
+    }
+
+    /// One log line for a generated lift: `squat 100x5 100x5`; 0 kg is bodyweight.
+    static func line(for lift: GeneratedLift) -> String {
+        let name = MuscleMap.key(lift.name)
+        let tokens = lift.sets.map { set -> String in
+            let reps = max(1, set.reps)
+            return set.kg > 0 ? "\(WorkSet.formatWeight(set.kg))x\(reps)" : "bwx\(reps)"
+        }
+        return ([name] + tokens).joined(separator: " ")
+    }
+
+    /// The reply for a structured session: the note, then the fence the Log
+    /// tab's cards read, exactly as Claude would have written it.
+    static func prescriptionReply(note: String, lifts: [GeneratedLift]) -> String {
+        let kept = lifts.filter { !$0.sets.isEmpty && !MuscleMap.key($0.name).isEmpty }
+        guard !kept.isEmpty else { return note }
+        return note.trimmingCharacters(in: .whitespacesAndNewlines) + "\n\n\(prescriptionFence)\n"
+            + kept.map(line(for:)).joined(separator: "\n") + "\n```"
+    }
+
+    /// The reply for history the lifter described: a log block, one line per
+    /// lift per day, with an Add to my log card at the end of it.
+    static func importReply(note: String, days: [(date: String, lifts: [GeneratedLift])]) -> String {
+        let lines = days.flatMap { day in
+            day.lifts.filter { !$0.sets.isEmpty }.map { "\(day.date) \(line(for: $0))" }
+        }.filter { Session.dateFormatter.date(from: String($0.prefix(10))) != nil }
+        guard !lines.isEmpty else { return note }
+        return note.trimmingCharacters(in: .whitespacesAndNewlines) + "\n\n\(logFence)\n" + lines.joined(separator: "\n") + "\n```"
     }
 
     /// What to do with a lifter whose log has nothing in it yet.

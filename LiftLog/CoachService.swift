@@ -195,7 +195,7 @@ final class CoachService: ObservableObject {
         errorText = nil
 
         if model.isOnDevice {
-            sendOnDevice(trimmed, sessions: sessions, brief: brief, draft: draft)
+            sendOnDevice(trimmed, sessions: sessions, brief: brief, draft: draft, muscleMap: muscleMap)
             return
         }
 
@@ -304,7 +304,7 @@ final class CoachService: ObservableObject {
     /// The on-device path: a compact brief, no key, no cost, the same fences.
     /// The context is trimmed once and retried if the model says it's too long.
     private func sendOnDevice(_ question: String, sessions: [Session],
-                              brief: CoachContext.Brief, draft: SessionDraft?) {
+                              brief: CoachContext.Brief, draft: SessionDraft?, muscleMap: MuscleMap) {
         guard mode == .coaching else {
             messages.append(CoachMessage(role: .you, text: question))
             errorText = "The goals interview needs Claude. Pick Sonnet or Opus for it."
@@ -316,7 +316,7 @@ final class CoachService: ObservableObject {
             return
         }
         let history = messages.suffix(6).map { (role: $0.role == .you ? "Lifter" : "Coach", text: $0.text) }
-        contextNote = "on device · \(min(sessions.count, CoachContext.onDeviceSessions)) recent sessions · digest"
+        contextNote = "on device · digest · \(min(sessions.count, CoachContext.onDeviceSessions)) recent sessions · tools"
 
         messages.append(CoachMessage(role: .you, text: question))
         let reply = CoachMessage(role: .coach, text: "", isStreaming: true, model: .onDevice)
@@ -333,7 +333,8 @@ final class CoachService: ObservableObject {
                                                          sessions: sessions, brief: brief, draft: draft,
                                                          budget: budget)
                 do {
-                    for try await whole in AppleCoach.stream(instructions: prompt.instructions, prompt: prompt.prompt) {
+                    for try await whole in AppleCoach.respond(question: question, prompt: prompt,
+                                                              sessions: sessions, muscleMap: muscleMap) {
                         guard let self, !Task.isCancelled else { return }
                         self.replace(whole, on: reply.id)
                     }

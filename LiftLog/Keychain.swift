@@ -19,7 +19,12 @@ enum Keychain {
         SecItemDelete(query as CFDictionary)
         var add = query
         add[kSecValueData as String] = data
-        SecItemAdd(add as CFDictionary, nil)
+        // Readable once the phone has been unlocked since boot — not only
+        // while it's unlocked now: the lock-screen button can launch the app
+        // with the screen locked, and that launch must still see the token.
+        add[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
+        let status = SecItemAdd(add as CFDictionary, nil)
+        assert(status == errSecSuccess || status == errSecInteractionNotAllowed, "Keychain add failed: \(status)")
     }
 
     static func get(account: String, service: String = gitHubService) -> String? {

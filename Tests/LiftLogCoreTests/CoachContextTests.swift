@@ -448,6 +448,22 @@ final class CoachContextTests: XCTestCase {
                        CoachContext.LookupTarget(url: nil))
         XCTAssertNil(CoachContext.lookupTarget(in: "What should I squat today?"))
         XCTAssertNil(CoachContext.lookupTarget(in: "I did 10.5 reps at 100"), "a decimal is not a DOI")
+        XCTAssertNil(CoachContext.lookupTarget(in: "here's my squat https://youtu.be/abc knees caving?"),
+                     "a link that isn't a paper is just a link")
+        XCTAssertEqual(CoachContext.lookupTarget(in: "https://www.nature.com/articles/s41598-024-1"),
+                       CoachContext.LookupTarget(url: nil), "a subdomain of a journal counts")
+    }
+
+    func testAFinishedReplyClosesItsOpenFence() {
+        let text = "Here's a programme.\n```program.md\n# Plan\n## Day 1\n- squat 3x5"
+        let streaming = CoachContext.parseReply(text)
+        XCTAssertTrue(streaming.isWritingProgram)
+        XCTAssertNil(streaming.program)
+        let done = CoachContext.parseReply(text, final: true)
+        XCTAssertFalse(done.isWritingProgram)
+        XCTAssertEqual(done.program, "# Plan\n## Day 1\n- squat 3x5")
+        XCTAssertEqual(done.prose, "Here's a programme.")
+        XCTAssertEqual(CoachContext.parseReply("plain answer", final: true).prose, "plain answer")
     }
 
     // MARK: - mid-session
@@ -632,5 +648,50 @@ final class CoachContextTests: XCTestCase {
                               exercises: [ExerciseEntry(name: "squat", sets: [WorkSet(weight: 100, added: nil, reps: 5)])])
         let full = CoachContext.systemPrompt(for: CoachContext.excerpt(from: [session]))
         XCTAssertFalse(full.contains("THE LOG IS EMPTY"))
+    }
+
+    // MARK: - reading history
+
+    private func day(_ s: String) -> Date { Session.dateFormatter.date(from: s)! }
+    private func lift(_ name: String, _ tokens: String) -> ExerciseEntry {
+        ExerciseEntry(name: name, sets: tokens.split(separator: " ").map { WorkoutParser.parseSet(String($0))! })
+    }
+
+    func testDigestSaysLastBestAndHowOftenPerLift() {
+        let sessions = [
+            Session(date: day("2026-08-20"), exercises: [lift("squat", "110x3 100x5"), lift("chin-ups", "bw+10x5")]),
+            Session(date: day("2026-09-01"), exercises: [lift("squat", "100x5 100x5 100x5")]),
+            Session(date: day("2026-09-08"), exercises: [lift("squat", "102.5x5 102.5x5 102.5x4"), lift("chin-ups", "bwx8 bw+5x6")]),
+        ]
+        var utc = Calendar(identifier: .gregorian); utc.timeZone = Session.dateFormatter.timeZone
+        let digest = CoachContext.liftDigest(from: sessions, today: day("2026-09-11"), calendar: utc)!
+        XCTAssertTrue(digest.contains("- squat: last 2026-09-08 (3 days ago) 102.5x5 102.5x5 102.5x4 · best 110x3 on 2026-08-20 · 3 sessions in the last 4 weeks, 3 ever"), digest)
+        XCTAssertTrue(digest.contains("- chin-ups: last 2026-09-08 (3 days ago) bwx8 bw+5x6 · best bw+10x5 on 2026-08-20 · 2 sessions in the last 4 weeks, 2 ever"), digest)
+        XCTAssertLessThan(digest.range(of: "- squat")!.lowerBound, digest.range(of: "- chin-ups")!.lowerBound, "same day: stable order")
+        XCTAssertNil(CoachContext.liftDigest(from: []))
+    }
+
+    func testDigestGoesInTheSystemPromptWithTheReadingRule() {
+        let session = Session(date: day("2026-09-01"), exercises: [lift("squat", "100x5")])
+        let digest = CoachContext.liftDigest(from: [session], today: day("2026-09-02"))!
+        let prompt = CoachContext.systemPrompt(for: CoachContext.excerpt(from: [session]), digest: digest)
+        XCTAssertTrue(prompt.contains("LIFT DIGEST"))
+        XCTAssertTrue(prompt.contains("READING HISTORY"))
+        XCTAssertLessThan(prompt.range(of: "LIFT DIGEST")!.lowerBound, prompt.range(of: "<training-log>")!.lowerBound)
+        XCTAssertFalse(CoachContext.systemPrompt(for: CoachContext.excerpt(from: [session])).contains("READING HISTORY"),
+                       "no digest, no rule about it")
+    }
+
+    func testLogUpdateNamesTheNewLines() {
+        let note = CoachContext.liveNote(draft: nil, plans: [], newLines: ["2026-09-10 squat 100x5 100x5"], now: day("2026-09-11"))!
+        XCTAssertTrue(note.hasPrefix("LOG UPDATE."))
+        XCTAssertTrue(note.contains("2026-09-10 squat 100x5 100x5"))
+        XCTAssertNil(CoachContext.liveNote(draft: nil, plans: [], newLines: [], now: day("2026-09-11")))
+    }
+
+    func testPrescriptionNamesCanHaveSpaces() {
+        let reply = CoachContext.parseReply("```prescription\nbench press 60x5 60x5\nlat pull down 50x10\n```")
+        XCTAssertEqual(reply.prescriptions.map(\.name), ["bench-press", "lat-pull-down"])
+        XCTAssertEqual(reply.prescriptions[0].sets.count, 2)
     }
 }

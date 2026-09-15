@@ -33,7 +33,9 @@ then puts the session on the Log tab with one tap.
 
 Date, `kebab-case` exercise, then `weightxreps` tokens: `82.5x8` (kg × reps),
 `bwx6` (bodyweight), `bw+5x8` (bodyweight plus 5 kg). The app never writes
-anything else to it.
+anything else to it, and never rewrites a line it can't read: a line it
+doesn't understand holds saving until it's fixed, rather than vanishing. The
+date is the phone's own day.
 
 No exercise images, no videos, no programme library. The numbers are the
 product.

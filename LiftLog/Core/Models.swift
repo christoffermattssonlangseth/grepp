@@ -61,13 +61,25 @@ struct Session: Identifiable, Equatable, Codable {
     var date: Date
     var exercises: [ExerciseEntry]
 
+    /// The log's date, `yyyy-MM-dd`, in the phone's own time zone — so a set
+    /// landed at 01:00 in Stockholm or 19:00 in Los Angeles is filed under the
+    /// day the lifter would name, and every "is this today" check in the app
+    /// (all on `Calendar.current`) agrees with the key in the file. A parsed
+    /// date is local midnight of its day.
     static let dateFormatter: DateFormatter = {
         let f = DateFormatter()
         f.locale = Locale(identifier: "en_US_POSIX")
-        f.timeZone = TimeZone(identifier: "UTC")
+        f.timeZone = .autoupdatingCurrent
         f.dateFormat = "yyyy-MM-dd"
         return f
     }()
+
+    /// A calendar in the same zone as the file's dates, for day arithmetic.
+    static var calendar: Calendar {
+        var c = Calendar(identifier: .gregorian)
+        c.timeZone = dateFormatter.timeZone
+        return c
+    }
 
     var dateString: String { Session.dateFormatter.string(from: date) }
 }

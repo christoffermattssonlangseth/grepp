@@ -86,7 +86,7 @@ final class MuscleMapTests: XCTestCase {
 
     func testWeeklySetsFollowTheMondayGrid() {
         var utc = Calendar(identifier: .gregorian)
-        utc.timeZone = TimeZone(identifier: "UTC")!
+        utc.timeZone = Session.dateFormatter.timeZone
         let sessions = [
             Session(date: date("2026-08-27"), exercises: [entry("squat", 5)]),   // last week
             Session(date: date("2026-09-01"), exercises: [entry("squat", 3)]),   // this week

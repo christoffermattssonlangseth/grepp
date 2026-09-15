@@ -12,24 +12,10 @@ enum WorkoutParser {
         var byDate: [String: Session] = [:]
         var order: [String] = []
 
-        for rawLine in text.split(separator: "\n", omittingEmptySubsequences: false) {
-            let line = rawLine.trimmingCharacters(in: .whitespaces)
+        for line in lines(of: text) {
             if line.isEmpty { continue }
-
-            let tokens = line.split(separator: " ").map(String.init)
-            guard tokens.count >= 3,
-                  let date = Session.dateFormatter.date(from: tokens[0]) else { continue }
-
-            let dateKey = tokens[0]
-            let name = tokens[1]
-            // A closure rather than `compactMap(parseSet)`: passing the method as a
-            // function value strips it of the caller's actor isolation, which the
-            // app target (MainActor by default) rejects. This compiles the same in
-            // the Foundation-only package target.
-            let sets = tokens[2...].compactMap { parseSet($0) }
-            guard !sets.isEmpty else { continue }
-
-            let entry = ExerciseEntry(name: name, sets: sets)
+            guard let parsed = parseLine(line) else { continue }
+            let (dateKey, date, entry) = parsed
             if byDate[dateKey] == nil {
                 byDate[dateKey] = Session(date: date, exercises: [entry])
                 order.append(dateKey)
@@ -43,6 +29,47 @@ enum WorkoutParser {
     }
 
     /// Parse a single token like "46.5x8", "bwx3" or "bw+5x8".
+    /// The file's lines, trimmed, with a Windows line ending or a byte-order
+    /// mark stripped rather than left to poison the last token of every line.
+    static func lines(of text: String) -> [String] {
+        var text = text
+        if text.hasPrefix("\u{FEFF}") { text.removeFirst() }
+        // "\r\n" is one Character to Swift, so a split on "\n" would never
+        // find it: normalise the endings first.
+        text = text.replacingOccurrences(of: "\r\n", with: "\n").replacingOccurrences(of: "\r", with: "\n")
+        return text.split(separator: "\n", omittingEmptySubsequences: false)
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+    }
+
+    /// One line as (day key, its date, the entry) — or nil when it isn't a log
+    /// line. The name is every token before the first set, joined with "-",
+    /// so `bench press 60x5` is the lift `bench-press`, not `bench` with a
+    /// dropped token.
+    static func parseLine(_ line: String) -> (String, Date, ExerciseEntry)? {
+        let tokens = line.split(separator: " ", omittingEmptySubsequences: true).map(String.init)
+        guard tokens.count >= 3, let date = Session.dateFormatter.date(from: tokens[0]) else { return nil }
+        // A closure rather than `compactMap(parseSet)`: passing the method as a
+        // function value strips it of the caller's actor isolation, which the
+        // app target (MainActor by default) rejects.
+        guard let firstSet = tokens.indices.dropFirst(2).first(where: { parseSet(tokens[$0]) != nil }) else { return nil }
+        // The file's own casing is kept: a rewrite must not change a line it
+        // didn't mean to touch.
+        let name = tokens[1..<firstSet].joined(separator: "-")
+        let sets = tokens[firstSet...].compactMap { parseSet($0) }
+        guard !name.isEmpty, !sets.isEmpty else { return nil }
+        return (tokens[0], date, ExerciseEntry(name: name, sets: sets))
+    }
+
+    /// Non-blank lines the parser would drop, with their 1-based numbers. A
+    /// save rewrites the file from what was parsed, so these must be known
+    /// before anything is written — a line that can't be read must not be
+    /// silently deleted.
+    static func unreadableLines(in text: String) -> [(number: Int, text: String)] {
+        lines(of: text).enumerated().compactMap { i, line -> (number: Int, text: String)? in
+            line.isEmpty || parseLine(line) != nil ? nil : (number: i + 1, text: line)
+        }
+    }
+
     static func parseSet(_ token: String) -> WorkSet? {
         let parts = token.lowercased().split(separator: "x")
         guard parts.count == 2, let reps = Int(parts[1]) else { return nil }

@@ -44,7 +44,7 @@ struct CoachView: View {
     var body: some View {
         NavigationStack {
             Group {
-                if hasKey { chat } else { needsKey }
+                if hasKey || model.isOnDevice { chat } else { needsKey }
             }
             .background(Theme.backgroundView)
             .navigationTitle("Coach")
@@ -676,10 +676,11 @@ struct CoachView: View {
         VStack(spacing: 8) {
             HStack {
                 Picker("Model", selection: $model) {
-                    ForEach(CoachModelChoice.allCases) { Text($0.label).tag($0) }
+                    ForEach(CoachModelChoice.offered) { Text($0.label).tag($0) }
                 }
                 .pickerStyle(.segmented)
-                .frame(maxWidth: 220)
+                .frame(maxWidth: AppleCoach.isSupported ? 290 : 200)
+                .fixedSize(horizontal: true, vertical: false)
                 .disabled(coach.isResponding)
                 Spacer()
                 // Before the first question there's no context to report yet, so
@@ -740,11 +741,18 @@ struct CoachView: View {
         ContentUnavailableView {
             Label("Coach needs an API key", systemImage: "key")
         } description: {
-            Text("Coach asks Claude about your training log. Add a Claude API key to get started — it's stored in the Keychain, never in the repo.")
+            Text(AppleCoach.isSupported
+                 ? "Coach asks Claude about your training log. Add a Claude API key to get started — it's stored in the Keychain, never in the repo. Or try Apple's on-device model: free and private, with a shorter memory."
+                 : "Coach asks Claude about your training log. Add a Claude API key to get started — it's stored in the Keychain, never in the repo.")
         } actions: {
             Button("Open Settings") { store.selectedTab = 4 }
                 .buttonStyle(.borderedProminent)
                 .tint(Theme.accent)
+            if AppleCoach.isSupported {
+                Button("Use the on-device model") { model = .onDevice }
+                    .buttonStyle(.bordered)
+                    .tint(Theme.accent)
+            }
         }
     }
 }

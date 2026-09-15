@@ -1288,7 +1288,7 @@ enum CoachContext {
         let kept = lifts.filter { !$0.sets.isEmpty && !MuscleMap.key($0.name).isEmpty }
         guard !kept.isEmpty else { return note }
         return note.trimmingCharacters(in: .whitespacesAndNewlines) + "\n\n\(prescriptionFence)\n"
-            + kept.map(line(for:)).joined(separator: "\n") + "\n```"
+            + kept.map { line(for: $0) }.joined(separator: "\n") + "\n```"
     }
 
     /// The reply for history the lifter described: a log block, one line per

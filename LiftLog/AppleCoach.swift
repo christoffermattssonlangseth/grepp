@@ -87,11 +87,8 @@ enum AppleCoach {
                         case .question:
                             let session = LanguageModelSession(tools: tools, instructions: prompt.instructions)
                             for try await partial in session.streamResponse(to: prompt.prompt) {
-                                // The element is the partial text (or a snapshot
-                                // carrying it under `content`), cumulative.
-                                let text = (partial as? String)
-                                    ?? (Mirror(reflecting: partial).descendant("content") as? String)
-                                    ?? ""
+                                // Each snapshot carries the whole text so far.
+                                let text = partial.content
                                 if !text.isEmpty { continuation.yield(text) }
                             }
                         }
@@ -239,8 +236,9 @@ nonisolated struct LiftHistoryTool: Tool {
         var count: Int
     }
 
+    // The model calls from its own executor; the log helpers live on the main actor.
     func call(arguments: Arguments) async throws -> String {
-        CoachContext.liftLines(arguments.lift, in: sessions, count: arguments.count)
+        await MainActor.run { CoachContext.liftLines(arguments.lift, in: sessions, count: arguments.count) }
     }
 }
 
@@ -258,7 +256,7 @@ nonisolated struct RecentSessionsTool: Tool {
     }
 
     func call(arguments: Arguments) async throws -> String {
-        CoachContext.recentLines(days: arguments.days, in: sessions, today: today)
+        await MainActor.run { CoachContext.recentLines(days: arguments.days, in: sessions, today: today) }
     }
 }
 
@@ -277,7 +275,7 @@ nonisolated struct MuscleSetsTool: Tool {
     }
 
     func call(arguments: Arguments) async throws -> String {
-        CoachContext.muscleSetLines(weeks: arguments.weeks, in: sessions, map: map, today: today)
+        await MainActor.run { CoachContext.muscleSetLines(weeks: arguments.weeks, in: sessions, map: map, today: today) }
     }
 }
 

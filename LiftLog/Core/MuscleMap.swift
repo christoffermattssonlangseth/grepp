@@ -169,9 +169,10 @@ struct MuscleMap: Equatable, RawRepresentable {
     /// What the lifter has said, or what the table says — for showing in Settings.
     func share(for exercise: String) -> Share? {
         let key = MuscleMap.key(exercise)
-        // An override on the table's name covers the spellings that point to it.
+        // Overrides are kept under the table's name, so every spelling that
+        // points to it finds them; one written under a spelling still counts.
         return overrides[key]
-            ?? MuscleMap.aliases[key].flatMap { overrides[$0] }
+            ?? overrides[MuscleMap.canonical(exercise)]
             ?? MuscleMap.builtInShare(for: exercise)
     }
 
@@ -181,7 +182,9 @@ struct MuscleMap: Equatable, RawRepresentable {
         return builtIn[key] ?? aliases[key].flatMap { builtIn[$0] }
     }
 
-    func isOverridden(_ exercise: String) -> Bool { overrides[MuscleMap.key(exercise)] != nil }
+    func isOverridden(_ exercise: String) -> Bool {
+        overrides[MuscleMap.key(exercise)] != nil || overrides[MuscleMap.canonical(exercise)] != nil
+    }
 
     /// Assign, or clear with an empty list. The first group is the lift's own;
     /// the rest count half.
@@ -192,8 +195,10 @@ struct MuscleMap: Equatable, RawRepresentable {
     /// Assign any shares, or clear with nil or an empty share. Setting exactly
     /// what the table says is a clear too: no point remembering the default.
     mutating func set(_ share: Share?, for exercise: String) {
-        let key = MuscleMap.key(exercise)
+        let key = MuscleMap.canonical(exercise)
         guard !key.isEmpty else { return }
+        // One lift, one entry: "bench" and "bench-press" share it either way.
+        overrides.removeValue(forKey: MuscleMap.key(exercise))
         if let share, !share.isEmpty, share != MuscleMap.builtInShare(for: exercise) {
             overrides[key] = share
         } else {
@@ -258,6 +263,14 @@ struct MuscleMap: Equatable, RawRepresentable {
         exercise.trimmingCharacters(in: .whitespaces).lowercased()
             .replacingOccurrences(of: " ", with: "-")
             .replacingOccurrences(of: "_", with: "-")
+    }
+
+    /// The one name a lift goes by whatever the log calls it that day:
+    /// `bench`, `Bench press` and `bench-press` are all `bench-press`. Every
+    /// tab that asks "is this the same lift" asks this.
+    static func canonical(_ exercise: String) -> String {
+        let k = key(exercise)
+        return aliases[k] ?? k
     }
 
     /// What each lift is for, and what it also trains.

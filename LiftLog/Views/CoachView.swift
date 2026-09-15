@@ -52,7 +52,11 @@ struct CoachView: View {
             // on screen, onAppear catches one that arrives before the tab has ever
             // been built — TabView makes its pages lazily.
             .onChange(of: store.briefRequest) { _, _ in consumeBriefRequest() }
-            .onAppear(perform: consumeBriefRequest)
+            .onChange(of: store.coachQuestion) { _, _ in consumeQuestion() }
+            .onAppear {
+                consumeBriefRequest()
+                consumeQuestion()
+            }
             .sheet(isPresented: $showingEvidence) {
                 EvidenceView(focus: evidenceTag)
                     .environmentObject(store)
@@ -246,6 +250,18 @@ struct CoachView: View {
         guard store.briefRequest else { return }
         store.briefRequest = false
         showingBrief = true
+    }
+
+    /// A question from another tab: sent straight away when the coach can
+    /// answer, otherwise left in the box for the lifter to send.
+    private func consumeQuestion() {
+        guard let question = store.coachQuestion else { return }
+        store.coachQuestion = nil
+        if (hasKey || model.isOnDevice), !coach.isResponding, coach.mode == .coaching {
+            ask(question)
+        } else {
+            draft = question
+        }
     }
 
     private func beginGoalsInterview() {

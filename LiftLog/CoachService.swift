@@ -219,8 +219,19 @@ final class CoachService: ObservableObject {
         // Rebuilt per question rather than pinned at the start of the chat, so a
         // workout logged mid-conversation is picked up on the next answer.
         let excerpt = CoachContext.excerpt(from: sessions)
-        let system = CoachContext.systemPrompt(for: excerpt, brief: brief, mode: mode,
-                                               digest: mode == .coaching ? CoachContext.liftDigest(from: sessions) : nil)
+        // The digest carries the same dose reading Trends shows, for lifts done
+        // in the last eight weeks: the tab and the chat then agree on a stall.
+        let eightWeeksAgo = Date().addingTimeInterval(-56 * 86_400)
+        var digest: String?
+        if mode == .coaching {
+            digest = CoachContext.liftDigest(from: sessions, dose: { row in
+                guard row.last >= eightWeeksAgo,
+                      let dose = DoseResponse.make(for: row.name, in: sessions, map: muscleMap),
+                      dose.verdict != .tooEarly else { return nil }
+                return dose.summary
+            })
+        }
+        let system = CoachContext.systemPrompt(for: excerpt, brief: brief, mode: mode, digest: digest)
         // What entered the log since the last answer in this chat — lines the
         // model has not been told about, whatever it said before them.
         let lines = Set(WorkoutParser.serialize(sessions).split(separator: "\n").map(String.init).filter { !$0.isEmpty })

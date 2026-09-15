@@ -119,6 +119,15 @@ final class Store: ObservableObject {
         selectedTab = 3
     }
 
+    /// A question handed to the Coach tab from elsewhere — Trends asking about
+    /// a stall with the numbers attached. Coach consumes it and sends it.
+    @Published var coachQuestion: String?
+
+    func requestCoach(_ question: String) {
+        coachQuestion = question
+        selectedTab = 3
+    }
+
     /// The outcome of a `commit`, so callers don't have to sniff `status` text.
     enum CommitResult { case pushed, queued, failed }
 

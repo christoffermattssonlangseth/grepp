@@ -214,11 +214,14 @@ enum CoachContext {
         so and prescribe a specific way out — hold the load and add a rep, cut ~10% and \
         build back, or swap the movement — rather than repeating the same jump that \
         already failed to land. Before choosing the way out, cross the stall with the \
-        dose: look up the weekly sets for the muscle that lift mainly trains. Under \
-        about 10 a week, volume is the lever — add a set or a second exposure and say \
-        so. Inside 10–20, don't reach for volume first; change the effort, the load \
-        jump or the rep scheme, or call a deload. Above 20, more is not the answer: cut \
-        back, recover, then push. Name which case it is.
+        dose. The digest carries the app's own reading per lift ("dose: …"): flat for \
+        how many weeks, the lift's sets a week and the muscle's total, and which side \
+        of the \(Int(DoseResponse.band.lowerBound))–\(Int(DoseResponse.band.upperBound)) band \
+        that total is on — the same sentence the lifter sees in Trends. Use it rather \
+        than counting again. Under the band, volume is the lever — add a set or a \
+        second exposure and say so. Inside it, don't reach for volume first; change \
+        the effort, the load jump or the rep scheme, or call a deload. Above it, more \
+        is not the answer: cut back, recover, then push. Name which case it is.
 
         SAY WHAT YOU CAN'T SEE. When the log won't support an answer, say so plainly and \
         say what would settle it. You cannot see RPE, bodyweight, sleep, illness, or why \
@@ -707,13 +710,14 @@ enum CoachContext {
 
         let labels = weekly.indices.map { i -> String in
             let back = weekly.count - 1 - i
-            return back == 0 ? "this week" : (back == 1 ? "last week" : "\(back) weeks ago")
+            return back == 0 ? "this week so far" : (back == 1 ? "last week" : "\(back) weeks ago")
         }
         var lines = ["SETS PER MUSCLE. Working sets a week, counted by the app from the log (a " +
                      "compound counts fully for what it's a lift for and half for what it also " +
                      "trains — an overhead press is a full set for front and side delts both; " +
                      "every logged set is a working set). Columns: " +
-                     labels.joined(separator: " · ") + "."]
+                     labels.joined(separator: " · ") + ". The newest column is a week in " +
+                     "progress: judge the dose by the completed weeks, not by it."]
         for group in groups {
             let cells = weekly.map { week -> String in
                 let n = week[group] ?? 0
@@ -1076,50 +1080,29 @@ enum CoachContext {
     """
 
     /// Per-lift facts, computed rather than read: what was done last and when,
-    /// the best top set ever, how often lately. Most recent lift first.
+    /// the best top set ever, how often lately. Most recent lift first. The
+    /// same summaries Trends draws, so the tab and the chat agree. `dose`
+    /// adds the app's own reading of a lift's last weeks, where it has one.
     static func liftDigest(from sessions: [Session], today: Date = Date(),
-                           calendar: Calendar = .current, limit: Int = 40) -> String? {
-        struct Row { var name: String; var last: Session; var lastEntry: ExerciseEntry; var all: [(Session, ExerciseEntry)]; var order: Int }
-        var rows: [String: Row] = [:]
-        for session in sessions.sorted(by: { $0.date < $1.date }) {
-            for (i, entry) in session.exercises.enumerated() {
-                let key = entry.name.lowercased()
-                if var row = rows[key] {
-                    row.last = session; row.lastEntry = entry; row.all.append((session, entry)); row.order = i
-                    rows[key] = row
-                } else {
-                    rows[key] = Row(name: entry.name, last: session, lastEntry: entry, all: [(session, entry)], order: i)
-                }
-            }
-        }
-        guard !rows.isEmpty else { return nil }
-        // Newest first; lifts from the same day in the order they were done.
-        let recent = rows.values.sorted {
-            $0.last.date != $1.last.date ? $0.last.date > $1.last.date : $0.order < $1.order
-        }.prefix(limit)
-        let fourWeeksAgo = calendar.date(byAdding: .day, value: -28, to: today) ?? today
-        let start = calendar.startOfDay(for: today)
+                           calendar: Calendar = .current, limit: Int = 40,
+                           dose: (Analytics.LiftSummary) -> String? = { _ in nil }) -> String? {
+        let all = Analytics.liftSummaries(in: sessions, today: today, calendar: calendar)
+        guard !all.isEmpty else { return nil }
+        let recent = all.prefix(limit)
 
         var lines = ["LIFT DIGEST. Computed by the app from every line of the log. Most recent lift first."]
         for row in recent {
-            let days = calendar.dateComponents([.day], from: calendar.startOfDay(for: row.last.date), to: start).day ?? 0
+            let days = row.daysSinceLast(today: today, calendar: calendar)
             let ago = days == 0 ? "today" : (days == 1 ? "yesterday" : "\(days) days ago")
-            let lastSets = row.lastEntry.sets.map(\.token).joined(separator: " ")
-
-            // The best top set: heaviest load, then most reps at it. Bodyweight
-            // lifts compare added load the same way.
-            let allSets = row.all.flatMap { pair in pair.1.sets.map { (pair.0.dateString, $0) } }
-            let best = allSets.max { a, b in
-                let la = a.1.weight ?? a.1.added ?? 0, lb = b.1.weight ?? b.1.added ?? 0
-                return la < lb || (la == lb && a.1.reps < b.1.reps)
+            var line = "- \(row.name): last \(Session.dateFormatter.string(from: row.last)) (\(ago)) \(row.lastTokens)"
+            if let best = row.best, let bestDate = row.bestDate {
+                line += " · best \(best.token) on \(Session.dateFormatter.string(from: bestDate))"
             }
-            let inFourWeeks = row.all.filter { $0.0.date >= fourWeeksAgo }.count
-            var line = "- \(row.name): last \(row.last.dateString) (\(ago)) \(lastSets)"
-            if let best { line += " · best \(best.1.token) on \(best.0)" }
-            line += " · \(inFourWeeks) \(inFourWeeks == 1 ? "session" : "sessions") in the last 4 weeks, \(row.all.count) ever"
+            line += " · \(row.sessionsInFourWeeks) \(row.sessionsInFourWeeks == 1 ? "session" : "sessions") in the last 4 weeks, \(row.sessionsEver) ever"
+            if let reading = dose(row) { line += " · dose: \(reading)" }
             lines.append(line)
         }
-        if rows.count > limit { lines.append("(\(rows.count - limit) lifts not done lately are left out; they are in the log.)") }
+        if all.count > limit { lines.append("(\(all.count - limit) lifts not done lately are left out; they are in the log.)") }
         return lines.joined(separator: "\n")
     }
 

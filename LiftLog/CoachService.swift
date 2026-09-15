@@ -6,8 +6,18 @@ import Combine
 /// actually chew on a few months of history.
 enum CoachModelChoice: String, CaseIterable, Identifiable, Codable {
     case sonnet, opus
+    /// Apple's model, on the phone. Free and private; small.
+    case onDevice
 
     var id: String { rawValue }
+
+    var isOnDevice: Bool { self == .onDevice }
+
+    /// The choices this phone can offer: the on-device one only where the
+    /// framework exists and the hardware can run it.
+    @MainActor static var offered: [CoachModelChoice] {
+        allCases.filter { !$0.isOnDevice || AppleCoach.isSupported }
+    }
 
     /// The API model ID. Dateless IDs are pinned snapshots, not evergreen
     /// pointers — never append a date suffix.
@@ -15,6 +25,7 @@ enum CoachModelChoice: String, CaseIterable, Identifiable, Codable {
         switch self {
         case .sonnet: return "claude-sonnet-5"
         case .opus: return "claude-opus-5"
+        case .onDevice: return ""   // never sent anywhere
         }
     }
 
@@ -22,6 +33,7 @@ enum CoachModelChoice: String, CaseIterable, Identifiable, Codable {
         switch self {
         case .sonnet: return "Sonnet 5"
         case .opus: return "Opus 5"
+        case .onDevice: return "On device"
         }
     }
 
@@ -33,6 +45,7 @@ enum CoachModelChoice: String, CaseIterable, Identifiable, Codable {
         switch self {
         case .sonnet: return (2.0, 10.0)
         case .opus: return (5.0, 25.0)
+        case .onDevice: return (0, 0)
         }
     }
 
@@ -49,6 +62,7 @@ enum CoachModelChoice: String, CaseIterable, Identifiable, Codable {
         switch self {
         case .sonnet: return "Fast and cheap — the everyday default."
         case .opus: return "Slower and pricier; better at deep analysis."
+        case .onDevice: return "Apple's model on the phone. Free, private, small: it sees your last few weeks, not the whole log."
         }
     }
 }
@@ -180,6 +194,11 @@ final class CoachService: ObservableObject {
 
         errorText = nil
 
+        if model.isOnDevice {
+            sendOnDevice(trimmed, sessions: sessions, brief: brief, draft: draft)
+            return
+        }
+
         guard let key = CoachCredentials.resolve() else {
             messages.append(CoachMessage(role: .you, text: trimmed))
             errorText = ClaudeService.ClaudeError.missingKey.localizedDescription
@@ -280,6 +299,69 @@ final class CoachService: ObservableObject {
             self.task = nil
             self.persist()
         }
+    }
+
+    /// The on-device path: a compact brief, no key, no cost, the same fences.
+    /// The context is trimmed once and retried if the model says it's too long.
+    private func sendOnDevice(_ question: String, sessions: [Session],
+                              brief: CoachContext.Brief, draft: SessionDraft?) {
+        guard mode == .coaching else {
+            messages.append(CoachMessage(role: .you, text: question))
+            errorText = "The goals interview needs Claude. Pick Sonnet or Opus for it."
+            return
+        }
+        if let why = AppleCoach.unavailableReason {
+            messages.append(CoachMessage(role: .you, text: question))
+            errorText = why
+            return
+        }
+        let history = messages.suffix(6).map { (role: $0.role == .you ? "Lifter" : "Coach", text: $0.text) }
+        contextNote = "on device · \(min(sessions.count, CoachContext.onDeviceSessions)) recent sessions · digest"
+
+        messages.append(CoachMessage(role: .you, text: question))
+        let reply = CoachMessage(role: .coach, text: "", isStreaming: true, model: .onDevice)
+        messages.append(reply)
+        isResponding = true
+        persist()
+
+        task = Task { [weak self] in
+            var budget = CoachContext.onDeviceBudget
+            var attempt = 0
+            while true {
+                attempt += 1
+                let prompt = CoachContext.onDevicePrompt(question: question, history: Array(history),
+                                                         sessions: sessions, brief: brief, draft: draft,
+                                                         budget: budget)
+                do {
+                    for try await whole in AppleCoach.stream(instructions: prompt.instructions, prompt: prompt.prompt) {
+                        guard let self, !Task.isCancelled else { return }
+                        self.replace(whole, on: reply.id)
+                    }
+                    break
+                } catch is CancellationError {
+                    break
+                } catch {
+                    guard let self else { return }
+                    if attempt == 1, AppleCoach.isContextTooLong(error) {
+                        budget /= 2   // half the sessions, same question
+                        continue
+                    }
+                    self.errorText = AppleCoach.describe(error)
+                    break
+                }
+            }
+            guard let self else { return }
+            self.finishStreamingMessage()
+            self.isResponding = false
+            self.task = nil
+            self.persist()
+        }
+    }
+
+    /// The on-device stream hands over the whole text so far, not a chunk.
+    private func replace(_ text: String, on id: UUID) {
+        guard let idx = messages.firstIndex(where: { $0.id == id }) else { return }
+        messages[idx].text = text
     }
 
     private func append(_ chunk: String, to id: UUID) {

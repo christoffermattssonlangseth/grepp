@@ -1123,6 +1123,80 @@ enum CoachContext {
         return lines.joined(separator: "\n")
     }
 
+    // MARK: - On device
+
+    /// The most recent sessions the on-device coach is shown, at most.
+    static let onDeviceSessions = 8
+    /// Characters of context the on-device prompt is built to, instructions
+    /// aside: about a third of the model's window, leaving room to answer.
+    static let onDeviceBudget = 6_000
+
+    struct OnDevicePrompt: Equatable {
+        let instructions: String
+        let prompt: String
+    }
+
+    /// Standing instructions for the small model: the format, the rules, and
+    /// the one fence it needs. Short on purpose.
+    static let onDeviceInstructions = """
+    You are a strength coach reading one lifter's own training log. Loads are \
+    kilograms. A log line is `date lift weightxreps weightxreps…`: `82.5x8` is \
+    82.5 kg for 8 reps, `bwx6` is bodyweight for 6, `bw+5x6` bodyweight plus 5 kg.
+
+    Answer in under 120 words, plainly, with numbers. Use only the lifter's own \
+    numbers from the context; if something isn't there, say so rather than guess. \
+    When you say what was done before, give the date.
+
+    When asked what to do next, end with the session in this exact form, one line \
+    per lift, loads chosen from what they did last:
+    ```prescription
+    squat 100x5 100x5 100x5
+    bench 70x8 70x8 70x8
+    ```
+    Progress by 2.5 kg on a lift that got all its reps last time; repeat the load \
+    when it didn't; about 3 lifts a session. No headings, no tables.
+    """
+
+    /// The prompt for the on-device model: today, a short digest, the last few
+    /// sessions as they are in the file, the goals in brief, what's in the
+    /// lifter's hands, the last turns of the chat, and the question — cut to
+    /// `budget` characters from the sessions end first.
+    static func onDevicePrompt(question: String, history: [(role: String, text: String)],
+                               sessions: [Session], brief: Brief, draft: SessionDraft?,
+                               today: Date = Date(), budget: Int = onDeviceBudget) -> OnDevicePrompt {
+        var parts: [String] = ["Today is \(Session.dateFormatter.string(from: today))."]
+        if let digest = liftDigest(from: sessions, today: today, limit: 10) {
+            parts.append(digest)
+        }
+        let goals = trimmed(brief.goals).text
+        if !goals.isEmpty { parts.append("GOALS (from goals.md):\n" + String(goals.prefix(400))) }
+        if let live = inProgressNote(draft, now: today) { parts.append(live) }
+
+        let recentTurns = history.suffix(4).map { "\($0.role): \(String($0.text.prefix(400)))" }
+        let tail = (recentTurns.isEmpty ? "" : "EARLIER IN THIS CHAT:\n" + recentTurns.joined(separator: "\n") + "\n\n")
+            + "QUESTION: \(question)"
+
+        // The sessions fill whatever room the rest leaves, newest first.
+        let fixed = parts.joined(separator: "\n\n").count + tail.count
+        var room = max(0, budget - fixed)
+        var recent: [Session] = []
+        for session in sessions.sorted(by: { $0.date > $1.date }).prefix(onDeviceSessions) {
+            let cost = WorkoutParser.serialize([session]).count + 1
+            if cost > room { break }
+            recent.insert(session, at: 0)
+            room -= cost
+        }
+        if !recent.isEmpty {
+            parts.append("RECENT SESSIONS (the log's own lines, oldest first):\n" + WorkoutParser.serialize(recent))
+        } else if !sessions.isEmpty {
+            parts.append("The log has \(sessions.count) sessions; only the digest fits here.")
+        } else {
+            parts.append("The log is empty: this is their first session with the app.")
+        }
+        parts.append(tail)
+        return OnDevicePrompt(instructions: onDeviceInstructions, prompt: parts.joined(separator: "\n\n"))
+    }
+
     /// What to do with a lifter whose log has nothing in it yet.
     static let emptyLogBrief = """
     THE LOG IS EMPTY. This is their first session with the app, and an empty file \

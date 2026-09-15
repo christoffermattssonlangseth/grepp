@@ -694,4 +694,35 @@ final class CoachContextTests: XCTestCase {
         XCTAssertEqual(reply.prescriptions.map(\.name), ["bench-press", "lat-pull-down"])
         XCTAssertEqual(reply.prescriptions[0].sets.count, 2)
     }
+
+    // MARK: - on device
+
+    func testOnDevicePromptFitsItsBudgetAndKeepsTheNewest() {
+        var sessions: [Session] = []
+        var d = day("2026-06-01")
+        for i in 0..<40 {
+            sessions.append(Session(date: d, exercises: [lift("squat", "\(80 + i)x5 \(80 + i)x5 \(80 + i)x5"), lift("bench", "60x8 60x8")]))
+            d = d.addingTimeInterval(2 * 86_400)
+        }
+        let prompt = CoachContext.onDevicePrompt(question: "What next?", history: [], sessions: sessions,
+                                                 brief: .none, draft: nil, today: day("2026-09-01"))
+        XCTAssertLessThanOrEqual(prompt.prompt.count, CoachContext.onDeviceBudget + 200)
+        XCTAssertTrue(prompt.prompt.contains("LIFT DIGEST"))
+        XCTAssertTrue(prompt.prompt.contains("RECENT SESSIONS"))
+        XCTAssertTrue(prompt.prompt.contains("119x5"), "the newest session is in")
+        XCTAssertFalse(prompt.prompt.contains("2026-06-01 squat 80x5"), "the oldest is not")
+        XCTAssertTrue(prompt.prompt.hasSuffix("QUESTION: What next?"))
+        XCTAssertTrue(prompt.instructions.contains("```prescription"))
+
+        let tiny = CoachContext.onDevicePrompt(question: "Hi", history: [], sessions: sessions,
+                                               brief: .none, draft: nil, today: day("2026-09-01"), budget: 100)
+        XCTAssertTrue(tiny.prompt.contains("only the digest fits"))
+    }
+
+    func testOnDevicePromptCarriesTheLastTurns() {
+        let prompt = CoachContext.onDevicePrompt(question: "and bench?", history: [("Lifter", "what should I squat"), ("Coach", "100x5")],
+                                                 sessions: [], brief: .none, draft: nil)
+        XCTAssertTrue(prompt.prompt.contains("EARLIER IN THIS CHAT:\nLifter: what should I squat\nCoach: 100x5"))
+        XCTAssertTrue(prompt.prompt.contains("The log is empty"))
+    }
 }

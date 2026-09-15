@@ -5,6 +5,8 @@ import SwiftUI
 /// offers a "Use …" row so you can add anything.
 struct ExercisePickerView: View {
     let history: [String]
+    /// Off for choosing among lifts already logged: no library, no new names.
+    var library = true
     let onPick: (String) -> Void
 
     @Environment(\.dismiss) private var dismiss
@@ -21,6 +23,7 @@ struct ExercisePickerView: View {
     }
 
     private var filteredLibrary: [String] {
+        guard library else { return [] }
         let inHistory = Set(history.map { $0.lowercased() })
         return filter(ExerciseLibrary.all.filter { !inHistory.contains($0.lowercased()) })
     }
@@ -38,7 +41,7 @@ struct ExercisePickerView: View {
     var body: some View {
         NavigationStack {
             List {
-                if !normalizedQuery.isEmpty && !exactMatchExists {
+                if library && !normalizedQuery.isEmpty && !exactMatchExists {
                     Section {
                         Button {
                             pick(normalizedQuery)
@@ -49,8 +52,8 @@ struct ExercisePickerView: View {
                 }
 
                 if !filteredHistory.isEmpty {
-                    Section("Your exercises") {
-                        ForEach(filteredHistory, id: \.self) { row($0) }
+                    Section(library ? "Your exercises" : "In your log") {
+                        ForEach(filteredHistory, id: \.self) { row(library ? $0 : Theme.readableName($0), picks: $0) }
                     }
                 }
 
@@ -60,7 +63,7 @@ struct ExercisePickerView: View {
                     }
                 }
             }
-            .searchable(text: $query, prompt: "Search or type a new name")
+            .searchable(text: $query, prompt: library ? "Search or type a new name" : "Search your lifts")
             .navigationTitle("Choose exercise")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -71,10 +74,12 @@ struct ExercisePickerView: View {
         }
     }
 
-    private func row(_ name: String) -> some View {
+    private func row(_ name: String) -> some View { row(name, picks: name) }
+
+    private func row(_ label: String, picks name: String) -> some View {
         Button { pick(name) } label: {
             HStack {
-                Text(name)
+                Text(label)
                 Spacer()
                 Image(systemName: "chevron.right")
                     .font(.caption).foregroundStyle(.tertiary)

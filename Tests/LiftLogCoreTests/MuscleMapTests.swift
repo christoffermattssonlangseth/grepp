@@ -104,7 +104,7 @@ final class MuscleMapTests: XCTestCase {
         let weekly: [MuscleMap.Credits] = [[.quads: 9, .back: 6], [.quads: 12, .back: 4.5]]
         let text = CoachContext.muscleReview(weekly: weekly, unmapped: ["sled-push"])!
         XCTAssertTrue(text.hasPrefix("SETS PER MUSCLE."), text)
-        XCTAssertTrue(text.contains("Columns: last week · this week."), text)
+        XCTAssertTrue(text.contains("Columns: last week · this week so far."), text)
         XCTAssertTrue(text.contains("quads: 9 · 12"), text)
         XCTAssertTrue(text.contains("back: 6 · 4.5"), text)
         XCTAssertFalse(text.contains("chest"), "muscles with no sets stay out")

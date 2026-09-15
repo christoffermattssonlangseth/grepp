@@ -712,7 +712,7 @@ final class CoachContextTests: XCTestCase {
         XCTAssertTrue(prompt.prompt.contains("119x5"), "the newest session is in")
         XCTAssertFalse(prompt.prompt.contains("2026-06-01 squat 80x5"), "the oldest is not")
         XCTAssertTrue(prompt.prompt.hasSuffix("QUESTION: What next?"))
-        XCTAssertTrue(prompt.instructions.contains("```prescription"))
+        XCTAssertTrue(prompt.instructions.contains("liftHistory"), "the instructions name the tools; plans come typed, not fenced")
 
         let tiny = CoachContext.onDevicePrompt(question: "Hi", history: [], sessions: sessions,
                                                brief: .none, draft: nil, today: day("2026-09-01"), budget: 100)

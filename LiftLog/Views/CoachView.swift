@@ -67,7 +67,7 @@ struct CoachView: View {
                 Button("Use Fable") { fableAcknowledged = true }
                 Button("Keep \(modelBeforeFable.label)", role: .cancel) { model = modelBeforeFable }
             } message: {
-                Text("About twice Opus and five times Sonnet per answer, and slower. The monthly cap in Settings ▸ Coach still applies — the Coach stops at $\(SpendLedger.money(CoachSpend.shared.cap)) a month.")
+                Text("About twice Opus and five times Sonnet per answer, and slower. " + capNote)
             }
             .onAppear {
                 consumeBriefRequest()
@@ -260,6 +260,14 @@ struct CoachView: View {
 
     private func k(_ n: Int) -> String {
         n >= 1000 ? String(format: "%.1fk", Double(n) / 1000) : String(n)
+    }
+
+    /// What the cap does, for the Fable ask: named when there is one.
+    private var capNote: String {
+        let cap = CoachSpend.shared.cap
+        return cap > 0
+            ? "The monthly cap in Settings ▸ Coach still applies: the Coach stops at $\(SpendLedger.money(cap)) a month."
+            : "There is no monthly cap set in Settings ▸ Coach, so nothing stops the spend but you."
     }
 
     private func consumeBriefRequest() {

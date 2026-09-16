@@ -954,6 +954,11 @@ struct LogView: View {
             pendingReplace = .edit(ex, day)
             return
         }
+        // A planned lift with nothing landed yet isn't lost to the edit: it
+        // goes back to the front of the queue and returns once the edit is done.
+        if let plan, sets.isEmpty, !name.isEmpty, !Analytics.matches(name, ex.name) {
+            queue.insert(ExerciseEntry(name: name, sets: plan), at: 0)
+        }
         date = day
         dateChosen = true   // opened from that day on purpose
         loadForEditing(ex)

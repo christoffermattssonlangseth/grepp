@@ -4,6 +4,8 @@ import SwiftUI
 struct SettingsView: View {
     @EnvironmentObject var store: Store
     @AppStorage("coach_show_cost") private var showCost = true
+    @AppStorage(CoachSpend.capKey) private var monthlyCap: Double = CoachSpend.defaultCap
+    @ObservedObject private var spend = CoachSpend.shared
     @AppStorage("bar_weight") private var barWeight: Double = 20
     @AppStorage("muscle_map") private var muscleMap = MuscleMap()
     @StateObject private var strava = StravaService.shared
@@ -147,6 +149,21 @@ struct SettingsView: View {
                     labeled("workspace id", text: $store.anthropicWorkspace, placeholder: "wrkspc_… (optional)")
 
                     Toggle("Show cost under each answer", isOn: $showCost)
+                    Picker("Monthly cap", selection: $monthlyCap) {
+                        Text("$5").tag(5.0)
+                        Text("$10").tag(10.0)
+                        Text("$20").tag(20.0)
+                        Text("$50").tag(50.0)
+                        Text("None").tag(0.0)
+                    }
+                    Text("""
+                    Spent this month: about $\(SpendLedger.money(spend.thisMonth)), estimated from \
+                    token counts across Sonnet, Opus and Fable. At the cap the cloud models stop \
+                    until the 1st; the on-device model keeps working. Fable is about twice Opus per \
+                    answer and asks once before its first use.
+                    """)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
                     Text("""
                     Only needed if the key isn't scoped to a single workspace. \
                     Find it in the **ID** column of Settings ▸ Workspaces in the Console — \

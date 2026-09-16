@@ -58,9 +58,14 @@ the set it lands, so the next set goes in without unlocking the phone. A
 notification says when rest is up too.
 
 **Coach.** A chat with Claude that has your log in front of it. Sonnet 5 by
-default, Opus 5 a tap away, and on a phone that runs Apple Intelligence a
-third choice, **On device**: Apple's model, free and private, with no key
-needed. It is small, so instead of the log it gets a digest and the last few
+default, Opus 5 a tap away, Fable 5.1 behind a first-time "it costs twice
+Opus" ask and run at medium effort, and on a phone that runs Apple
+Intelligence a fourth choice, **On device**: Apple's model, free and private,
+with no key needed. Every answer's estimated cost is added to a monthly
+ledger, and a cap in Settings ▸ Coach ($10 by default) stops the cloud
+models until the 1st once it's reached; the on-device model keeps working. An
+answer the model's safety filter declines, or one cut off at the length
+limit, says so instead of arriving empty. It is small, so instead of the log it gets a digest and the last few
 sessions plus three tools it can call back into the app with — one lift's
 history, the last days of the log, sets per muscle — and it answers "what
 should I do today" and "here's what I did" as typed output, so a session or

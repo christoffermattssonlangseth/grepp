@@ -42,6 +42,8 @@ struct ClaudeService {
     enum Event {
         case text(String)
         case usage(Usage)
+        /// Why the answer ended, when it wasn't "end_turn": "refusal", "max_tokens".
+        case stopped(String)
     }
 
     /// One turn of the conversation as the API wants it.
@@ -171,6 +173,12 @@ struct ClaudeService {
                     usage.output = out
                     onEvent(.usage(usage))
                 }
+                // So does the reason it stopped. A refusal is a 200 with no
+                // text, not an error: the caller says what happened.
+                if let reason = (event["delta"] as? [String: Any])?["stop_reason"] as? String,
+                   reason != "end_turn" {
+                    onEvent(.stopped(reason))
+                }
             case "error":
                 // Mid-stream, the HTTP status is 200; the type says what it is.
                 let detail = event["error"] as? [String: Any]
@@ -190,13 +198,17 @@ struct ClaudeService {
     }
 
     private func body(system: String, live: String?, turns: [Turn]) -> [String: Any] {
-        [
+        var body: [String: Any] = [
             "model": model.apiID,
             "max_tokens": Self.maxTokens,
             "stream": true,
             "system": Self.systemBlocks(system: system, live: live),
             "messages": Self.alternating(turns).map { ["role": $0.role.rawValue, "content": $0.text] },
         ]
+        // Thinking is left at the platform's adaptive default on every model;
+        // only how hard it thinks is set, and only where the model needs reining in.
+        if let effort = model.effort { body["output_config"] = ["effort": effort] }
+        return body
     }
 
     // MARK: - Lookup
@@ -207,6 +219,8 @@ struct ClaudeService {
         /// Pages the answer drew on: title and URL, in order of first use.
         var sources: [(title: String, url: String)]
         var usage: Usage
+        /// Why the last turn ended, when it wasn't "end_turn".
+        var stopReason: String?
     }
 
     /// Where the coach may read: journals, indexes, preprint servers, DOI
@@ -227,6 +241,7 @@ struct ClaudeService {
         var text = ""
         var sources: [(title: String, url: String)] = []
         var usage = Usage(searches: 0)
+        var stopReason: String?
 
         // A paused turn hands back its blocks and continues on the next request.
         for _ in 0..<4 {
@@ -270,10 +285,14 @@ struct ClaudeService {
                 usage.searches = (usage.searches ?? 0) + (tools?["web_search_requests"] as? Int ?? 0)
             }
 
-            guard reply["stop_reason"] as? String == "pause_turn" else { break }
+            let reason = reply["stop_reason"] as? String
+            guard reason == "pause_turn" else {
+                stopReason = reason == "end_turn" ? nil : reason
+                break
+            }
             messages.append(["role": "assistant", "content": content])
         }
-        return LookupResult(text: text, sources: sources, usage: usage)
+        return LookupResult(text: text, sources: sources, usage: usage, stopReason: stopReason)
     }
 
     private static func note(source: (title: String, url: String), into list: inout [(title: String, url: String)]) {

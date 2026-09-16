@@ -6,6 +6,9 @@ import Combine
 /// actually chew on a few months of history.
 enum CoachModelChoice: String, CaseIterable, Identifiable, Codable {
     case sonnet, opus
+    /// Anthropic's most capable model: twice Opus per token and slower. For the
+    /// question you would pay a coach for, behind a cap and a first-time ask.
+    case fable
     /// Apple's model, on the phone. Free and private; small.
     case onDevice
 
@@ -25,6 +28,7 @@ enum CoachModelChoice: String, CaseIterable, Identifiable, Codable {
         switch self {
         case .sonnet: return "claude-sonnet-5"
         case .opus: return "claude-opus-5"
+        case .fable: return "claude-fable-5-1"
         case .onDevice: return ""   // never sent anywhere
         }
     }
@@ -33,26 +37,39 @@ enum CoachModelChoice: String, CaseIterable, Identifiable, Codable {
         switch self {
         case .sonnet: return "Sonnet"
         case .opus: return "Opus"
+        case .fable: return "Fable"
         case .onDevice: return "On device"
         }
     }
 
-    /// Dollars per million tokens, input and output. Cache reads bill at a tenth
-    /// of input and cache writes at a quarter more — the platform's standing rule.
-    /// Check https://platform.claude.com/docs/en/about-claude/pricing if in doubt;
+    /// The one that asks before it's used, and costs the most when it is.
+    var isPremium: Bool { self == .fable }
+
+    /// How hard the model thinks. Fable reasons at length by default and a
+    /// coach question is routine work, so it runs at medium; the others are
+    /// left at the platform's default.
+    var effort: String? { self == .fable ? "medium" : nil }
+
+    /// Dollars per million tokens, input and output. Cache writes bill at a
+    /// quarter more than input on every model; cache reads at a tenth of input,
+    /// except on Fable where they're a fortieth. Check
+    /// https://platform.claude.com/docs/en/about-claude/pricing if in doubt;
     /// the app only ever shows the result with a tilde.
     var rates: (input: Double, output: Double) {
         switch self {
         case .sonnet: return (2.0, 10.0)
         case .opus: return (5.0, 25.0)
+        case .fable: return (10.0, 50.0)
         case .onDevice: return (0, 0)
         }
     }
 
+    var cacheReadShare: Double { self == .fable ? 0.025 : 0.1 }
+
     func cost(_ u: ClaudeService.Usage) -> Double {
         let m = 1.0 / 1_000_000
         return Double(u.input) * rates.input * m
-             + Double(u.cacheRead) * rates.input * 0.1 * m
+             + Double(u.cacheRead) * rates.input * cacheReadShare * m
              + Double(u.cacheWrite) * rates.input * 1.25 * m
              + Double(u.output) * rates.output * m
              + Double(u.searches ?? 0) * 0.01   // $10 per thousand searches, any model
@@ -62,6 +79,7 @@ enum CoachModelChoice: String, CaseIterable, Identifiable, Codable {
         switch self {
         case .sonnet: return "Fast and cheap — the everyday default."
         case .opus: return "Slower and pricier; better at deep analysis."
+        case .fable: return "The most capable, at twice Opus and slower. For the question you'd pay a coach for."
         case .onDevice: return "Apple's model on the phone. Free, private, small: it sees your last few weeks, not the whole log."
         }
     }
@@ -199,6 +217,14 @@ final class CoachService: ObservableObject {
             return
         }
 
+        // The monthly cap: judged before the request, against what every
+        // answer so far was estimated to cost.
+        if let stop = CoachSpend.shared.block() {
+            messages.append(CoachMessage(role: .you, text: trimmed))
+            errorText = stop
+            return
+        }
+
         guard let key = CoachCredentials.resolve() else {
             messages.append(CoachMessage(role: .you, text: trimmed))
             errorText = ClaudeService.ClaudeError.missingKey.localizedDescription
@@ -285,12 +311,14 @@ final class CoachService: ObservableObject {
                     }
                     self.append(text, to: reply.id)
                     self.setUsage(result.usage, on: reply.id)
+                    self.noteStop(result.stopReason, on: reply.id)
                 } else {
                 for try await event in service.stream(system: system, live: live, turns: turns) {
                     guard let self, !Task.isCancelled else { return }
                     switch event {
                     case .text(let chunk): self.append(chunk, to: reply.id)
                     case .usage(let usage): self.setUsage(usage, on: reply.id)
+                    case .stopped(let reason): self.noteStop(reason, on: reply.id)
                     }
                 }
                 }
@@ -318,7 +346,7 @@ final class CoachService: ObservableObject {
                               brief: CoachContext.Brief, draft: SessionDraft?, muscleMap: MuscleMap) {
         guard mode == .coaching else {
             messages.append(CoachMessage(role: .you, text: question))
-            errorText = "The goals interview needs Claude. Pick Sonnet or Opus for it."
+            errorText = "The goals interview needs Claude. Pick Sonnet, Opus or Fable for it."
             return
         }
         if let why = AppleCoach.unavailableReason {
@@ -386,9 +414,31 @@ final class CoachService: ObservableObject {
         messages[idx].usage = usage
     }
 
+    /// An answer that ended for a reason other than being finished says so:
+    /// a refusal (the model's safety filter, HTTP 200) would otherwise be an
+    /// empty bubble, and a cut-off a sentence that just stops.
+    private func noteStop(_ reason: String?, on id: UUID) {
+        guard let idx = messages.firstIndex(where: { $0.id == id }) else { return }
+        switch reason ?? "" {
+        case "refusal":
+            let text = messages[idx].text.trimmingCharacters(in: .whitespacesAndNewlines)
+            messages[idx].text = (text.isEmpty ? "" : text + "\n\n")
+                + "Claude declined this one: its safety filter stopped the answer. Rephrase it, or ask another model."
+        case "max_tokens":
+            messages[idx].text += "\n\n(The answer hit the length limit and was cut off here.)"
+        default:
+            break
+        }
+    }
+
     private func finishStreamingMessage() {
         guard let idx = messages.lastIndex(where: { $0.isStreaming }) else { return }
         messages[idx].isStreaming = false
+        // Whatever it cost counts against the month, finished or not — a
+        // partial answer was billed all the same.
+        if let usage = messages[idx].usage, let model = messages[idx].model {
+            CoachSpend.shared.record(model.cost(usage))
+        }
         // A request that failed before a single token arrived leaves an empty
         // bubble behind; drop it and let `errorText` do the talking.
         if messages[idx].text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {

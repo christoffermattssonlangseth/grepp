@@ -8,6 +8,10 @@ struct CoachView: View {
 
     @AppStorage("coach_model") private var model: CoachModelChoice = .sonnet
     @AppStorage("coach_show_cost") private var showCost = true
+    /// Fable asks once before it's used: it costs twice Opus.
+    @AppStorage("coach_fable_ok") private var fableAcknowledged = false
+    @State private var askingAboutFable = false
+    @State private var modelBeforeFable: CoachModelChoice = .sonnet
     @State private var draft = ""
     @State private var savingGoals = false
     /// The exact text last committed, so a revised file offers Save again rather
@@ -53,6 +57,18 @@ struct CoachView: View {
             // been built — TabView makes its pages lazily.
             .onChange(of: store.briefRequest) { _, _ in consumeBriefRequest() }
             .onChange(of: store.coachQuestion) { _, _ in consumeQuestion() }
+            .onChange(of: model) { old, new in
+                if new.isPremium, !fableAcknowledged {
+                    modelBeforeFable = old.isPremium ? .sonnet : old
+                    askingAboutFable = true
+                }
+            }
+            .alert("Fable costs more", isPresented: $askingAboutFable) {
+                Button("Use Fable") { fableAcknowledged = true }
+                Button("Keep \(modelBeforeFable.label)", role: .cancel) { model = modelBeforeFable }
+            } message: {
+                Text("About twice Opus and five times Sonnet per answer, and slower. " + capNote)
+            }
             .onAppear {
                 consumeBriefRequest()
                 consumeQuestion()
@@ -244,6 +260,14 @@ struct CoachView: View {
 
     private func k(_ n: Int) -> String {
         n >= 1000 ? String(format: "%.1fk", Double(n) / 1000) : String(n)
+    }
+
+    /// What the cap does, for the Fable ask: named when there is one.
+    private var capNote: String {
+        let cap = CoachSpend.shared.cap
+        return cap > 0
+            ? "The monthly cap in Settings ▸ Coach still applies: the Coach stops at $\(SpendLedger.money(cap)) a month."
+            : "There is no monthly cap set in Settings ▸ Coach, so nothing stops the spend but you."
     }
 
     private func consumeBriefRequest() {
@@ -691,13 +715,26 @@ struct CoachView: View {
     private var inputBar: some View {
         VStack(spacing: 8) {
             HStack {
-                Picker("Model", selection: $model) {
-                    ForEach(CoachModelChoice.offered) { Text($0.label).tag($0) }
+                // A menu, not segments: four names don't fit a row, and the
+                // question box is what this bar is for.
+                Menu {
+                    Picker("Model", selection: $model) {
+                        ForEach(CoachModelChoice.offered) { Text($0.label).tag($0) }
+                    }
+                } label: {
+                    HStack(spacing: 4) {
+                        Text(model.label).font(.subheadline.weight(.semibold))
+                        Image(systemName: "chevron.up.chevron.down").font(.caption2.weight(.semibold))
+                    }
+                    .padding(.horizontal, 12).padding(.vertical, 6)
+                    .background(.ultraThinMaterial, in: Capsule())
+                    .foregroundStyle(.primary)
                 }
-                .pickerStyle(.segmented)
-                .frame(maxWidth: AppleCoach.isSupported ? 290 : 200)
-                .fixedSize(horizontal: true, vertical: false)
+                .buttonStyle(.plain)
+                .fixedSize()
                 .disabled(coach.isResponding)
+                .accessibilityLabel("Model")
+                .accessibilityValue(model.label)
                 Spacer()
                 // Before the first question there's no context to report yet, so
                 // say what the picked model costs you instead.

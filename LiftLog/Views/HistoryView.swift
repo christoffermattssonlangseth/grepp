@@ -21,6 +21,7 @@ struct HistoryView: View {
     @State private var pendingMove: MoveTarget?
     @AppStorage("muscle_map") private var muscleMap = MuscleMap()
     @StateObject private var strava = StravaService.shared
+    @AppStorage("strava_enabled") private var stravaEnabled = true
     /// The day being posted, and the last failure, so the header can say.
     @State private var posting: String?
     @State private var postError: (day: String, text: String)?
@@ -256,7 +257,7 @@ struct HistoryView: View {
                     }
                 }
                 Spacer()
-                if strava.isConnected { stravaMark(session) }
+                if stravaEnabled, strava.isConnected { stravaMark(session) }
             }
         }
     }

@@ -9,6 +9,9 @@ struct SettingsView: View {
     @AppStorage("bar_weight") private var barWeight: Double = 20
     @AppStorage("muscle_map") private var muscleMap = MuscleMap()
     @StateObject private var strava = StravaService.shared
+    /// Strava off means none of it: no post button, no marks in History, no
+    /// backfill — the connection and keys are kept for when it comes back.
+    @AppStorage("strava_enabled") private var stravaEnabled = true
     @State private var stravaError: String?
     @State private var stravaID = ""
     @State private var stravaSecret = ""
@@ -175,7 +178,12 @@ struct SettingsView: View {
                 .listRowBackground(Rectangle().fill(.regularMaterial))
 
                 Section("Strava") {
-                    if let athlete = strava.athlete {
+                    Toggle("Strava", isOn: $stravaEnabled)
+                    if !stravaEnabled {
+                        Text("Off: no post button under the session, no marks in History, nothing posted. Turn it on and everything is where it was.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    } else if let athlete = strava.athlete {
                         HStack {
                             Text("Connected as \(athlete)")
                             Spacer()
@@ -215,7 +223,7 @@ struct SettingsView: View {
                         if let backfillStatus {
                             Text(backfillStatus).font(.caption2).foregroundStyle(.secondary)
                         }
-                    } else {
+                    } else if stravaEnabled {
                         // Keys first, then the one button: fill the two fields
                         // and Connect saves them and signs in, in one tap.
                         let keysTyped = !stravaID.trimmingCharacters(in: .whitespaces).isEmpty
@@ -263,12 +271,14 @@ struct SettingsView: View {
                             .font(.subheadline)
                         }
                     }
-                    if let stravaError {
+                    if stravaEnabled, let stravaError {
                         Text(stravaError).font(.caption2).foregroundStyle(.orange)
                     }
-                    Text("Powered by Strava")
-                        .font(.caption2)
-                        .foregroundStyle(.tertiary)
+                    if stravaEnabled {
+                        Text("Powered by Strava")
+                            .font(.caption2)
+                            .foregroundStyle(.tertiary)
+                    }
                 }
                 .listRowBackground(Rectangle().fill(.regularMaterial))
 

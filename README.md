@@ -151,7 +151,9 @@ as a Weight Training activity named after its lifts, the log lines in the
 description with a "Tracked with Grepp" sign-off, and the length from your
 first set to the post. Press again and it updates the same activity. History
 offers a post button per day, and Settings posts every day not yet up, oldest
-first. Nothing is read back from Strava.
+first. Nothing is read back from Strava. A switch in Settings ▸ Strava turns
+all of it off — no button, no marks, nothing posted — and keeps the
+connection for when it comes back.
 
 **Offline.** With GitHub, a save that can't reach it is queued, shown at once, and
 replayed on the next successful load or save through the same safe path: every

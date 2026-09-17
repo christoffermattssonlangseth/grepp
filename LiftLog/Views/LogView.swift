@@ -60,6 +60,7 @@ struct LogView: View {
     @State private var exerciseFinished = 0
     @State private var recordSet = 0
     @StateObject private var strava = StravaService.shared
+    @AppStorage("strava_enabled") private var stravaEnabled = true
     @State private var stravaStatus: String?
     @State private var stravaError: String?
     /// When non-nil, the rest clock is running from this instant.
@@ -414,7 +415,7 @@ struct LogView: View {
                     }
                     .onTapGesture { edit(ex, on: date) }
                 }
-                if strava.isConnected { stravaRow }
+                if stravaEnabled, strava.isConnected { stravaRow }
             }
         }
     }

@@ -878,20 +878,34 @@ struct LogView: View {
         } else {
             text = "lighter than the bar"
         }
-        return HStack(spacing: 8) {
-            Label {
-                Text(text)
-                    .font(.system(.footnote, design: .monospaced).weight(.semibold))
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.75)
-            } icon: {
-                Image(systemName: "circlebadge.2.fill")
+        // One line while the plates and the bar pill fit side by side; when
+        // five plates a side push the pill off the edge, the plates take the
+        // line and the pill drops under them, still on the right.
+        return ViewThatFits(in: .horizontal) {
+            HStack(spacing: 8) {
+                plateLabel(text).fixedSize()
+                Spacer(minLength: 8)
+                barMenu
             }
-            Spacer(minLength: 8)
-            barMenu
+            VStack(alignment: .leading, spacing: 6) {
+                plateLabel(text).fixedSize(horizontal: false, vertical: true)
+                HStack {
+                    Spacer()
+                    barMenu
+                }
+            }
         }
         .font(.footnote.weight(.semibold))
         .foregroundStyle(.secondary)
+    }
+
+    private func plateLabel(_ text: String) -> some View {
+        Label {
+            Text(text)
+                .font(.system(.footnote, design: .monospaced).weight(.semibold))
+        } icon: {
+            Image(systemName: "circlebadge.2.fill")
+        }
     }
 
     /// Always names the bar, and it's a menu: a different bar for *this* exercise
@@ -939,6 +953,11 @@ struct LogView: View {
         if !sets.isEmpty, ex.name.caseInsensitiveCompare(name) != .orderedSame {
             pendingReplace = .edit(ex, day)
             return
+        }
+        // A planned lift with nothing landed yet isn't lost to the edit: it
+        // goes back to the front of the queue and returns once the edit is done.
+        if let plan, sets.isEmpty, !name.isEmpty, !Analytics.matches(name, ex.name) {
+            queue.insert(ExerciseEntry(name: name, sets: plan), at: 0)
         }
         date = day
         dateChosen = true   // opened from that day on purpose

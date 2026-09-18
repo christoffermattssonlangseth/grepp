@@ -97,7 +97,7 @@ struct SettingsView: View {
 
                 Section("Muscles") {
                     let unmapped = muscleMap.unmapped(in: store.sessions)
-                    let assigned = store.knownExercises.filter { muscleMap.isOverridden($0) }
+                    let assigned = Array(Set(store.knownExercises.filter { muscleMap.isOverridden($0) }.map { MuscleMap.canonical($0) })).sorted()
                     if unmapped.isEmpty && assigned.isEmpty {
                         Text("Every lift in your log is counted. A new one the app doesn't know will show up here.")
                             .font(.caption)
@@ -153,6 +153,11 @@ struct SettingsView: View {
 
                     Toggle("Show cost under each answer", isOn: $showCost)
                     Picker("Monthly cap", selection: $monthlyCap) {
+                        // A value from another build keeps its row, so the cap
+                        // in force is always the one shown.
+                        if ![5.0, 10.0, 20.0, 50.0, 0.0].contains(monthlyCap) {
+                            Text("$\(SpendLedger.money(monthlyCap))").tag(monthlyCap)
+                        }
                         Text("$5").tag(5.0)
                         Text("$10").tag(10.0)
                         Text("$20").tag(20.0)
@@ -364,6 +369,10 @@ struct SettingsView: View {
         var posted = 0
         var skipped: [String] = []
         for (i, session) in sessions.enumerated() {
+            guard stravaEnabled else {
+                backfillStatus = "Stopped after \(posted) posted: Strava was turned off."
+                return
+            }
             backfillStatus = "Posting \(i + 1) of \(sessions.count) — \(session.dateString)…"
             do {
                 try await StravaPoster.post(session, store: store, strava: strava)

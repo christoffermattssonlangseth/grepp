@@ -98,6 +98,19 @@ struct CoachMessage: Identifiable, Equatable, Codable {
     var model: CoachModelChoice?
     /// This answer went and read the paper: searched, fetched, cited.
     var isLookup: Bool?
+    /// Why the answer ended when it wasn't finished: "refusal", "max_tokens",
+    /// "pause_turn". Shown under the bubble, never sent back as Claude's words.
+    var stop: String?
+
+    /// The sentence for `stop`, in the app's voice.
+    var stopNote: String? {
+        switch stop {
+        case "refusal": return "Claude declined this one: its safety filter stopped the answer. Rephrase it, or ask another model."
+        case "max_tokens": return "The answer hit the length limit and was cut off here."
+        case "pause_turn": return "The search ran out of rounds before it finished. Ask again to continue."
+        default: return nil
+        }
+    }
 }
 
 /// Drives one Coach conversation: holds the transcript, rebuilds the training
@@ -162,7 +175,7 @@ final class CoachService: ObservableObject {
         }
         messages = saved.messages
             .map { var m = $0; m.isStreaming = false; return m }
-            .filter { !($0.role == .coach && $0.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty) }
+            .filter { !($0.role == .coach && $0.stop == nil && $0.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty) }
         mode = saved.mode
         contextNote = saved.contextNote
     }
@@ -181,6 +194,18 @@ final class CoachService: ObservableObject {
                              brief: CoachContext.Brief,
                              muscleMap: MuscleMap,
                              workspace: String) {
+        // The checks `send` makes, made first: an interview that can't start
+        // must not have wiped the chat and left the mode switched.
+        errorText = nil
+        if model.isOnDevice {
+            errorText = "The goals interview needs Claude. Pick Sonnet, Opus or Fable for it."
+            return
+        }
+        if let stop = CoachSpend.shared.block() { errorText = stop; return }
+        guard CoachCredentials.resolve() != nil else {
+            errorText = ClaudeService.ClaudeError.missingKey.localizedDescription
+            return
+        }
         reset()
         mode = .goalsInterview
         send(CoachContext.goalsInterviewRequest,
@@ -431,21 +456,12 @@ final class CoachService: ObservableObject {
         messages[idx].usage = usage
     }
 
-    /// An answer that ended for a reason other than being finished says so:
-    /// a refusal (the model's safety filter, HTTP 200) would otherwise be an
-    /// empty bubble, and a cut-off a sentence that just stops.
+    /// An answer that ended for a reason other than being finished says so —
+    /// beside the bubble, not in it: what the app says must never go back to
+    /// the model as its own earlier words.
     private func noteStop(_ reason: String?, on id: UUID) {
-        guard let idx = messages.firstIndex(where: { $0.id == id }) else { return }
-        switch reason ?? "" {
-        case "refusal":
-            let text = messages[idx].text.trimmingCharacters(in: .whitespacesAndNewlines)
-            messages[idx].text = (text.isEmpty ? "" : text + "\n\n")
-                + "Claude declined this one: its safety filter stopped the answer. Rephrase it, or ask another model."
-        case "max_tokens":
-            messages[idx].text += "\n\n(The answer hit the length limit and was cut off here.)"
-        default:
-            break
-        }
+        guard let reason, let idx = messages.firstIndex(where: { $0.id == id }) else { return }
+        messages[idx].stop = reason
     }
 
     private func finishStreamingMessage() {
@@ -461,8 +477,9 @@ final class CoachService: ObservableObject {
             CoachSpend.shared.record(model.cost(usage))
         }
         // A request that failed before a single token arrived leaves an empty
-        // bubble behind; drop it and let `errorText` do the talking.
-        if messages[idx].text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+        // bubble behind; drop it and let `errorText` do the talking. A refusal
+        // is empty too, and stays: its note is the answer.
+        if messages[idx].stop == nil, messages[idx].text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             messages.remove(at: idx)
         }
     }

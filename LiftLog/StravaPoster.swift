@@ -8,8 +8,20 @@ import Foundation
 enum StravaPoster {
     enum Outcome { case posted, updated }
 
+    enum PosterError: LocalizedError {
+        case off
+        var errorDescription: String? { "Strava is off in Settings." }
+    }
+
+    /// The switch in Settings ▸ Strava. Read here, not only by the screens, so
+    /// a post already running stops when it is turned off.
+    static var isEnabled: Bool {
+        UserDefaults.standard.object(forKey: "strava_enabled") as? Bool ?? true
+    }
+
     @discardableResult
     static func post(_ session: Session, store: Store, strava: StravaService) async throws -> Outcome {
+        guard isEnabled else { throw PosterError.off }
         let clocked = store.sessionStart(on: session.date)
         let start = clocked ?? StravaPost.defaultStart(for: session)
         // Today's clock runs to now; an older day gets the hour default.

@@ -1,11 +1,13 @@
 import SwiftUI
 import Charts
+import Combine
 
 /// Per-lift progression: a chart over time plus short- and long-term change.
 /// Generic and lift-focused — no personal goals or targets.
 struct TrendsView: View {
     @EnvironmentObject var store: Store
     @Environment(\.dynamicTypeSize) private var typeSize
+    @Environment(\.scenePhase) private var scenePhase
 
     // Persisted so Trends reopens on the lift you last looked at.
     @AppStorage("trends_exercise") private var exercise = ""
@@ -22,6 +24,9 @@ struct TrendsView: View {
     /// Where a finger is on the chart's x-axis, if it's on it at all.
     @State private var scrub: Date?
     @State private var showingPicker = false
+    /// The left edge of the chart's window when the history is long enough
+    /// to scroll; the y-axis follows it.
+    @State private var scrollX: Date = .distantPast
 
     /// Everything the tab draws, computed once per change of the log or the
     /// selection rather than on every body pass: a scrub redraws at touch
@@ -104,6 +109,10 @@ struct TrendsView: View {
             }
             .onChange(of: muscleMap) { _, _ in recompute() }
             .onChange(of: mode) { _, _ in scrub = nil }
+            // Every number here is relative to today: coming back after a
+            // night, or sitting here past midnight, must not show yesterday's.
+            .onChange(of: scenePhase) { _, phase in if phase == .active { recompute() } }
+            .onReceive(NotificationCenter.default.publisher(for: .NSCalendarDayChanged)) { _ in recompute() }
             .sheet(isPresented: $showingPicker) {
                 ExercisePickerView(history: figures.exercises, library: false) { exercise = $0 }
             }
@@ -127,7 +136,8 @@ struct TrendsView: View {
             .foregroundStyle(.primary)
         }
         .buttonStyle(.plain)
-        .fixedSize()
+        .lineLimit(1)
+        .minimumScaleFactor(0.8)
         .frame(maxWidth: .infinity, alignment: .leading)
         .accessibilityLabel("Lift")
         .accessibilityValue(Theme.readableName(exercise))
@@ -160,8 +170,22 @@ struct TrendsView: View {
                 if series.count >= 2 {
                     liftChart(series)
                         .frame(height: 240)
-                    Text("drag along the line to read a session · tap the reading to open that day")
-                        .font(.caption2).foregroundStyle(.tertiary)
+                    // The reading under the finger, and the way into that day —
+                    // outside the plot, where the chart's own gestures can't eat it.
+                    if let picked = scrubbed(in: series) {
+                        Button {
+                            store.requestEdit(exercise: picked.name.isEmpty ? exercise : picked.name, on: picked.date)
+                        } label: {
+                            Label("open \(picked.date.formatted(.dateTime.day().month(.abbreviated))) in Log", systemImage: "arrow.up.right")
+                                .font(.caption.weight(.semibold))
+                        }
+                        .buttonStyle(.bordered)
+                        .controlSize(.small)
+                    } else {
+                        Text(scrolls(series) ? "press and drag to read a session · swipe for older ones"
+                                             : "drag along the line to read a session")
+                            .font(.caption2).foregroundStyle(.tertiary)
+                    }
                 } else {
                     Text("Need at least two sessions of this lift to chart a trend.")
                         .font(.footnote).foregroundStyle(.secondary)
@@ -175,11 +199,25 @@ struct TrendsView: View {
     /// The chart, and a window onto it when the history is longer than one:
     /// two years of sessions were one smear at a fixed width, and the newest
     /// block is what a lifter opens the tab for.
+    /// Longer than one window: two years of sessions were one smear at a
+    /// fixed width, and the newest block is what a lifter opens the tab for.
+    private func scrolls(_ series: [TrendPoint]) -> Bool {
+        guard let first = series.first?.date, let last = series.last?.date else { return false }
+        return last.timeIntervalSince(first) > window
+    }
+
+    /// The points in the window on screen, for an axis that follows the scroll.
+    private func visible(_ series: [TrendPoint]) -> [TrendPoint] {
+        guard scrolls(series) else { return series }
+        let shown = series.filter { $0.date >= scrollX && $0.date <= scrollX.addingTimeInterval(window) }
+        return shown.count >= 2 ? shown : series
+    }
+
     @ViewBuilder
     private func liftChart(_ series: [TrendPoint]) -> some View {
         let chart = Chart { liftMarks(series) }
             .chartXSelection(value: $scrub)
-            .chartYScale(domain: yDomain(series))
+            .chartYScale(domain: yDomain(visible(series)))
             .chartXAxis {
                 AxisMarks(values: .automatic(desiredCount: 4)) {
                     AxisGridLine()
@@ -194,15 +232,14 @@ struct TrendsView: View {
             }
             .accessibilityLabel(chartDescription(series))
 
-        if let first = series.first?.date, let last = series.last?.date,
-           last.timeIntervalSince(first) > window {
+        if scrolls(series), let first = series.first?.date, let last = series.last?.date {
             // Room after the newest point so it isn't pinned to the edge.
             let end = last.addingTimeInterval(window * 0.08)
             chart
                 .chartXScale(domain: first...end)
                 .chartScrollableAxes(.horizontal)
                 .chartXVisibleDomain(length: window)
-                .chartScrollPosition(initialX: end.addingTimeInterval(-window))
+                .chartScrollPosition(x: $scrollX)
         } else {
             chart
         }
@@ -227,7 +264,7 @@ struct TrendsView: View {
             RuleMark(x: .value("Date", picked.date))
                 .foregroundStyle(.secondary.opacity(0.35))
                 .annotation(position: .top, spacing: 6,
-                            overflowResolution: .init(x: .fit(to: .chart), y: .disabled)) {
+                            overflowResolution: .init(x: .fit(to: .plot), y: .disabled)) {
                     reading(picked)
                 }
             PointMark(x: .value("Date", picked.date),
@@ -237,8 +274,8 @@ struct TrendsView: View {
         }
     }
 
-    /// The session under the finger: the value, the day, the sets as logged —
-    /// and a tap opens that day on the Log tab, the same jump History makes.
+    /// The session under the finger: the value, the day, the sets as logged.
+    /// The way into that day is the button under the chart.
     private func reading(_ picked: TrendPoint) -> some View {
         VStack(spacing: 2) {
             Text("\(WorkSet.formatWeight(picked.value)) \(metric.unit)")
@@ -254,17 +291,10 @@ struct TrendsView: View {
                     .lineLimit(1)
                     .minimumScaleFactor(0.7)
             }
-            Label("open", systemImage: "arrow.up.right")
-                .font(.caption2.weight(.semibold))
-                .foregroundStyle(Theme.accent)
         }
         .padding(.horizontal, 8).padding(.vertical, 5)
         .background(.regularMaterial,
                     in: RoundedRectangle(cornerRadius: 8, style: .continuous))
-        .contentShape(Rectangle())
-        .onTapGesture {
-            store.requestEdit(exercise: picked.name.isEmpty ? exercise : picked.name, on: picked.date)
-        }
     }
 
     /// The logged point nearest the finger — a drag snaps to real sessions,
@@ -650,6 +680,11 @@ struct TrendsView: View {
             f.metrics = Analytics.availableMetrics(exercise, in: store.sessions)
             let shown = f.metrics.contains(metric) ? metric : (f.metrics.first ?? .topSet)
             f.series = Analytics.series(exercise, metric: shown, in: store.sessions)
+            // A new span starts at its newest block; the same span keeps its place.
+            if f.series.first?.date != figures.series.first?.date || f.series.last?.date != figures.series.last?.date,
+               let last = f.series.last?.date {
+                scrollX = last.addingTimeInterval(window * 0.08 - window)
+            }
             f.recent = Analytics.change(f.series, sinceDays: 21)
             f.allTime = Analytics.change(f.series)
             f.dose = DoseResponse.make(for: exercise, in: store.sessions, map: muscleMap)

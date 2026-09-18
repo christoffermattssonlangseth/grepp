@@ -3,21 +3,21 @@ import SwiftUI
 /// GitHub connection settings. The token is stored in the Keychain.
 struct SettingsView: View {
     @EnvironmentObject var store: Store
-    @AppStorage("coach_show_cost") private var showCost = true
+    @AppStorage(Prefs.coachShowCost) private var showCost = true
     @AppStorage(CoachSpend.capKey) private var monthlyCap: Double = CoachSpend.defaultCap
     @ObservedObject private var spend = CoachSpend.shared
-    @AppStorage("bar_weight") private var barWeight: Double = 20
-    @AppStorage("muscle_map") private var muscleMap = MuscleMap()
+    @AppStorage(Prefs.barWeight) private var barWeight: Double = 20
+    @AppStorage(Prefs.muscleMap) private var muscleMap = MuscleMap()
     @StateObject private var strava = StravaService.shared
     /// Strava off means none of it: no post button, no marks in History, no
     /// backfill — the connection and keys are kept for when it comes back.
-    @AppStorage("strava_enabled") private var stravaEnabled = true
+    @AppStorage(Prefs.stravaEnabled) private var stravaEnabled = true
     @State private var stravaError: String?
     @State private var stravaID = ""
     @State private var stravaSecret = ""
     @State private var backfillStatus: String?
     @State private var backfilling = false
-    @AppStorage("plate_inventory") private var inventory = PlateInventory.standard
+    @AppStorage(Prefs.plateInventory) private var inventory = PlateInventory.standard
 
     var body: some View {
         NavigationStack {
@@ -150,6 +150,13 @@ struct SettingsView: View {
                     }
 
                     labeled("workspace id", text: $store.anthropicWorkspace, placeholder: "wrkspc_… (optional)")
+                    Text("""
+                    Only needed if the key isn't scoped to a single workspace. \
+                    Find it in the **ID** column of Settings ▸ Workspaces in the Console — \
+                    or leave this blank and create a workspace-scoped key instead.
+                    """)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
 
                     Toggle("Show cost under each answer", isOn: $showCost)
                     Picker("Monthly cap", selection: $monthlyCap) {
@@ -172,13 +179,6 @@ struct SettingsView: View {
                     """)
                         .font(.caption)
                         .foregroundStyle(.secondary)
-                    Text("""
-                    Only needed if the key isn't scoped to a single workspace. \
-                    Find it in the **ID** column of Settings ▸ Workspaces in the Console — \
-                    or leave this blank and create a workspace-scoped key instead.
-                    """)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
                 }
                 .listRowBackground(Rectangle().fill(.regularMaterial))
 
@@ -195,7 +195,7 @@ struct SettingsView: View {
                             Button("Disconnect", role: .destructive) { strava.disconnect() }
                                 .font(.subheadline)
                         }
-                        Text("A **Post to Strava** button sits under today's session. It posts the day as a Weight Training activity with your lines in the description; press it again after another lift and it updates the same activity. History shows which days are on Strava, with a post button for the ones that aren't.")
+                        Text("Posts a day as a Weight Training activity with your lines in the description; press again after another lift and it updates the same one.")
                             .font(.caption)
                             .foregroundStyle(.secondary)
                         let unposted = store.sessions.filter { store.stravaActivity(on: $0.date) == nil }
@@ -308,7 +308,7 @@ struct SettingsView: View {
                     Button {
                         Task { await store.load() }
                     } label: {
-                        if store.isBusy { ProgressView() } else { Text("test connection / reload") }
+                        if store.isBusy { ProgressView() } else { Text("Reload") }
                     }
                     .disabled(store.isBusy)
                     if !store.status.isEmpty {

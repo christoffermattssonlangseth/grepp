@@ -16,7 +16,7 @@ enum StravaPoster {
     /// The switch in Settings ▸ Strava. Read here, not only by the screens, so
     /// a post already running stops when it is turned off.
     static var isEnabled: Bool {
-        UserDefaults.standard.object(forKey: "strava_enabled") as? Bool ?? true
+        UserDefaults.standard.object(forKey: Prefs.stravaEnabled) as? Bool ?? true
     }
 
     @discardableResult

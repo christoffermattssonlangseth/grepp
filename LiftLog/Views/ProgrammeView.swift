@@ -9,9 +9,9 @@ import SwiftUI
 struct ProgrammeView: View {
     @EnvironmentObject var store: Store
     @Environment(\.dismiss) private var dismiss
-    @AppStorage("bar_weight") private var barWeight: Double = 20
-    @AppStorage("plate_inventory") private var inventory = PlateInventory.standard
-    @AppStorage("bar_overrides") private var barOverrides = BarOverrides()
+    @AppStorage(Prefs.barWeight) private var barWeight: Double = 20
+    @AppStorage(Prefs.plateInventory) private var inventory = PlateInventory.standard
+    @AppStorage(Prefs.barOverrides) private var barOverrides = BarOverrides()
 
     /// Hands a question back to the Coach screen once this sheet is closed.
     let onAsk: (String) -> Void
@@ -78,7 +78,7 @@ struct ProgrammeView: View {
                     let plan = ReversePyramid.plan(day: day, in: store.sessions,
                                                    bar: { barOverrides.bar(for: $0) ?? barWeight },
                                                    inventory: inventory)
-                    Button {
+                    let load = Button {
                         dismiss()
                         store.requestLog(plan.entries)
                     } label: {
@@ -87,8 +87,11 @@ struct ProgrammeView: View {
                             .frame(maxWidth: .infinity)
                             .padding(.vertical, 6)
                     }
-                    .buttonStyle(.borderedProminent)
-                    .tint(index == due ? Theme.accent : Color.secondary)
+                    // One prominent button on the screen: the day that is next.
+                    Group {
+                        if index == due { load.buttonStyle(.borderedProminent) } else { load.buttonStyle(.bordered) }
+                    }
+                    .tint(Theme.accent)
                     .disabled(plan.entries.isEmpty)
                     .listRowBackground(Color.clear)
                     if !plan.missing.isEmpty {
@@ -106,8 +109,8 @@ struct ProgrammeView: View {
                             .frame(maxWidth: .infinity)
                             .padding(.vertical, 4)
                     }
-                    .buttonStyle(.bordered)
-                    .tint(Theme.accent)
+                    .buttonStyle(.plain)
+                    .foregroundStyle(Theme.accent)
                     .listRowBackground(Color.clear)
                 } header: {
                     HStack {
@@ -121,10 +124,12 @@ struct ProgrammeView: View {
                                 .background(Theme.accent, in: Capsule())
                         }
                     }
+                    .accessibilityElement(children: .ignore)
+                    .accessibilityLabel(index == due ? "\(day.title), next" : day.title)
                 }
             }
             Section {
-                Text("Schemes live here, not loads. Load this day works them out from your log: a line marked rpt as a reverse pyramid from its last session — top set first, each set after it a tenth lighter for two more reps, up a step once the top set hits its range — and any other lift as it was last done. The coach reads the log and the rule on each line instead. Edit the file in Your brief, or ask the coach for a new programme.")
+                Text("Schemes live here, not loads. Load this day works them out from your log: rpt lines as a reverse pyramid from their last session, everything else as last done.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .listRowBackground(Color.clear)

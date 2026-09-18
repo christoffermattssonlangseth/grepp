@@ -182,12 +182,6 @@ final class CoachService: ObservableObject {
 
     var isEmpty: Bool { messages.isEmpty }
 
-    /// A finished goals file the coach has offered, once it has stopped streaming.
-    var proposedGoals: String? {
-        guard !isResponding, let last = messages.last, last.role == .coach else { return nil }
-        return CoachContext.parseReply(last.text).goals
-    }
-
     /// Begin the goals interview: the coach leads from here.
     func startGoalsInterview(model: CoachModelChoice,
                              sessions: [Session],

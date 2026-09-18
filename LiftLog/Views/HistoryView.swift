@@ -19,9 +19,9 @@ struct HistoryView: View {
         var id: String { "\(Session.dateFormatter.string(from: date))-\(name ?? "*")" }
     }
     @State private var pendingMove: MoveTarget?
-    @AppStorage("muscle_map") private var muscleMap = MuscleMap()
+    @AppStorage(Prefs.muscleMap) private var muscleMap = MuscleMap()
     @StateObject private var strava = StravaService.shared
-    @AppStorage("strava_enabled") private var stravaEnabled = true
+    @AppStorage(Prefs.stravaEnabled) private var stravaEnabled = true
     /// The day being posted, and the last failure, so the header can say.
     @State private var posting: String?
     @State private var postError: (day: String, text: String)?
@@ -56,9 +56,14 @@ struct HistoryView: View {
     }
 
     /// The days grouped by month, newest first.
+    private static let monthTitles: DateFormatter = {
+        let f = DateFormatter()
+        f.dateFormat = "LLLL yyyy"
+        return f
+    }()
+
     private var months: [Month] {
-        let titles = DateFormatter()
-        titles.dateFormat = "LLLL yyyy"
+        let titles = Self.monthTitles
         var out: [Month] = []
         for session in sortedSessions {
             let key = String(session.dateString.prefix(7))
@@ -233,11 +238,9 @@ struct HistoryView: View {
                             pendingMove = MoveTarget(name: nil, date: session.date)
                         } label: { Label("Move the whole day", systemImage: "calendar") }
                     } label: {
-                        // A pill with its own background: a bare label in a
-                        // Menu has drawn as nothing on iOS 26.
                         HStack(spacing: 4) {
                             Text(session.dateString)
-                            Image(systemName: "chevron.down")
+                            Image(systemName: "chevron.up.chevron.down")
                                 .font(.caption2.weight(.bold))
                                 .foregroundStyle(.tertiary)
                         }
@@ -248,6 +251,7 @@ struct HistoryView: View {
                     }
                     .buttonStyle(.plain)
                     .foregroundStyle(.secondary)
+                    .accessibilityLabel("\(session.dateString), move the day")
                     if let sets = setsLine(session) {
                         Text(sets)
                             .font(.caption2)
@@ -278,7 +282,7 @@ struct HistoryView: View {
                             Text("No sessions yet")
                         }
                     } description: {
-                        Text("Your first finished exercise appears here, under its date. Every day in the file, newest first.")
+                        Text("Your first lift appears here, under its date.")
                     }
                 }
             }

@@ -30,8 +30,7 @@ struct FirstRunView: View {
                            ? "Synced by Apple. Shows up in the Files app as Grepp ▸ training.md."
                            : (checkingICloud ? "Checking iCloud…"
                               : "Sign in to iCloud on this phone, then tap here to check again."),
-                       icon: "icloud",
-                       enabled: true) {
+                       icon: "icloud") {
                     if icloudReady {
                         store.storage = .icloud
                         dismiss()
@@ -43,8 +42,7 @@ struct FirstRunView: View {
                 .opacity(icloudReady ? 1 : 0.6)
                 choice(title: "A GitHub repo I own",
                        detail: "Every set is a commit. Needs a repo and a fine-grained token, set up next.",
-                       icon: "chevron.left.forwardslash.chevron.right",
-                       enabled: true) {
+                       icon: "chevron.left.forwardslash.chevron.right") {
                     store.storage = .github
                     store.selectedTab = 4
                     dismiss()
@@ -71,7 +69,7 @@ struct FirstRunView: View {
         checkingICloud = false
     }
 
-    private func choice(title: String, detail: String, icon: String, enabled: Bool,
+    private func choice(title: String, detail: String, icon: String,
                         action: @escaping () -> Void) -> some View {
         Button(action: action) {
             HStack(spacing: 14) {
@@ -94,7 +92,5 @@ struct FirstRunView: View {
         }
         .buttonStyle(.plain)
         .glassCard(cornerRadius: 16)
-        .disabled(!enabled)
-        .opacity(enabled ? 1 : 0.5)
     }
 }

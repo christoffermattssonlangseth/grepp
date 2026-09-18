@@ -66,7 +66,7 @@ enum RestSignals {
     /// the default for `sync`, and default arguments are evaluated outside
     /// the actor; it only reads a value UserDefaults guards itself.
     nonisolated static var target: Int {
-        let stored = UserDefaults.standard.integer(forKey: "rest_target")
+        let stored = UserDefaults.standard.integer(forKey: Prefs.restTarget)
         return stored > 0 ? stored : 90
     }
 

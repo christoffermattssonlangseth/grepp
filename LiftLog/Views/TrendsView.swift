@@ -10,7 +10,7 @@ struct TrendsView: View {
     @Environment(\.scenePhase) private var scenePhase
 
     // Persisted so Trends reopens on the lift you last looked at.
-    @AppStorage("trends_exercise") private var exercise = ""
+    @AppStorage(Prefs.trendsExercise) private var exercise = ""
     /// Two questions, two views: how a lift is going, and how the training
     /// as a whole is going.
     private enum Mode: String, CaseIterable, Identifiable {
@@ -18,8 +18,8 @@ struct TrendsView: View {
         var id: String { rawValue }
         var title: String { self == .lift ? "Lift" : "Volume" }
     }
-    @AppStorage("trends_mode") private var mode: Mode = .lift
-    @AppStorage("muscle_map") private var muscleMap = MuscleMap()
+    @AppStorage(Prefs.trendsMode) private var mode: Mode = .lift
+    @AppStorage(Prefs.muscleMap) private var muscleMap = MuscleMap()
     @State private var metric: Analytics.Metric = .topSet
     /// Where a finger is on the chart's x-axis, if it's on it at all.
     @State private var scrub: Date?
@@ -58,7 +58,7 @@ struct TrendsView: View {
                             Text("No data yet")
                         }
                     } description: {
-                        Text("A lift's chart appears after its second session; sets per muscle after the first week. Both come from the log alone.")
+                        Text("A chart appears after a lift's second session; sets per muscle after the first week.")
                     }
                     .padding(.top, 80)
                 } else {
@@ -131,8 +131,7 @@ struct TrendsView: View {
                 Image(systemName: "chevron.up.chevron.down")
                     .font(.caption2.weight(.semibold))
             }
-            .padding(.horizontal, 14).padding(.vertical, 8)
-            .background(.ultraThinMaterial, in: Capsule())
+            .pill()
             .foregroundStyle(.primary)
         }
         .buttonStyle(.plain)
@@ -154,7 +153,7 @@ struct TrendsView: View {
 
     private var chartCard: some View {
         let series = figures.series
-        return CardBox {
+        return Card {
             VStack(alignment: .leading, spacing: 8) {
                 HStack(alignment: .firstTextBaseline) {
                     Text("\(metric.rawValue.lowercased()) · \(metric.unit)")
@@ -341,16 +340,16 @@ struct TrendsView: View {
 
     @ViewBuilder
     private var statTiles: some View {
-        statTile(title: "Short-term", subtitle: "last 3 weeks", change: figures.recent,
+        statTile(title: "short-term", subtitle: "last 3 weeks", change: figures.recent,
                  empty: "no two sessions in the window")
-        statTile(title: "Long-term", subtitle: "all time", change: figures.allTime,
+        statTile(title: "long-term", subtitle: "all time", change: figures.allTime,
                  empty: "not enough data")
     }
 
     private func statTile(title: String, subtitle: String, change: TrendChange?, empty: String) -> some View {
-        PanelBox {
+        Panel {
             VStack(alignment: .leading, spacing: 4) {
-                Text(title.lowercased()).font(.caption).foregroundStyle(.secondary)
+                Text(title).font(.caption).foregroundStyle(.secondary)
                 if let c = change {
                     HStack(spacing: 4) {
                         Image(systemName: c.isUp ? "arrow.up.right" : (c.isFlat ? "arrow.right" : "arrow.down.right"))
@@ -384,7 +383,7 @@ struct TrendsView: View {
     private func doseCard(_ dose: DoseResponse) -> some View {
         let lift = Theme.readableName(dose.exercise)
         let top = max(DoseResponse.band.upperBound + 2, (dose.weeks.map(\.sets).max() ?? 0) + 2)
-        return PanelBox {
+        return Panel {
             VStack(alignment: .leading, spacing: 10) {
                 HStack(alignment: .firstTextBaseline) {
                     Text("work and result")
@@ -440,7 +439,7 @@ struct TrendsView: View {
                 HStack(spacing: 14) {
                     legendSwatch(Theme.accent, "\(lift)")
                     legendSwatch(Color.secondary.opacity(0.22), "\(dose.muscle.rawValue) in all")
-                    legendSwatch(Theme.accent.opacity(0.14), "\(Int(DoseResponse.band.lowerBound))–\(Int(DoseResponse.band.upperBound)) band")
+                    legendSwatch(Theme.accent.opacity(0.14), "\(Int(DoseResponse.band.lowerBound))–\(Int(DoseResponse.band.upperBound)) sets a week")
                 }
 
                 Text(dose.summary)
@@ -472,16 +471,15 @@ struct TrendsView: View {
         let weeks = figures.weeks
         // A Monday with nothing logged yet shows the week just finished — and
         // compares it with the four before it, not with itself.
-        let thisWeek = weeks.last
-        let showingThisWeek = (thisWeek?.sessions ?? 0) > 0
-        let featured = showingThisWeek ? thisWeek : weeks.dropLast().last
-        let prior = showingThisWeek ? weeks.dropLast() : weeks.dropLast(2)
-        let lastFour = prior.suffix(4)
+        let pick = weekToShow(weeks) { $0.sessions == 0 }
+        let showingThisWeek = pick.isThisWeek
+        let featured = pick.shown
+        let lastFour = pick.previous
         let perWeek = lastFour.isEmpty ? 0 : Double(lastFour.map(\.sessions).reduce(0, +)) / Double(lastFour.count)
         let setsPerWeek = lastFour.isEmpty ? 0 : Double(lastFour.map(\.sets).reduce(0, +)) / Double(lastFour.count)
         let count = featured?.sessions ?? 0
 
-        return PanelBox {
+        return Panel {
             VStack(alignment: .leading, spacing: 12) {
                 Text("training days")
                     .font(.caption).foregroundStyle(.secondary)
@@ -518,11 +516,10 @@ struct TrendsView: View {
     /// done, not a column of dashes.
     private var musclesCard: some View {
         let weekly = figures.weekly
-        let current = weekly.last ?? [:]
-        let thisWeekHasSets = current.values.reduce(0, +) > 0
-        let shown = thisWeekHasSets ? current : (weekly.dropLast().last ?? [:])
-        // The average is of the weeks before the one shown, never including it.
-        let previous = Array((thisWeekHasSets ? weekly.dropLast() : weekly.dropLast(2)).suffix(4))
+        let pick = weekToShow(weekly) { $0.values.reduce(0, +) == 0 }
+        let thisWeekHasSets = pick.isThisWeek
+        let shown = pick.shown ?? [:]
+        let previous = pick.previous
         let groups = MuscleGroup.ordered.filter { g in
             (shown[g] ?? 0) > 0 || previous.contains { ($0[g] ?? 0) > 0 }
         }
@@ -530,7 +527,7 @@ struct TrendsView: View {
         let scale = max(20, groups.map { shown[$0] ?? 0 }.max() ?? 0,
                         groups.map { avg($0, in: previous) }.max() ?? 0)
 
-        return PanelBox {
+        return Panel {
             VStack(alignment: .leading, spacing: 12) {
                 HStack(alignment: .firstTextBaseline) {
                     Text("sets per muscle")
@@ -565,6 +562,17 @@ struct TrendsView: View {
             }
             .frame(maxWidth: .infinity, alignment: .leading)
         }
+    }
+
+    /// This week while it has anything in it, else last week — and the four
+    /// weeks before whichever is shown, never including it. Both Volume cards
+    /// make this choice, and they have to make it the same way.
+    private func weekToShow<T>(_ weeks: [T], isEmpty: (T) -> Bool) -> (shown: T?, previous: [T], isThisWeek: Bool) {
+        guard let last = weeks.last else { return (nil, [], true) }
+        let thisWeek = !isEmpty(last)
+        let shown = thisWeek ? last : weeks.dropLast().last
+        let prior = thisWeek ? weeks.dropLast() : weeks.dropLast(2)
+        return (shown, Array(prior.suffix(4)), thisWeek)
     }
 
     private func avg(_ group: MuscleGroup, in weeks: [MuscleMap.Credits]) -> Double {
@@ -659,10 +667,12 @@ struct TrendsView: View {
 
     /// The exercise appearing in the most sessions (ties broken alphabetically).
     private func mostLogged(among names: [String]) -> String {
-        let best = Analytics.liftSummaries(in: store.sessions).max { a, b in
-            a.sessionsEver != b.sessionsEver ? a.sessionsEver < b.sessionsEver : a.name > b.name
+        var counts: [String: Int] = [:]
+        for session in store.sessions {
+            for key in Set(session.exercises.map { MuscleMap.canonical($0.name) }) { counts[key, default: 0] += 1 }
         }
-        return best.flatMap { top in names.first { Analytics.matches($0, top.name) } } ?? names.first ?? ""
+        let best = counts.max { a, b in a.value != b.value ? a.value < b.value : a.key > b.key }
+        return best.flatMap { top in names.first { MuscleMap.canonical($0) == top.key } } ?? names.first ?? ""
     }
 
     private func clampMetric() {
@@ -766,16 +776,4 @@ private struct TrainingGrid: View {
         let intensity = heaviest > 0 ? Double(sets) / Double(heaviest) : 1
         return Theme.accent.opacity(0.45 + 0.55 * intensity)
     }
-}
-
-/// The raised surface — the chart.
-private struct CardBox<Content: View>: View {
-    @ViewBuilder var content: Content
-    var body: some View { content.glassCard() }
-}
-
-/// The flat surface — the stat tiles beneath it.
-private struct PanelBox<Content: View>: View {
-    @ViewBuilder var content: Content
-    var body: some View { content.panel() }
 }

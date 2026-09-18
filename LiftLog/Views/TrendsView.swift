@@ -9,18 +9,12 @@ struct TrendsView: View {
 
     // Persisted so Trends reopens on the lift you last looked at.
     @AppStorage("trends_exercise") private var exercise = ""
-    /// Three questions, three views: how one lift is going, how every lift
-    /// stands, and how the training as a whole is going.
+    /// Two questions, two views: how a lift is going, and how the training
+    /// as a whole is going.
     private enum Mode: String, CaseIterable, Identifiable {
-        case lift, lifts, volume
+        case lift, volume
         var id: String { rawValue }
-        var title: String {
-            switch self {
-            case .lift: return "Lift"
-            case .lifts: return "All lifts"
-            case .volume: return "Volume"
-            }
-        }
+        var title: String { self == .lift ? "Lift" : "Volume" }
     }
     @AppStorage("trends_mode") private var mode: Mode = .lift
     @AppStorage("muscle_map") private var muscleMap = MuscleMap()
@@ -42,7 +36,6 @@ struct TrendsView: View {
         var weeks: [Analytics.TrainingWeek] = []
         var weekly: [MuscleMap.Credits] = []
         var unmapped: [String] = []
-        var board: [Analytics.LiftSummary] = []
     }
     @State private var figures = Figures()
 
@@ -79,8 +72,6 @@ struct TrendsView: View {
                             if let dose = figures.dose {
                                 doseCard(dose)
                             }
-                        case .lifts:
-                            liftsCard
                         case .volume:
                             weeksCard
                             musclesCard
@@ -442,85 +433,6 @@ struct TrendsView: View {
         }
     }
 
-    // MARK: - Every lift
-
-    /// The whole log, one row a lift: what was done last, the standing best
-    /// and how long it has stood, how often lately. The same numbers the
-    /// coach's digest gets — now the lifter gets them too. Tap a row to chart it.
-    private var liftsCard: some View {
-        let today = Date()
-        let calendar = Calendar.current
-        return PanelBox {
-            VStack(alignment: .leading, spacing: 0) {
-                HStack(alignment: .firstTextBaseline) {
-                    Text("every lift · last done first")
-                        .font(.caption).foregroundStyle(.secondary)
-                    Spacer()
-                    Text("best · how long it has stood")
-                        .font(.caption2).foregroundStyle(.tertiary)
-                }
-                .padding(.bottom, 6)
-                ForEach(figures.board) { row in
-                    Button {
-                        exercise = row.name
-                        mode = .lift
-                    } label: {
-                        boardRow(row, today: today, calendar: calendar)
-                    }
-                    .buttonStyle(.plain)
-                    if row.id != figures.board.last?.id { Divider() }
-                }
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-        }
-    }
-
-    private func boardRow(_ row: Analytics.LiftSummary, today: Date, calendar: Calendar) -> some View {
-        let since = row.daysSinceLast(today: today, calendar: calendar)
-        let bestAgo = row.daysSinceBest(today: today, calendar: calendar)
-        return HStack(alignment: .center, spacing: 10) {
-            VStack(alignment: .leading, spacing: 2) {
-                Text(Theme.readableName(row.name))
-                    .font(.subheadline.weight(.semibold))
-                    .lineLimit(1)
-                Text("\(ago(since)) · \(row.lastTokens)")
-                    .font(.caption).foregroundStyle(.secondary)
-                    .monospacedDigit()
-                    .lineLimit(1)
-                    .truncationMode(.tail)
-                Text("\(row.sessionsInFourWeeks) in 4 weeks · \(row.sessionsEver) ever")
-                    .font(.caption2).foregroundStyle(.tertiary)
-                    .monospacedDigit()
-            }
-            Spacer(minLength: 8)
-            VStack(alignment: .trailing, spacing: 2) {
-                Text(row.best?.token ?? "—")
-                    .font(.subheadline.weight(.bold).monospacedDigit())
-                if let bestAgo {
-                    // Recent in the accent, an old one muted: which lift has
-                    // gone longest without a record reads off the column.
-                    Text(bestAgo == 0 ? "today" : ago(bestAgo))
-                        .font(.caption2)
-                        .foregroundStyle(bestAgo <= 42 ? Theme.accent : Color.secondary)
-                        .monospacedDigit()
-                }
-            }
-            Image(systemName: "chevron.right")
-                .font(.caption).foregroundStyle(.tertiary)
-        }
-        .padding(.vertical, 9)
-        .contentShape(Rectangle())
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel(Theme.readableName(row.name))
-        .accessibilityValue("last \(ago(since)), \(row.lastTokens); best \(row.best?.token ?? "none")"
-                            + (bestAgo.map { ", \(ago($0))" } ?? "")
-                            + "; \(row.sessionsInFourWeeks) sessions in four weeks")
-    }
-
-    private func ago(_ days: Int) -> String {
-        days == 0 ? "today" : (days == 1 ? "yesterday" : "\(days) days ago")
-    }
-
     // MARK: - Weeks
 
     /// Every day of the last few months as a dot: filled when you trained,
@@ -731,7 +643,6 @@ struct TrendsView: View {
     private func recompute() {
         var f = Figures()
         f.exercises = knownLifts()
-        f.board = Analytics.liftSummaries(in: store.sessions)
         f.weeks = Analytics.weekGrid(weeks: 26, in: store.sessions)
         f.weekly = muscleMap.weeklySets(weeks: 6, in: store.sessions)
         f.unmapped = muscleMap.unmapped(in: store.sessions)

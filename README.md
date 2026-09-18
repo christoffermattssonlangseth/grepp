@@ -121,7 +121,7 @@ cost a cent each. A starter file is in
 [`docs/research-seed.md`](docs/research-seed.md), written from the model's
 memory of the literature and meant to be checked, not trusted.
 
-**Trends.** Three views. *Lift*: a chart per lift (top set, Est. 1RM, or reps
+**Trends.** Two views. *Lift*: a chart per lift (top set, Est. 1RM, or reps
 and added load for bodyweight lifts), four months at a time with the rest a
 flick away; drag along the line to read a session, tap the reading to open
 that day. Under it, change over the last three weeks (counted from today) and
@@ -133,9 +133,6 @@ sentence and the eight weeks to the coach as a question, and the coach's
 digest carries the same sentence, so the tab and the chat agree on a stall.
 "Bench", "Bench press" and "bench-press" are one lift everywhere. Est. 1RM is
 Epley, trusted to twelve reps and no further.
-*All lifts*: every lift on one screen, last done first — what was done last,
-the standing best and how long it has stood, sessions in four weeks. Tap a
-row to chart it.
 *Volume*: a training-days grid, Monday to Sunday, and sets per muscle for the
 week as bars against a 10–20 band with the four-week average marked. A
 compound counts fully for what it's a lift for and half for each muscle that

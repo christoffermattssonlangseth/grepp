@@ -70,6 +70,9 @@ struct CoachView: View {
                 Text("About twice Opus and five times Sonnet per answer, and slower. " + capNote)
             }
             .onAppear {
+                // Picked and then the app died under the alert: the pick was
+                // stored before it was answered, so it is taken back here.
+                if model.isPremium, !fableAcknowledged { model = .sonnet }
                 consumeBriefRequest()
                 consumeQuestion()
             }

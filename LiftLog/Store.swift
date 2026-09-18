@@ -562,10 +562,11 @@ final class Store: ObservableObject {
         // the queue drains.
         if !pending.isEmpty {
             enqueue(write)
-            await flushPending()
+            let flowing = await flushPending()
             sessions = WorkoutParser.applying(pending, to: cachedSessions())
             if pending.isEmpty { status = done; return .pushed }
-            status = "Offline — saved locally, will sync (\(pending.count) queued)"
+            // Paused on an error is not offline: the reason stays on screen.
+            if flowing { status = "Offline — saved locally, will sync (\(pending.count) queued)" }
             return .queued
         }
 
@@ -636,8 +637,10 @@ final class Store: ObservableObject {
 
     /// Replay queued writes against the current remote, oldest first. Stops (keeping
     /// the rest queued) as soon as one can't be delivered — offline again, or a
-    /// permanent error the user needs to fix (e.g. a bad token).
-    func flushPending() async {
+    /// permanent error the user needs to fix (e.g. a bad token). False when it
+    /// stopped on such an error, with the reason in `status`.
+    @discardableResult
+    func flushPending() async -> Bool {
         while let write = pending.first {
             do {
                 let base = try await push(write)
@@ -645,12 +648,13 @@ final class Store: ObservableObject {
                 pending.removeFirst()
                 savePending()
             } catch let error where isOffline(error) {
-                return   // still offline — leave the queue intact
+                return true   // still offline — leave the queue intact
             } catch {
                 status = "Sync paused — \(error.localizedDescription)"
-                return
+                return false
             }
         }
+        return true
     }
 
     private func enqueue(_ write: PendingWrite) {

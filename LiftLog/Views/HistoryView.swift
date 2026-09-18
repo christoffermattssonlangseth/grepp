@@ -159,7 +159,7 @@ struct HistoryView: View {
     /// One day: its lifts, under a header with the date and where the sets went.
     private func daySection(_ session: Session) -> some View {
         Section {
-            ForEach(session.exercises, id: \.name) { ex in
+            ForEach(session.exercises) { ex in
                 // A button, not a tap gesture: tapping a row to close a swipe
                 // you changed your mind about must not open the lift.
                 Button {

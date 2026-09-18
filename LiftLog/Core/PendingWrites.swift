@@ -51,14 +51,14 @@ struct PendingWrite: Codable, Identifiable, Equatable {
 extension WorkoutParser {
 
     /// Insert or replace an exercise entry within a session array, keyed by date
-    /// + case-insensitive name. Re-logging the same exercise on a day *replaces*
-    /// it — that's deliberate: the Session UI treats a second log as "update this
-    /// exercise", not a separate block.
+    /// + the lift under any of its spellings. Re-logging the same exercise on a
+    /// day *replaces* it — that's deliberate: the Session UI treats a second log
+    /// as "update this exercise", not a separate block.
     static func merge(_ entry: ExerciseEntry, on date: Date, into base: inout [Session]) {
         let key = Session.dateFormatter.string(from: date)
         if let idx = base.firstIndex(where: { $0.dateString == key }) {
             if let exIdx = base[idx].exercises.firstIndex(where: {
-                $0.name.caseInsensitiveCompare(entry.name) == .orderedSame
+                Analytics.matches($0.name, entry.name)
             }) {
                 base[idx].exercises[exIdx] = entry
             } else {
@@ -75,7 +75,7 @@ extension WorkoutParser {
     static func remove(_ name: String, on date: Date, from base: inout [Session]) {
         let key = Session.dateFormatter.string(from: date)
         guard let idx = base.firstIndex(where: { $0.dateString == key }) else { return }
-        base[idx].exercises.removeAll { $0.name.caseInsensitiveCompare(name) == .orderedSame }
+        base[idx].exercises.removeAll { Analytics.matches($0.name, name) }
         if base[idx].exercises.isEmpty { base.remove(at: idx) }
     }
 
@@ -88,11 +88,12 @@ extension WorkoutParser {
         guard Session.dateFormatter.string(from: target) != key,
               let idx = base.firstIndex(where: { $0.dateString == key }) else { return }
         let moving = base[idx].exercises.filter { ex in
-            name.map { ex.name.caseInsensitiveCompare($0) == .orderedSame } ?? true
+            name.map { Analytics.matches(ex.name, $0) } ?? true
         }
         guard !moving.isEmpty else { return }
         for ex in moving { remove(ex.name, on: date, from: &base) }
-        for ex in moving { merge(ex, on: target, into: &base) }
+        // A moved line carries a new date, so it is the app's to write.
+        for ex in moving { merge(ex.rewritten, on: target, into: &base) }
     }
 
     /// Apply one pending write to a session array.

@@ -119,6 +119,12 @@ final class CoachService: ObservableObject {
     @Published private(set) var mode: CoachContext.Mode = .coaching
 
     private var task: Task<Void, Never>?
+    /// Which send owns the screen. A stopped request still unwinds after the
+    /// next one has started; its tail must not touch the new reply.
+    private var turn: UUID?
+    /// Replies whose cost has gone to the month, so a stop and a finish on the
+    /// same reply can't count it twice.
+    private var recorded = Set<UUID>()
 
     // The transcript is persisted so a backgrounded-and-killed app doesn't lose
     // the conversation. Saved when a message lands or finishes, never per
@@ -149,7 +155,11 @@ final class CoachService: ObservableObject {
         guard let data = UserDefaults.standard.data(forKey: chatKey),
               let saved = try? JSONDecoder().decode(Saved.self, from: data) else { return }
         // A reply cut off by a kill is kept as it stood, like a cancel — and an
-        // empty bubble the kill left behind is dropped.
+        // empty bubble the kill left behind is dropped. What it cost was billed
+        // all the same, so it goes to the month here.
+        for m in saved.messages where m.isStreaming {
+            if let usage = m.usage, let model = m.model { CoachSpend.shared.record(model.cost(usage)) }
+        }
         messages = saved.messages
             .map { var m = $0; m.isStreaming = false; return m }
             .filter { !($0.role == .coach && $0.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty) }
@@ -194,6 +204,7 @@ final class CoachService: ObservableObject {
     func cancel() {
         task?.cancel()
         task = nil
+        turn = nil
         finishStreamingMessage()
         isResponding = false
         persist()
@@ -293,6 +304,8 @@ final class CoachService: ObservableObject {
         persist()   // the question survives even if the answer doesn't
 
         let service = ClaudeService(apiKey: key, model: model, workspaceID: workspace)
+        let thisTurn = UUID()
+        turn = thisTurn
 
         task = Task { [weak self] in
             do {
@@ -317,7 +330,10 @@ final class CoachService: ObservableObject {
                     guard let self, !Task.isCancelled else { return }
                     switch event {
                     case .text(let chunk): self.append(chunk, to: reply.id)
-                    case .usage(let usage): self.setUsage(usage, on: reply.id)
+                    case .usage(let usage):
+                        // Saved at once: a kill mid-stream must not lose what was billed.
+                        self.setUsage(usage, on: reply.id)
+                        self.persist()
                     case .stopped(let reason): self.noteStop(reason, on: reply.id)
                     }
                 }
@@ -332,7 +348,8 @@ final class CoachService: ObservableObject {
                 // status and the API's reason — never the prompt or the log.
                 self?.errorText = error.localizedDescription
             }
-            guard let self else { return }
+            // A stopped turn unwinding after the next began: nothing here is its.
+            guard let self, self.turn == thisTurn else { return }
             self.finishStreamingMessage()
             self.isResponding = false
             self.task = nil
@@ -435,8 +452,12 @@ final class CoachService: ObservableObject {
         guard let idx = messages.lastIndex(where: { $0.isStreaming }) else { return }
         messages[idx].isStreaming = false
         // Whatever it cost counts against the month, finished or not — a
-        // partial answer was billed all the same.
-        if let usage = messages[idx].usage, let model = messages[idx].model {
+        // partial answer was billed all the same. A stopped stream never gets
+        // its output count, so it is estimated from what arrived.
+        if var usage = messages[idx].usage, let model = messages[idx].model, !recorded.contains(messages[idx].id) {
+            if usage.output == 0, !messages[idx].text.isEmpty { usage.output = messages[idx].text.count / 4 }
+            messages[idx].usage = usage
+            recorded.insert(messages[idx].id)
             CoachSpend.shared.record(model.cost(usage))
         }
         // A request that failed before a single token arrived leaves an empty

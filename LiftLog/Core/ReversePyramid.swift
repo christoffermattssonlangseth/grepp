@@ -36,10 +36,12 @@ enum ReversePyramid {
                 let reps = topReps + repStep * i
                 guard i > 0 else { return WorkSet(weight: topWeight, added: nil, reps: reps) }
                 // To the nearest pair of small plates, then to what the rack can
-                // actually make, at or just under that.
+                // actually make, at or just under that. Under the bar, the number
+                // stands as it is: the bar is a loading fact, not a floor — a
+                // back-off is never heavier than the top set.
                 let raw = (topWeight * pow(1 - drop, Double(i)) / 2.5).rounded() * 2.5
-                let loadable = PlateMath.load(raw, bar: bar, inventory: inventory)?.total ?? max(bar, raw)
-                return WorkSet(weight: loadable, added: nil, reps: reps)
+                let loadable = raw < bar ? raw : (PlateMath.load(raw, bar: bar, inventory: inventory)?.total ?? raw)
+                return WorkSet(weight: min(topWeight, loadable), added: nil, reps: reps)
             }
         }
 
@@ -70,12 +72,15 @@ enum ReversePyramid {
         var missing: [String] = []
         for exercise in day.exercises {
             let last = Programme.lastDone(exercise.name, in: sessions)?.entry
+            // Under the log's own spelling, so the history stays one line of
+            // lifts rather than splitting into the programme's name and the log's.
+            let name = last?.name ?? exercise.name
             if exercise.rpt, let scheme = exercise.setsAndReps,
                let sets = plan(exercise.name, sets: scheme.sets, reps: scheme.reps, last: last,
                                bar: bar(exercise.name), inventory: inventory) {
-                entries.append(ExerciseEntry(name: exercise.name, sets: sets))
+                entries.append(ExerciseEntry(name: name, sets: sets))
             } else if let last, !last.sets.isEmpty {
-                entries.append(ExerciseEntry(name: exercise.name, sets: last.sets.map { WorkSet(weight: $0.weight, added: $0.added, reps: $0.reps) }))
+                entries.append(ExerciseEntry(name: name, sets: last.sets.map { WorkSet(weight: $0.weight, added: $0.added, reps: $0.reps) }))
             } else {
                 missing.append(exercise.name)
             }

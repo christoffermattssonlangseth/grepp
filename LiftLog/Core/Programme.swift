@@ -151,11 +151,11 @@ struct Programme: Equatable {
     func dueDayIndex(in sessions: [Session]) -> Int {
         guard days.count > 1 else { return 0 }
         for session in sessions.sorted(by: { $0.date > $1.date }) {
-            let done = Set(session.exercises.map { $0.name.lowercased() })
+            let done = Set(session.exercises.map { MuscleMap.canonical($0.name) })
             var bestIndex: Int?
             var bestScore = 0
             for (i, day) in days.enumerated() {
-                let names = Set(day.exercises.map(\.name))
+                let names = Set(day.exercises.map { MuscleMap.canonical($0.name) })
                 let overlap = names.intersection(done).count
                 // At least half the day's lifts, else it wasn't that day.
                 guard overlap * 2 >= names.count, overlap > bestScore else { continue }

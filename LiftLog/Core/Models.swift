@@ -48,11 +48,19 @@ struct ExerciseEntry: Identifiable, Equatable, Codable {
     var id = UUID()
     var name: String
     var sets: [WorkSet]
+    /// The line exactly as the file had it, when this entry was read from the
+    /// file rather than made in the app. Written back untouched: a save never
+    /// re-spells, re-cases or re-spaces a line it didn't mean to change.
+    var raw: String? = nil
 
     func line(date: String) -> String {
+        if let raw { return raw }
         let setStr = sets.map(\.token).joined(separator: " ")
         return "\(date) \(name) \(setStr)"
     }
+
+    /// The same entry as something the app is writing: no line to keep.
+    var rewritten: ExerciseEntry { var e = self; e.raw = nil; return e }
 }
 
 /// All the exercises logged on one calendar date.

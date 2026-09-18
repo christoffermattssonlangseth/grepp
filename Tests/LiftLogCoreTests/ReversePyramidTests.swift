@@ -48,6 +48,25 @@ final class ReversePyramidTests: XCTestCase {
         XCTAssertEqual(tokens(plan), "145x4 130x6")
     }
 
+    func testABackOffIsNeverHeavierThanTheTopSetOrClampedToTheBar() {
+        let plan = ReversePyramid.plan("curl", sets: 3, reps: 6...8, last: entry("curl", "15x8 15x8"), bar: 20)
+        XCTAssertEqual(tokens(plan), "17.5x6 15x8 15x10", "under the bar the number stands; it never rounds up to the bar")
+    }
+
+    func testTheDueDayRecognisesALiftUnderAnySpelling() {
+        let programme = Programme.parse("""
+        ## Day A
+        - deadlift rpt 2x4-6
+        - barbell-row 3x8-10
+        ## Day B
+        - bench-press 3x5
+        """)
+        let sessions = [Session(date: Session.dateFormatter.date(from: "2026-09-10")!, exercises: [
+            entry("deadlift", "140x6"), entry("row", "60x10"),
+        ])]
+        XCTAssertEqual(programme.dueDayIndex(in: sessions), 1)
+    }
+
     func testNoHistoryIsNoPlan() {
         XCTAssertNil(ReversePyramid.plan("squat", sets: 3, reps: 6...8, last: nil))
         XCTAssertEqual(ReversePyramid.increment(for: "Back squat"), 5)
@@ -65,7 +84,7 @@ final class ReversePyramidTests: XCTestCase {
             entry("deadlift", "140x6 125x8"), entry("row", "60x10 60x10 60x9"),
         ])]
         let plan = ReversePyramid.plan(day: day, in: sessions, bar: { _ in 20 }, inventory: .standard)
-        XCTAssertEqual(plan.entries.map(\.name), ["deadlift", "barbell-row"])
+        XCTAssertEqual(plan.entries.map(\.name), ["deadlift", "row"], "under the log's own spelling, so the history stays one line of lifts")
         XCTAssertEqual(tokens(plan.entries[0].sets), "145x4 130x6")
         XCTAssertEqual(tokens(plan.entries[1].sets), "60x10 60x10 60x9", "a lift without the mark repeats its last session, whatever the log called it")
         XCTAssertEqual(plan.missing, ["face-pull"])

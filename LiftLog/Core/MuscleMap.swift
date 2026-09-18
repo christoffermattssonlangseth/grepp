@@ -148,7 +148,8 @@ struct MuscleMap: Equatable, RawRepresentable {
             }
             let share = Share(parts: parts)
             guard !share.isEmpty else { continue }
-            overrides[MuscleMap.key(String(kv[0]))] = share
+            // Saved under a spelling in an older build: it is the lift's now.
+            overrides[MuscleMap.canonical(String(kv[0]))] = share
         }
         self.overrides = overrides
     }
@@ -197,8 +198,8 @@ struct MuscleMap: Equatable, RawRepresentable {
     mutating func set(_ share: Share?, for exercise: String) {
         let key = MuscleMap.canonical(exercise)
         guard !key.isEmpty else { return }
-        // One lift, one entry: "bench" and "bench-press" share it either way.
-        overrides.removeValue(forKey: MuscleMap.key(exercise))
+        // One lift, one entry: every spelling that names it goes.
+        for stale in overrides.keys where MuscleMap.canonical(stale) == key { overrides.removeValue(forKey: stale) }
         if let share, !share.isEmpty, share != MuscleMap.builtInShare(for: exercise) {
             overrides[key] = share
         } else {

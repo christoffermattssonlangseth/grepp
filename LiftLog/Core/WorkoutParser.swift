@@ -57,7 +57,7 @@ enum WorkoutParser {
         let name = tokens[1..<firstSet].joined(separator: "-")
         let sets = tokens[firstSet...].compactMap { parseSet($0) }
         guard !name.isEmpty, !sets.isEmpty else { return nil }
-        return (tokens[0], date, ExerciseEntry(name: name, sets: sets))
+        return (tokens[0], date, ExerciseEntry(name: name, sets: sets, raw: line))
     }
 
     /// Non-blank lines the parser would drop, with their 1-based numbers. A
@@ -102,7 +102,7 @@ enum WorkoutParser {
         sessions
             .filter { $0.date < date }
             .sorted { $0.date > $1.date }
-            .compactMap { s in s.exercises.first { $0.name.caseInsensitiveCompare(name) == .orderedSame } }
+            .compactMap { s in s.exercises.first { Analytics.matches($0.name, name) } }
             .first
     }
 }

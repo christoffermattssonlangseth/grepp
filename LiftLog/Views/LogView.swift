@@ -74,6 +74,11 @@ struct LogView: View {
         return store.sessions.first { $0.dateString == key }?.exercises ?? []
     }
 
+    /// The lift as already logged on the day in hand, under any spelling.
+    private func loggedToday(_ lift: String) -> ExerciseEntry? {
+        todayExercises.first { Analytics.matches($0.name, lift) }
+    }
+
     private var lastEntry: ExerciseEntry? {
         name.isEmpty ? nil : store.lastEntry(for: name, before: date)
     }
@@ -127,9 +132,13 @@ struct LogView: View {
             .navigationTitle("Session")
             .sheet(isPresented: $showingPicker) {
                 ExercisePickerView(history: store.knownExercises) { picked in
-                    // Switching exercise starts a fresh set list for the new movement.
+                    // Switching exercise starts a fresh set list for the new
+                    // movement — or, for a lift already logged today, its sets as
+                    // they stand: finishing updates that line, never replaces it blind.
                     if picked.caseInsensitiveCompare(name) != .orderedSame {
-                        sets = []
+                        let done = loggedToday(picked)
+                        sets = done?.sets ?? []
+                        if let first = done?.sets.first { isBodyweight = first.isBodyweight }
                         plan = nil
                         restStart = nil
                     }
@@ -256,6 +265,10 @@ struct LogView: View {
             pendingReplace = .prescription
             return
         }
+        // A prescription is for today, whatever day was open before it: a
+        // past day picked for a correction must not swallow a whole session.
+        date = Date()
+        dateChosen = false
         store.recordPlan(store.prescriptionRequest, on: date)
         queue = Array(store.prescriptionRequest.dropFirst())
         store.prescriptionRequest = []
@@ -268,8 +281,11 @@ struct LogView: View {
     /// resting too, and the clock that started at that last set should keep going.
     private func load(prescription rx: ExerciseEntry) {
         name = rx.name
-        sets = []
-        plan = rx.sets
+        // Already done today: the plan adds to what's logged rather than
+        // replacing it, so the sets on file come along and the plan follows them.
+        let done = loggedToday(rx.name)?.sets ?? []
+        sets = done
+        plan = done + rx.sets
         isBodyweight = rx.sets.first?.isBodyweight ?? false
         prefill(rx.sets.first)
         // The lock screen names the lift and its next set; both just changed.
@@ -388,7 +404,7 @@ struct LogView: View {
                     Text("\(todayExercises.count) ex · \(todaySetCount) sets")
                         .font(.caption.weight(.semibold)).foregroundStyle(.secondary)
                 }
-                ForEach(todayExercises, id: \.name) { ex in
+                ForEach(todayExercises) { ex in
                     HStack(spacing: 8) {
                         VStack(alignment: .leading, spacing: 3) {
                             Text(Theme.readableName(ex.name))
@@ -996,6 +1012,7 @@ struct LogView: View {
             return
         }
         let entry = ExerciseEntry(name: MuscleMap.key(name), sets: sets)
+        let committed = sets
         let result = await store.commit(entry, on: date,
                            message: "Log \(entry.name) \(Session.dateFormatter.string(from: date))")
         // Reset on a push OR an offline queue — both keep the entry; only a hard
@@ -1008,6 +1025,10 @@ struct LogView: View {
             // The day stays for the next lift — a backfill is several — but it
             // has to be confirmed again: one lift on purpose isn't the next.
             dateChosen = false
+            // A set landed while the save was in flight — from the pad or the
+            // lock screen — is not thrown away: the lift stays in hand with
+            // every set shown, one more update away.
+            guard sets == committed else { return }
             if !queue.isEmpty {
                 // Straight on to the next prescribed lift, fields already filled.
                 load(prescription: queue.removeFirst())

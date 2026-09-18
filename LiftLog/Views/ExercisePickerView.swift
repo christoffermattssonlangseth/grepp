@@ -52,7 +52,7 @@ struct ExercisePickerView: View {
                 }
 
                 if !filteredHistory.isEmpty {
-                    Section(library ? "Your exercises" : "In your log") {
+                    Section(library ? "Your lifts" : "In your log") {
                         ForEach(filteredHistory, id: \.self) { row(library ? $0 : Theme.readableName($0), picks: $0) }
                     }
                 }
@@ -63,8 +63,8 @@ struct ExercisePickerView: View {
                     }
                 }
             }
-            .searchable(text: $query, prompt: library ? "Search or type a new name" : "Search your lifts")
-            .navigationTitle("Choose exercise")
+            .searchable(text: $query, prompt: library ? "Search or type a new lift" : "Search your lifts")
+            .navigationTitle("Choose a lift")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {

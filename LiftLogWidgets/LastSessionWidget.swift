@@ -120,7 +120,7 @@ struct LastSessionView: View {
     /// Name left, sets right, one line.
     private func row(name: String, sets: String) -> some View {
         HStack(alignment: .firstTextBaseline, spacing: 6) {
-            Text(name.replacingOccurrences(of: "-", with: " "))
+            Text(Brand.readableName(name))
                 .font(.footnote.weight(.semibold))
                 .lineLimit(1)
             Spacer(minLength: 4)

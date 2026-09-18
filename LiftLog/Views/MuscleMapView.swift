@@ -5,7 +5,7 @@ import SwiftUI
 /// need to touch them — but the ones who disagree with a share can set it.
 struct MuscleMapView: View {
     @EnvironmentObject var store: Store
-    @AppStorage("muscle_map") private var muscleMap = MuscleMap()
+    @AppStorage(Prefs.muscleMap) private var muscleMap = MuscleMap()
     @State private var query = ""
 
     /// Lifts from the log first, then the rest of the table.
@@ -77,7 +77,7 @@ struct MuscleMapView: View {
 /// One lift: a share for every muscle.
 struct ExerciseMuscleView: View {
     let exercise: String
-    @AppStorage("muscle_map") private var muscleMap = MuscleMap()
+    @AppStorage(Prefs.muscleMap) private var muscleMap = MuscleMap()
 
     private static let steps: [Double] = [0, 0.25, 0.5, 0.75, 1]
 

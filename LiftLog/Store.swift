@@ -79,7 +79,7 @@ final class Store: ObservableObject {
     /// Writes that haven't reached GitHub yet, oldest first. Persisted across launches.
     @Published private(set) var pending: [PendingWrite] = []
 
-    /// Contents of `coachingPath` and `goalsPath`, empty when there's no such file.
+    /// Contents of the four brief files, empty where there's no such file.
     /// Cached like the log so they survive a cold start with no signal.
     @Published private(set) var brief = CoachContext.Brief.none
 
@@ -131,7 +131,7 @@ final class Store: ObservableObject {
     /// The outcome of a `commit`, so callers don't have to sniff `status` text.
     enum CommitResult { case pushed, queued, failed }
 
-    /// The two files that make up the coach's standing brief. One identity for
+    /// The four files that make up the coach's standing brief. One identity for
     /// each, so a screen can read, edit and save either without special-casing.
     enum BriefFile: String, CaseIterable, Identifiable {
         case coaching, goals, program, research
@@ -336,7 +336,7 @@ final class Store: ObservableObject {
         }
     }
 
-    /// Refresh the two companion files. Deliberately cannot fail the load: they're
+    /// Refresh the brief files. Deliberately cannot fail the load: they're
     /// optional, a 404 just means the file isn't there, and anything else leaves the
     /// cached copy in place — a hiccup fetching your notes must never cost you the
     /// training history.

@@ -377,15 +377,25 @@ struct TrendsView: View {
                 // muscle, against the band the total is judged by. The lift's
                 // bar is narrower so an overshoot — a lift whose main share is
                 // a half — shows as one rather than hiding the bar behind it.
+                // The x value is binned by week so each bar has a band to be a
+                // ratio of: on a bare date axis there is no band and a ratio
+                // width is nothing, which drew no bars at all. Ranged bars
+                // from zero, so the two don't stack but sit one inside the other.
                 Chart {
                     RectangleMark(yStart: .value("low", DoseResponse.band.lowerBound),
                                   yEnd: .value("high", DoseResponse.band.upperBound))
                         .foregroundStyle(Theme.accent.opacity(0.12))
                     ForEach(dose.weeks) { week in
-                        BarMark(x: .value("Week", week.start), y: .value("Muscle sets", week.sets), width: .ratio(0.8))
+                        BarMark(x: .value("Week", week.start, unit: .weekOfYear),
+                                yStart: .value("Sets", 0.0),
+                                yEnd: .value("Muscle sets", week.sets),
+                                width: .ratio(0.8))
                             .foregroundStyle(Color.secondary.opacity(0.22))
                             .cornerRadius(3)
-                        BarMark(x: .value("Week", week.start), y: .value("Lift sets", Double(week.liftSets)), width: .ratio(0.45))
+                        BarMark(x: .value("Week", week.start, unit: .weekOfYear),
+                                yStart: .value("Sets", 0.0),
+                                yEnd: .value("Lift sets", Double(week.liftSets)),
+                                width: .ratio(0.45))
                             .foregroundStyle(Theme.accent)
                             .cornerRadius(3)
                     }

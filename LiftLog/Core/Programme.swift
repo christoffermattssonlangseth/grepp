@@ -18,6 +18,23 @@ struct Programme: Equatable {
         let scheme: String
         /// Whatever followed " — " on the line: the progression rule, a cue.
         let note: String
+        /// Marked `rpt` on its line: reverse pyramid, loads computed by the
+        /// app from the last session rather than asked of the coach.
+        var rpt = false
+
+        /// The scheme as numbers, when it has them: `3x4-6` → 3 sets of 4 to 6,
+        /// `3x5` → 3 sets of 5. Nil for AMRAP and the like.
+        var setsAndReps: (sets: Int, reps: ClosedRange<Int>)? {
+            let parts = scheme.split(separator: "x")
+            guard parts.count == 2, let sets = Int(parts[0]) else { return nil }
+            let reps = parts[1].replacingOccurrences(of: "+", with: "").replacingOccurrences(of: "–", with: "-")
+            let bounds = reps.split(separator: "-").compactMap { Int($0) }
+            switch bounds.count {
+            case 1: return (sets, bounds[0]...bounds[0])
+            case 2 where bounds[0] <= bounds[1]: return (sets, bounds[0]...bounds[1])
+            default: return nil
+            }
+        }
     }
 
     struct Day: Equatable, Identifiable {
@@ -97,7 +114,10 @@ struct Programme: Equatable {
     /// `squat 3x5 — add 2.5 kg when all sets hit` → name, scheme, note. Also
     /// `Squat: 3 x 5`, `**Bench press** 3x8-10 (add 2.5 kg)`, `squat 3x5 @ 90 kg`.
     static func parseExercise(_ text: String) -> Exercise? {
-        let clean = text.replacingOccurrences(of: "**", with: "")
+        var clean = text.replacingOccurrences(of: "**", with: "")
+        // `rpt` anywhere on the line marks the scheme; it is not part of the name.
+        let rpt = rptWord.firstMatch(in: clean, range: NSRange(clean.startIndex..., in: clean)) != nil
+        if rpt { clean = rptWord.stringByReplacingMatches(in: clean, options: [], range: NSRange(clean.startIndex..., in: clean), withTemplate: " ") }
         let whole = NSRange(clean.startIndex..., in: clean)
         guard let m = scheme.firstMatch(in: clean, range: whole),
               let range = Range(m.range, in: clean),
@@ -118,8 +138,10 @@ struct Programme: Equatable {
             .trimmingCharacters(in: .whitespaces)
             .trimmingCharacters(in: CharacterSet(charactersIn: ":—–-,("))
             .trimmingCharacters(in: CharacterSet(charactersIn: ") "))
-        return Exercise(name: name, scheme: normalised, note: note)
+        return Exercise(name: name, scheme: normalised, note: note, rpt: rpt)
     }
+
+    private static let rptWord = try! NSRegularExpression(pattern: "(?<![a-z])rpt(?![a-z])", options: [.caseInsensitive])
 
     // MARK: - Against the log
 
@@ -148,7 +170,7 @@ struct Programme: Equatable {
     /// The last time a lift was logged: its sets and the day, newest first.
     static func lastDone(_ name: String, in sessions: [Session]) -> (entry: ExerciseEntry, day: String)? {
         for session in sessions.sorted(by: { $0.date > $1.date }) {
-            if let entry = session.exercises.first(where: { $0.name.caseInsensitiveCompare(name) == .orderedSame }) {
+            if let entry = Analytics.entries(name, in: session).first {
                 return (entry, session.dateString)
             }
         }

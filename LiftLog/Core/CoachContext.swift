@@ -428,6 +428,14 @@ enum CoachContext {
     Where their evidence brief says otherwise, the brief wins — these are defaults, \
     and they chose those.
 
+    Reverse pyramid, when they ask for it or it fits (few days, few lifts, a \
+    lifter who likes one heavy set): write `rpt` on the line — `- deadlift rpt \
+    2x4-6` — and the app computes that lift's loads itself from the last session: \
+    the top set first, each set after it a tenth lighter for two more reps, the \
+    load up a step (5 kg on squat and deadlift, 2.5 elsewhere) once the top set \
+    reaches the top of its range. Two or three sets a lift, one heavy compound a \
+    day, long rests. Don't put loads on those lines either.
+
     Then write the file: one short line, then the whole programme in a fenced block \
     tagged exactly `program.md`, nothing after the closing fence. Its shape is fixed \
     so the app can read it: a `#` title, a `##` heading per day, one lift per bullet \

@@ -96,6 +96,14 @@ button each. The design rules it follows are the usual evidence-based ones
 (hard sets per muscle per week, two exposures, 1–3 reps in reserve, reactive
 deloads), stated as defaults your evidence brief overrides; Liftosaur's
 programme-design guide was the checklist for what to cover.
+**Load this day** on the Programme screen puts a day into the Log tab with
+no coach in the loop: a line marked `rpt` is a reverse pyramid worked out
+from that lift's last session — the top set first, each set after it a tenth
+lighter for two more reps, the load up a step (5 kg on squat and deadlift,
+2.5 elsewhere) once the top set reaches the top of its range, the same load
+and one more rep when it doesn't — and any other line repeats the lift as it
+was last done. A three-day reverse pyramid starter is one tap on an empty
+Programme screen; it is the only programme the app carries.
 
 **An empty log.** The first run says what the file is and shows one line of
 it; nothing is faked. Trained before? Tell the coach what you did in any form,

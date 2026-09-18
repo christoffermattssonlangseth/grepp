@@ -41,8 +41,12 @@ enum PlateMath {
     /// right there. The search finds the exact load when one exists, otherwise the
     /// heaviest below; ties go to the fewest plates, then the heaviest ones, which
     /// is how a lifter loads a bar.
+    /// Past this the search is a slipped decimal, not a load; a table of a
+    /// hundred thousand cells is not built for it.
+    static let heaviest = 700.0
+
     static func load(_ target: Double, bar: Double = 20, inventory: PlateInventory = .standard) -> Load? {
-        guard target >= bar else { return nil }
+        guard target >= bar, target <= heaviest else { return nil }
         let want = Int(((target - bar) / 2 / unit).rounded())
 
         // Per-side stock: a pair per side, so an odd plate out can't be used.

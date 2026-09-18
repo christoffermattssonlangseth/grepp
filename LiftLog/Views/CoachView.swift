@@ -283,8 +283,11 @@ struct CoachView: View {
     /// answer, otherwise left in the box for the lifter to send.
     private func consumeQuestion() {
         guard let question = store.coachQuestion else { return }
+        // No key means no box to park it in: it waits in the store for the
+        // next time this screen appears with one.
+        guard hasKey || model.isOnDevice else { return }
         store.coachQuestion = nil
-        if (hasKey || model.isOnDevice), !coach.isResponding, coach.mode == .coaching {
+        if !coach.isResponding, coach.mode == .coaching {
             ask(question)
         } else {
             draft = question
@@ -338,6 +341,12 @@ struct CoachView: View {
                     .font(.caption).foregroundStyle(.secondary)
             } else if message.isStreaming {
                 ProgressView().controlSize(.small)
+            }
+            if !message.isStreaming, let note = message.stopNote {
+                Text(note)
+                    .font(.footnote)
+                    .foregroundStyle(.orange)
+                    .fixedSize(horizontal: false, vertical: true)
             }
             // The API's own token counts, priced — not an estimate of them.
             if showCost, !message.isStreaming, let usage = message.usage, let model = message.model {

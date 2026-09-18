@@ -141,6 +141,9 @@ struct LogView: View {
                         if let first = done?.sets.first { isBodyweight = first.isBodyweight }
                         plan = nil
                         restStart = nil
+                        // A day opened for one lift was chosen for that lift;
+                        // another lift has to be confirmed for it again.
+                        dateChosen = false
                     }
                     name = picked
                 }
@@ -892,6 +895,8 @@ struct LogView: View {
             let plates = load.perSide.map { PlateMath.label($0) }.joined(separator: " · ")
             let approx = load.isApproximate ? "  ≈ \(PlateMath.label(load.total))" : ""
             text = "per side  " + plates + approx
+        } else if let target = parsedWeight, target > effectiveBar {
+            text = "more than a rack holds"
         } else {
             text = "lighter than the bar"
         }
@@ -1019,7 +1024,9 @@ struct LogView: View {
         // failure leaves the input so the user can retry. Today's session card
         // keeps the record either way.
         if result != .failed {
-            if plan != nil { store.completePlan(entry, on: date) }
+            // A no-op when nothing was prescribed; an edit of a prescribed lift
+            // still closes its plan.
+            store.completePlan(entry, on: date)
             exerciseFinished += 1
             focus = nil
             // The day stays for the next lift — a backfill is several — but it

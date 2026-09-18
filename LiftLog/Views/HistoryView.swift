@@ -37,7 +37,12 @@ struct HistoryView: View {
         return store.sessions
             .compactMap { session -> Session? in
                 guard !q.isEmpty else { return session }
-                let hits = session.exercises.filter { Theme.readableName($0.name).localizedCaseInsensitiveContains(q) }
+                // "ohp" finds the days logged as over-head-press, and the other way round.
+                let key = MuscleMap.canonical(q)
+                let hits = session.exercises.filter {
+                    Theme.readableName($0.name).localizedCaseInsensitiveContains(q)
+                        || MuscleMap.canonical($0.name).contains(key)
+                }
                 return hits.isEmpty ? nil : Session(date: session.date, exercises: hits)
             }
             .sorted { $0.date > $1.date }

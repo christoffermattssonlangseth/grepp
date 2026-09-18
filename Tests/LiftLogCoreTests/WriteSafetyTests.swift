@@ -41,6 +41,13 @@ final class WriteSafetyTests: XCTestCase {
         XCTAssertTrue(sessions.isEmpty)
     }
 
+    func testALogReadTwiceIsEqualToItself() {
+        // Fresh ids on every parse must not make the same file a different log:
+        // every screen that watches the sessions would redraw on every reload.
+        XCTAssertEqual(WorkoutParser.parse(file), WorkoutParser.parse(file))
+        XCTAssertNotEqual(WorkoutParser.parse(file), WorkoutParser.parse(file + "2026-09-02 squat 100x5\n"))
+    }
+
     func testAnOverrideSavedUnderAnOldSpellingIsTheLiftsNow() {
         var map = MuscleMap(rawValue: "bench=chest:1+triceps:1")!
         XCTAssertTrue(map.isOverridden("bench-press"))

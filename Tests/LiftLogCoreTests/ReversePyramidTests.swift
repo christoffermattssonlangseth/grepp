@@ -22,6 +22,11 @@ final class ReversePyramidTests: XCTestCase {
         XCTAssertFalse(c.rpt)
         XCTAssertEqual(c.setsAndReps?.reps, 5...5)
         XCTAssertNil(Programme.parseExercise("chin-ups 3xAMRAP")!.setsAndReps)
+        XCTAssertNil(Programme.parseExercise("rpt lines are worked out by the app; train 3x5 style"),
+                     "a sentence with a scheme in it is prose, not a lift")
+        let noted = Programme.parseExercise("squat 3x5 — do rpt style later")!
+        XCTAssertFalse(noted.rpt, "rpt in the note is words, not the mark")
+        XCTAssertEqual(noted.note, "do rpt style later")
     }
 
     func testHittingTheRangeStepsTheLoadUpAndBackOffsFollow() {

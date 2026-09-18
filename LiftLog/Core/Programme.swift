@@ -114,27 +114,41 @@ struct Programme: Equatable {
     /// `squat 3x5 — add 2.5 kg when all sets hit` → name, scheme, note. Also
     /// `Squat: 3 x 5`, `**Bench press** 3x8-10 (add 2.5 kg)`, `squat 3x5 @ 90 kg`.
     static func parseExercise(_ text: String) -> Exercise? {
-        var clean = text.replacingOccurrences(of: "**", with: "")
-        // `rpt` anywhere on the line marks the scheme; it is not part of the name.
-        let rpt = rptWord.firstMatch(in: clean, range: NSRange(clean.startIndex..., in: clean)) != nil
-        if rpt { clean = rptWord.stringByReplacingMatches(in: clean, options: [], range: NSRange(clean.startIndex..., in: clean), withTemplate: " ") }
+        let clean = text.replacingOccurrences(of: "**", with: "")
         let whole = NSRange(clean.startIndex..., in: clean)
         guard let m = scheme.firstMatch(in: clean, range: whole),
               let range = Range(m.range, in: clean),
               let setsRange = Range(m.range(at: 1), in: clean),
               let repsRange = Range(m.range(at: 2), in: clean) else { return nil }
 
-        let name = clean[..<range.lowerBound]
+        // `rpt` marks the scheme when it sits with the name or right after the
+        // scheme — not anywhere in a note, and not in a sentence that happens
+        // to mention it.
+        var head = String(clean[..<range.lowerBound])
+        var tail = String(clean[range.upperBound...])
+        var rpt = false
+        if rptWord.firstMatch(in: head, range: NSRange(head.startIndex..., in: head)) != nil {
+            rpt = true
+            head = rptWord.stringByReplacingMatches(in: head, options: [], range: NSRange(head.startIndex..., in: head), withTemplate: " ")
+        }
+        let tailTrimmed = tail.trimmingCharacters(in: .whitespaces)
+        if tailTrimmed.lowercased().hasPrefix("rpt"), tailTrimmed.dropFirst(3).first.map({ !$0.isLetter }) ?? true {
+            rpt = true
+            tail = String(tailTrimmed.dropFirst(3))
+        }
+
+        let name = head
             .trimmingCharacters(in: .whitespaces)
             .trimmingCharacters(in: CharacterSet(charactersIn: ":—–-,"))
             .trimmingCharacters(in: .whitespaces)
             .lowercased()
             .replacingOccurrences(of: " ", with: "-")
-        guard !name.isEmpty, name.first!.isLetter else { return nil }
+        // A lift's name is a few words; a sentence with a scheme in it is prose.
+        guard !name.isEmpty, name.first!.isLetter, name.split(separator: "-").count <= 4 else { return nil }
 
         let reps = clean[repsRange].replacingOccurrences(of: " ", with: "").uppercased()
         let normalised = "\(clean[setsRange])x\(reps == "MAX" ? "AMRAP" : reps)"
-        let note = clean[range.upperBound...]
+        let note = tail
             .trimmingCharacters(in: .whitespaces)
             .trimmingCharacters(in: CharacterSet(charactersIn: ":—–-,("))
             .trimmingCharacters(in: CharacterSet(charactersIn: ") "))

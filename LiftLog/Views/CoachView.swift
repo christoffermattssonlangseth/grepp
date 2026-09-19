@@ -6,17 +6,17 @@ struct CoachView: View {
     @EnvironmentObject var store: Store
     @StateObject private var coach = CoachService()
 
-    @AppStorage("coach_model") private var model: CoachModelChoice = .sonnet
-    @AppStorage("coach_show_cost") private var showCost = true
+    @AppStorage(Prefs.coachModel) private var model: CoachModelChoice = .sonnet
+    @AppStorage(Prefs.coachShowCost) private var showCost = true
     /// Fable asks once before it's used: it costs twice Opus.
-    @AppStorage("coach_fable_ok") private var fableAcknowledged = false
+    @AppStorage(Prefs.coachFableOK) private var fableAcknowledged = false
     @State private var askingAboutFable = false
     @State private var modelBeforeFable: CoachModelChoice = .sonnet
     @State private var draft = ""
     @State private var savingGoals = false
     /// The exact text last committed, so a revised file offers Save again rather
     /// than staying stuck on "Saved".
-    @AppStorage("muscle_map") private var muscleMap = MuscleMap()
+    @AppStorage(Prefs.muscleMap) private var muscleMap = MuscleMap()
     @State private var savedGoalsText: String?
     @State private var savedMemoryText: String?
     @State private var savingMemory = false
@@ -70,6 +70,9 @@ struct CoachView: View {
                 Text("About twice Opus and five times Sonnet per answer, and slower. " + capNote)
             }
             .onAppear {
+                // Picked and then the app died under the alert: the pick was
+                // stored before it was answered, so it is taken back here.
+                if model.isPremium, !fableAcknowledged { model = .sonnet }
                 consumeBriefRequest()
                 consumeQuestion()
             }
@@ -95,19 +98,21 @@ struct CoachView: View {
                 }
             }
             .toolbar {
+                // One menu for the three files, not three targets in a bar
+                // above a text field.
                 ToolbarItem(placement: .topBarLeading) {
-                    Button { showingBrief = true } label: {
-                        Label("Your brief", systemImage: "person.text.rectangle")
-                    }
-                }
-                ToolbarItem(placement: .topBarLeading) {
-                    Button { evidenceTag = nil; showingEvidence = true } label: {
-                        Label("Evidence", systemImage: "books.vertical")
-                    }
-                }
-                ToolbarItem(placement: .topBarLeading) {
-                    Button { showingProgramme = true } label: {
-                        Label("Programme", systemImage: "calendar")
+                    Menu {
+                        Button { showingBrief = true } label: {
+                            Label("Your brief", systemImage: "person.text.rectangle")
+                        }
+                        Button { evidenceTag = nil; showingEvidence = true } label: {
+                            Label("Evidence", systemImage: "books.vertical")
+                        }
+                        Button { showingProgramme = true } label: {
+                            Label("Programme", systemImage: "calendar")
+                        }
+                    } label: {
+                        Label("Brief", systemImage: "person.text.rectangle")
                     }
                 }
                 ToolbarItem(placement: .topBarTrailing) {
@@ -280,8 +285,11 @@ struct CoachView: View {
     /// answer, otherwise left in the box for the lifter to send.
     private func consumeQuestion() {
         guard let question = store.coachQuestion else { return }
+        // No key means no box to park it in: it waits in the store for the
+        // next time this screen appears with one.
+        guard hasKey || model.isOnDevice else { return }
         store.coachQuestion = nil
-        if (hasKey || model.isOnDevice), !coach.isResponding, coach.mode == .coaching {
+        if !coach.isResponding, coach.mode == .coaching {
             ask(question)
         } else {
             draft = question
@@ -335,6 +343,12 @@ struct CoachView: View {
                     .font(.caption).foregroundStyle(.secondary)
             } else if message.isStreaming {
                 ProgressView().controlSize(.small)
+            }
+            if !message.isStreaming, let note = message.stopNote {
+                Text(note)
+                    .font(.footnote)
+                    .foregroundStyle(.orange)
+                    .fixedSize(horizontal: false, vertical: true)
             }
             // The API's own token counts, priced — not an estimate of them.
             if showCost, !message.isStreaming, let usage = message.usage, let model = message.model {
@@ -726,8 +740,7 @@ struct CoachView: View {
                         Text(model.label).font(.subheadline.weight(.semibold))
                         Image(systemName: "chevron.up.chevron.down").font(.caption2.weight(.semibold))
                     }
-                    .padding(.horizontal, 12).padding(.vertical, 6)
-                    .background(.ultraThinMaterial, in: Capsule())
+                    .pill()
                     .foregroundStyle(.primary)
                 }
                 .buttonStyle(.plain)

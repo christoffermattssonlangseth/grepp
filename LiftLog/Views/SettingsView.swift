@@ -3,18 +3,21 @@ import SwiftUI
 /// GitHub connection settings. The token is stored in the Keychain.
 struct SettingsView: View {
     @EnvironmentObject var store: Store
-    @AppStorage("coach_show_cost") private var showCost = true
+    @AppStorage(Prefs.coachShowCost) private var showCost = true
     @AppStorage(CoachSpend.capKey) private var monthlyCap: Double = CoachSpend.defaultCap
     @ObservedObject private var spend = CoachSpend.shared
-    @AppStorage("bar_weight") private var barWeight: Double = 20
-    @AppStorage("muscle_map") private var muscleMap = MuscleMap()
+    @AppStorage(Prefs.barWeight) private var barWeight: Double = 20
+    @AppStorage(Prefs.muscleMap) private var muscleMap = MuscleMap()
     @StateObject private var strava = StravaService.shared
+    /// Strava off means none of it: no post button, no marks in History, no
+    /// backfill — the connection and keys are kept for when it comes back.
+    @AppStorage(Prefs.stravaEnabled) private var stravaEnabled = true
     @State private var stravaError: String?
     @State private var stravaID = ""
     @State private var stravaSecret = ""
     @State private var backfillStatus: String?
     @State private var backfilling = false
-    @AppStorage("plate_inventory") private var inventory = PlateInventory.standard
+    @AppStorage(Prefs.plateInventory) private var inventory = PlateInventory.standard
 
     var body: some View {
         NavigationStack {
@@ -94,7 +97,7 @@ struct SettingsView: View {
 
                 Section("Muscles") {
                     let unmapped = muscleMap.unmapped(in: store.sessions)
-                    let assigned = store.knownExercises.filter { muscleMap.isOverridden($0) }
+                    let assigned = Array(Set(store.knownExercises.filter { muscleMap.isOverridden($0) }.map { MuscleMap.canonical($0) })).sorted()
                     if unmapped.isEmpty && assigned.isEmpty {
                         Text("Every lift in your log is counted. A new one the app doesn't know will show up here.")
                             .font(.caption)
@@ -147,9 +150,21 @@ struct SettingsView: View {
                     }
 
                     labeled("workspace id", text: $store.anthropicWorkspace, placeholder: "wrkspc_… (optional)")
+                    Text("""
+                    Only needed if the key isn't scoped to a single workspace. \
+                    Find it in the **ID** column of Settings ▸ Workspaces in the Console — \
+                    or leave this blank and create a workspace-scoped key instead.
+                    """)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
 
                     Toggle("Show cost under each answer", isOn: $showCost)
                     Picker("Monthly cap", selection: $monthlyCap) {
+                        // A value from another build keeps its row, so the cap
+                        // in force is always the one shown.
+                        if ![5.0, 10.0, 20.0, 50.0, 0.0].contains(monthlyCap) {
+                            Text("$\(SpendLedger.money(monthlyCap))").tag(monthlyCap)
+                        }
                         Text("$5").tag(5.0)
                         Text("$10").tag(10.0)
                         Text("$20").tag(20.0)
@@ -164,25 +179,23 @@ struct SettingsView: View {
                     """)
                         .font(.caption)
                         .foregroundStyle(.secondary)
-                    Text("""
-                    Only needed if the key isn't scoped to a single workspace. \
-                    Find it in the **ID** column of Settings ▸ Workspaces in the Console — \
-                    or leave this blank and create a workspace-scoped key instead.
-                    """)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
                 }
                 .listRowBackground(Rectangle().fill(.regularMaterial))
 
                 Section("Strava") {
-                    if let athlete = strava.athlete {
+                    Toggle("Strava", isOn: $stravaEnabled)
+                    if !stravaEnabled {
+                        Text("Off: no post button under the session, no marks in History, nothing posted. Turn it on and everything is where it was.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    } else if let athlete = strava.athlete {
                         HStack {
                             Text("Connected as \(athlete)")
                             Spacer()
                             Button("Disconnect", role: .destructive) { strava.disconnect() }
                                 .font(.subheadline)
                         }
-                        Text("A **Post to Strava** button sits under today's session. It posts the day as a Weight Training activity with your lines in the description; press it again after another lift and it updates the same activity. History shows which days are on Strava, with a post button for the ones that aren't.")
+                        Text("Posts a day as a Weight Training activity with your lines in the description; press again after another lift and it updates the same one.")
                             .font(.caption)
                             .foregroundStyle(.secondary)
                         let unposted = store.sessions.filter { store.stravaActivity(on: $0.date) == nil }
@@ -215,7 +228,7 @@ struct SettingsView: View {
                         if let backfillStatus {
                             Text(backfillStatus).font(.caption2).foregroundStyle(.secondary)
                         }
-                    } else {
+                    } else if stravaEnabled {
                         // Keys first, then the one button: fill the two fields
                         // and Connect saves them and signs in, in one tap.
                         let keysTyped = !stravaID.trimmingCharacters(in: .whitespaces).isEmpty
@@ -263,12 +276,14 @@ struct SettingsView: View {
                             .font(.subheadline)
                         }
                     }
-                    if let stravaError {
+                    if stravaEnabled, let stravaError {
                         Text(stravaError).font(.caption2).foregroundStyle(.orange)
                     }
-                    Text("Powered by Strava")
-                        .font(.caption2)
-                        .foregroundStyle(.tertiary)
+                    if stravaEnabled {
+                        Text("Powered by Strava")
+                            .font(.caption2)
+                            .foregroundStyle(.tertiary)
+                    }
                 }
                 .listRowBackground(Rectangle().fill(.regularMaterial))
 
@@ -293,7 +308,7 @@ struct SettingsView: View {
                     Button {
                         Task { await store.load() }
                     } label: {
-                        if store.isBusy { ProgressView() } else { Text("test connection / reload") }
+                        if store.isBusy { ProgressView() } else { Text("Reload") }
                     }
                     .disabled(store.isBusy)
                     if !store.status.isEmpty {
@@ -354,6 +369,10 @@ struct SettingsView: View {
         var posted = 0
         var skipped: [String] = []
         for (i, session) in sessions.enumerated() {
+            guard stravaEnabled else {
+                backfillStatus = "Stopped after \(posted) posted: Strava was turned off."
+                return
+            }
             backfillStatus = "Posting \(i + 1) of \(sessions.count) — \(session.dateString)…"
             do {
                 try await StravaPoster.post(session, store: store, strava: strava)

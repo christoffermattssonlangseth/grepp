@@ -37,9 +37,19 @@ enum Theme {
 
     /// Turn a stored kebab-case name into a readable label, keeping its casing —
     /// e.g. "over-head-press" -> "over head press".
-    static func readableName(_ raw: String) -> String {
-        raw.replacingOccurrences(of: "-", with: " ")
-    }
+    static func readableName(_ raw: String) -> String { Brand.readableName(raw) }
+}
+
+/// The raised surface — the number pad, the chart, the things you act on.
+struct Card<Content: View>: View {
+    @ViewBuilder var content: Content
+    var body: some View { content.glassCard() }
+}
+
+/// The flat surface — lists and chrome that should sit in the page, not float.
+struct Panel<Content: View>: View {
+    @ViewBuilder var content: Content
+    var body: some View { content.panel() }
 }
 
 extension View {
@@ -59,6 +69,15 @@ extension View {
                                                 to: nil, from: nil, for: nil)
             }
             .scrollDismissesKeyboard(.interactively)
+    }
+
+    /// The small control that names a choice and opens a menu — the bar, the
+    /// lift, the model, the day. A capsule of thin material: a bare label in a
+    /// Menu drew as nothing on iOS 26, and this gives it a body once, here.
+    func pill() -> some View {
+        self
+            .padding(.horizontal, 12).padding(.vertical, 6)
+            .background(.ultraThinMaterial, in: Capsule())
     }
 
     /// The quieter surface. Same shape and padding as `glassCard`, but thinner

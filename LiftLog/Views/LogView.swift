@@ -1,8 +1,8 @@
 import SwiftUI
 
-/// Live session logger: shows the exercises already logged for the selected day,
-/// plus an input area to build up one exercise's sets and "finish" it — which
-/// commits it to GitHub and resets the input so you can move on to the next.
+/// Live session logger: shows the lifts already logged for the selected day,
+/// plus an input area to build up one lift's sets and "finish" it — which
+/// saves it beside the rest of the log and resets the input for the next.
 ///
 /// Bold / gym-friendly styling: big touch targets, a strong accent, chunky
 /// buttons and oversized number fields you can hit mid-set.
@@ -43,12 +43,12 @@ struct LogView: View {
     /// Exercises still to come after this one, when Coach handed over a session.
     @State private var queue: [ExerciseEntry] = []
     /// How long to rest before the timer says you're due. Persisted: it's a habit.
-    @AppStorage("rest_target") private var restTarget = 90
+    @AppStorage(Prefs.restTarget) private var restTarget = 90
     /// The bar and the plates the calculator has to work with. Set in Settings.
-    @AppStorage("bar_weight") private var barWeight: Double = 20
-    @AppStorage("plate_inventory") private var inventory = PlateInventory.standard
+    @AppStorage(Prefs.barWeight) private var barWeight: Double = 20
+    @AppStorage(Prefs.plateInventory) private var inventory = PlateInventory.standard
     /// Exercises on a bar other than the default — seal rows on the 10, say.
-    @AppStorage("bar_overrides") private var barOverrides = BarOverrides()
+    @AppStorage(Prefs.barOverrides) private var barOverrides = BarOverrides()
 
     /// The bar for the exercise in the field: its own if it has one, else the default.
     private var effectiveBar: Double { barOverrides.bar(for: name) ?? barWeight }
@@ -60,6 +60,7 @@ struct LogView: View {
     @State private var exerciseFinished = 0
     @State private var recordSet = 0
     @StateObject private var strava = StravaService.shared
+    @AppStorage(Prefs.stravaEnabled) private var stravaEnabled = true
     @State private var stravaStatus: String?
     @State private var stravaError: String?
     /// When non-nil, the rest clock is running from this instant.
@@ -71,6 +72,11 @@ struct LogView: View {
     private var todayExercises: [ExerciseEntry] {
         let key = Session.dateFormatter.string(from: date)
         return store.sessions.first { $0.dateString == key }?.exercises ?? []
+    }
+
+    /// The lift as already logged on the day in hand, under any spelling.
+    private func loggedToday(_ lift: String) -> ExerciseEntry? {
+        todayExercises.first { Analytics.matches($0.name, lift) }
     }
 
     private var lastEntry: ExerciseEntry? {
@@ -98,7 +104,7 @@ struct LogView: View {
                     if !todayExercises.isEmpty { todaySessionCard }
                     if store.sessions.isEmpty && !store.isBusy { emptyLogCard }
                     if !isToday { dayBanner }
-                    sectionLabel("add exercise")
+                    sectionLabel("add lift")
                     exerciseCard
                     addSetCard
                     if !sets.isEmpty { setsCard }
@@ -126,11 +132,18 @@ struct LogView: View {
             .navigationTitle("Session")
             .sheet(isPresented: $showingPicker) {
                 ExercisePickerView(history: store.knownExercises) { picked in
-                    // Switching exercise starts a fresh set list for the new movement.
+                    // Switching exercise starts a fresh set list for the new
+                    // movement — or, for a lift already logged today, its sets as
+                    // they stand: finishing updates that line, never replaces it blind.
                     if picked.caseInsensitiveCompare(name) != .orderedSame {
-                        sets = []
+                        let done = loggedToday(picked)
+                        sets = done?.sets ?? []
+                        if let first = done?.sets.first { isBodyweight = first.isBodyweight }
                         plan = nil
                         restStart = nil
+                        // A day opened for one lift was chosen for that lift;
+                        // another lift has to be confirmed for it again.
+                        dateChosen = false
                     }
                     name = picked
                 }
@@ -255,6 +268,10 @@ struct LogView: View {
             pendingReplace = .prescription
             return
         }
+        // A prescription is for today, whatever day was open before it: a
+        // past day picked for a correction must not swallow a whole session.
+        date = Date()
+        dateChosen = false
         store.recordPlan(store.prescriptionRequest, on: date)
         queue = Array(store.prescriptionRequest.dropFirst())
         store.prescriptionRequest = []
@@ -267,8 +284,11 @@ struct LogView: View {
     /// resting too, and the clock that started at that last set should keep going.
     private func load(prescription rx: ExerciseEntry) {
         name = rx.name
-        sets = []
-        plan = rx.sets
+        // Already done today: the plan adds to what's logged rather than
+        // replacing it, so the sets on file come along and the plan follows them.
+        let done = loggedToday(rx.name)?.sets ?? []
+        sets = done
+        plan = done + rx.sets
         isBodyweight = rx.sets.first?.isBodyweight ?? false
         prefill(rx.sets.first)
         // The lock screen names the lift and its next set; both just changed.
@@ -320,14 +340,14 @@ struct LogView: View {
                         .font(.caption.weight(.heavy)).tracking(1)
                         .foregroundStyle(.secondary)
                 }
-                Text("It fills with what you lift, one line per exercise per day, in a text file you own at \(logHome). Nothing is in it that you didn't do.")
+                Text("It fills with what you lift, one line per lift per day, in a text file you own at \(logHome).")
                     .font(.subheadline)
                 Text("2026-09-11 squat 60x5 60x5 60x5")
                     .font(.system(.footnote, design: .monospaced).weight(.medium))
                     .foregroundStyle(.secondary)
                     .padding(.horizontal, 10).padding(.vertical, 6)
                     .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
-                Text("Add your first exercise below. Trained before? The Coach can bring your last few weeks in from notes or another app.")
+                Text("Trained before? The Coach can bring your last few weeks in.")
                     .font(.subheadline)
                 Button {
                     store.selectedTab = 3
@@ -384,10 +404,10 @@ struct LogView: View {
                         .font(.caption.weight(.heavy)).tracking(1.5)
                         .foregroundStyle(.secondary)
                     Spacer()
-                    Text("\(todayExercises.count) ex · \(todaySetCount) sets")
+                    Text("\(todayExercises.count == 1 ? "1 lift" : "\(todayExercises.count) lifts") · \(todaySetCount) sets")
                         .font(.caption.weight(.semibold)).foregroundStyle(.secondary)
                 }
-                ForEach(todayExercises, id: \.name) { ex in
+                ForEach(todayExercises) { ex in
                     HStack(spacing: 8) {
                         VStack(alignment: .leading, spacing: 3) {
                             Text(Theme.readableName(ex.name))
@@ -414,7 +434,7 @@ struct LogView: View {
                     }
                     .onTapGesture { edit(ex, on: date) }
                 }
-                if strava.isConnected { stravaRow }
+                if stravaEnabled, strava.isConnected { stravaRow }
             }
         }
     }
@@ -475,7 +495,7 @@ struct LogView: View {
                     showingPicker = true
                 } label: {
                     HStack(spacing: 10) {
-                        Text(name.isEmpty ? "choose exercise" : Theme.readableName(name))
+                        Text(name.isEmpty ? "choose lift" : Theme.readableName(name))
                             .font(.system(size: 22, weight: .bold))
                             .foregroundStyle(name.isEmpty ? .secondary : .primary)
                             .lineLimit(1)
@@ -609,6 +629,7 @@ struct LogView: View {
                             .background(.ultraThinMaterial, in: Circle())
                     }
                     .buttonStyle(.plain)
+                    .accessibilityLabel("Restart rest")
                     Button { restStart = nil } label: {
                         Image(systemName: "xmark")
                             .font(.caption.weight(.bold))
@@ -617,6 +638,7 @@ struct LogView: View {
                             .background(.ultraThinMaterial, in: Circle())
                     }
                     .buttonStyle(.plain)
+                    .accessibilityLabel("End rest")
                 }
                 // A thin bar filling toward the target — readable at a glance,
                 // mid-set, from across the rack.
@@ -667,6 +689,8 @@ struct LogView: View {
                 .background(.ultraThinMaterial, in: Capsule())
         }
         .buttonStyle(.plain)
+        .accessibilityLabel("Rest target")
+        .accessibilityValue(clock(restTarget))
     }
 
     /// Keep the world outside the app in step with the clock: the "rest's up"
@@ -701,7 +725,7 @@ struct LogView: View {
                             .foregroundStyle(Theme.onAccent)
                             .frame(width: 28, height: 28)
                             .background(Theme.accent, in: Circle())
-                        Text(loadLabel(set))
+                        Text(set.loadLabel)
                             .font(.body.weight(.semibold))
                         if let record = record(at: idx) { recordBadge(record) }
                         Spacer()
@@ -777,8 +801,8 @@ struct LogView: View {
 
     private var finishTitle: String {
         let alreadyLogged = todayExercises.contains { $0.name.caseInsensitiveCompare(name) == .orderedSame }
-        let verb = alreadyLogged ? "update exercise" : "finish exercise"
-        return isToday ? verb : "\(verb) · \(dayLabel)"
+        // The day is on the pill and the banner already; the button names the act.
+        return alreadyLogged ? "update lift" : "finish lift"
     }
 
     // MARK: - Helpers
@@ -875,6 +899,8 @@ struct LogView: View {
             let plates = load.perSide.map { PlateMath.label($0) }.joined(separator: " · ")
             let approx = load.isApproximate ? "  ≈ \(PlateMath.label(load.total))" : ""
             text = "per side  " + plates + approx
+        } else if let target = parsedWeight, target > effectiveBar {
+            text = "more than a rack holds"
         } else {
             text = "lighter than the bar"
         }
@@ -927,8 +953,6 @@ struct LogView: View {
                 Text("Default · \(PlateMath.label(barWeight)) kg")
             }
         } label: {
-            // A pill with its own background, like the rest-target menu: a bare
-            // text label in a Menu drew as nothing on iOS 26.
             HStack(spacing: 4) {
                 Text("\(PlateMath.label(effectiveBar)) bar")
                     .font(.system(.footnote, design: .monospaced).weight(.semibold))
@@ -936,16 +960,14 @@ struct LogView: View {
                     .font(.caption2.weight(.bold))
             }
             .foregroundStyle(barOverrides.bar(for: name) == nil ? Color.secondary : Theme.accent)
-            .padding(.horizontal, 10).padding(.vertical, 6)
-            .background(.ultraThinMaterial, in: Capsule())
+            .pill()
             .fixedSize()
         }
         .buttonStyle(.plain)
         .disabled(name.isEmpty)
+        .accessibilityLabel("Bar")
+        .accessibilityValue("\(PlateMath.label(effectiveBar)) kg")
     }
-
-    /// Row label for a logged set: "82.5 kg", "BW +5 kg" or "Bodyweight".
-    private func loadLabel(_ set: WorkSet) -> String { set.loadLabel }
 
     /// Open a logged lift for editing — unless sets for another lift are
     /// landed and unfinished, in which case ask before they go.
@@ -995,18 +1017,25 @@ struct LogView: View {
             return
         }
         let entry = ExerciseEntry(name: MuscleMap.key(name), sets: sets)
+        let committed = sets
         let result = await store.commit(entry, on: date,
                            message: "Log \(entry.name) \(Session.dateFormatter.string(from: date))")
         // Reset on a push OR an offline queue — both keep the entry; only a hard
         // failure leaves the input so the user can retry. Today's session card
         // keeps the record either way.
         if result != .failed {
-            if plan != nil { store.completePlan(entry, on: date) }
+            // A no-op when nothing was prescribed; an edit of a prescribed lift
+            // still closes its plan.
+            store.completePlan(entry, on: date)
             exerciseFinished += 1
             focus = nil
             // The day stays for the next lift — a backfill is several — but it
             // has to be confirmed again: one lift on purpose isn't the next.
             dateChosen = false
+            // A set landed while the save was in flight — from the pad or the
+            // lock screen — is not thrown away: the lift stays in hand with
+            // every set shown, one more update away.
+            guard sets == committed else { return }
             if !queue.isEmpty {
                 // Straight on to the next prescribed lift, fields already filled.
                 load(prescription: queue.removeFirst())
@@ -1020,14 +1049,3 @@ struct LogView: View {
     }
 }
 
-/// The raised surface — the number pad and the rest timer, the things you act on.
-private struct Card<Content: View>: View {
-    @ViewBuilder var content: Content
-    var body: some View { content.glassCard() }
-}
-
-/// The flat surface — lists and chrome that should sit in the page, not float.
-private struct Panel<Content: View>: View {
-    @ViewBuilder var content: Content
-    var body: some View { content.panel() }
-}

@@ -96,6 +96,14 @@ button each. The design rules it follows are the usual evidence-based ones
 (hard sets per muscle per week, two exposures, 1–3 reps in reserve, reactive
 deloads), stated as defaults your evidence brief overrides; Liftosaur's
 programme-design guide was the checklist for what to cover.
+**Load this day** on the Programme screen puts a day into the Log tab with
+no coach in the loop: a line marked `rpt` is a reverse pyramid worked out
+from that lift's last session — the top set first, each set after it a tenth
+lighter for two more reps, the load up a step (5 kg on squat and deadlift,
+2.5 elsewhere) once the top set reaches the top of its range, the same load
+and one more rep when it doesn't — and any other line repeats the lift as it
+was last done. A three-day reverse pyramid starter is one tap on an empty
+Programme screen; it is the only programme the app carries.
 
 **An empty log.** The first run says what the file is and shows one line of
 it; nothing is faked. Trained before? Tell the coach what you did in any form,
@@ -113,7 +121,7 @@ cost a cent each. A starter file is in
 [`docs/research-seed.md`](docs/research-seed.md), written from the model's
 memory of the literature and meant to be checked, not trusted.
 
-**Trends.** Three views. *Lift*: a chart per lift (top set, Est. 1RM, or reps
+**Trends.** Two views. *Lift*: a chart per lift (top set, Est. 1RM, or reps
 and added load for bodyweight lifts), four months at a time with the rest a
 flick away; drag along the line to read a session, tap the reading to open
 that day. Under it, change over the last three weeks (counted from today) and
@@ -125,9 +133,6 @@ sentence and the eight weeks to the coach as a question, and the coach's
 digest carries the same sentence, so the tab and the chat agree on a stall.
 "Bench", "Bench press" and "bench-press" are one lift everywhere. Est. 1RM is
 Epley, trusted to twelve reps and no further.
-*All lifts*: every lift on one screen, last done first — what was done last,
-the standing best and how long it has stood, sessions in four weeks. Tap a
-row to chart it.
 *Volume*: a training-days grid, Monday to Sunday, and sets per muscle for the
 week as bars against a 10–20 band with the four-week average marked. A
 compound counts fully for what it's a lift for and half for each muscle that
@@ -151,7 +156,9 @@ as a Weight Training activity named after its lifts, the log lines in the
 description with a "Tracked with Grepp" sign-off, and the length from your
 first set to the post. Press again and it updates the same activity. History
 offers a post button per day, and Settings posts every day not yet up, oldest
-first. Nothing is read back from Strava.
+first. Nothing is read back from Strava. A switch in Settings ▸ Strava turns
+all of it off — no button, no marks, nothing posted — and keeps the
+connection for when it comes back.
 
 **Offline.** With GitHub, a save that can't reach it is queued, shown at once, and
 replayed on the next successful load or save through the same safe path: every

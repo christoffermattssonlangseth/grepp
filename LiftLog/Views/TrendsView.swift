@@ -1,33 +1,32 @@
 import SwiftUI
 import Charts
+import Combine
 
 /// Per-lift progression: a chart over time plus short- and long-term change.
 /// Generic and lift-focused — no personal goals or targets.
 struct TrendsView: View {
     @EnvironmentObject var store: Store
     @Environment(\.dynamicTypeSize) private var typeSize
+    @Environment(\.scenePhase) private var scenePhase
 
     // Persisted so Trends reopens on the lift you last looked at.
-    @AppStorage("trends_exercise") private var exercise = ""
-    /// Three questions, three views: how one lift is going, how every lift
-    /// stands, and how the training as a whole is going.
+    @AppStorage(Prefs.trendsExercise) private var exercise = ""
+    /// Two questions, two views: how a lift is going, and how the training
+    /// as a whole is going.
     private enum Mode: String, CaseIterable, Identifiable {
-        case lift, lifts, volume
+        case lift, volume
         var id: String { rawValue }
-        var title: String {
-            switch self {
-            case .lift: return "Lift"
-            case .lifts: return "All lifts"
-            case .volume: return "Volume"
-            }
-        }
+        var title: String { self == .lift ? "Lift" : "Volume" }
     }
-    @AppStorage("trends_mode") private var mode: Mode = .lift
-    @AppStorage("muscle_map") private var muscleMap = MuscleMap()
+    @AppStorage(Prefs.trendsMode) private var mode: Mode = .lift
+    @AppStorage(Prefs.muscleMap) private var muscleMap = MuscleMap()
     @State private var metric: Analytics.Metric = .topSet
     /// Where a finger is on the chart's x-axis, if it's on it at all.
     @State private var scrub: Date?
     @State private var showingPicker = false
+    /// The left edge of the chart's window when the history is long enough
+    /// to scroll; the y-axis follows it.
+    @State private var scrollX: Date = .distantPast
 
     /// Everything the tab draws, computed once per change of the log or the
     /// selection rather than on every body pass: a scrub redraws at touch
@@ -42,7 +41,6 @@ struct TrendsView: View {
         var weeks: [Analytics.TrainingWeek] = []
         var weekly: [MuscleMap.Credits] = []
         var unmapped: [String] = []
-        var board: [Analytics.LiftSummary] = []
     }
     @State private var figures = Figures()
 
@@ -60,7 +58,7 @@ struct TrendsView: View {
                             Text("No data yet")
                         }
                     } description: {
-                        Text("A lift's chart appears after its second session; sets per muscle after the first week. Both come from the log alone.")
+                        Text("A chart appears after a lift's second session; sets per muscle after the first week.")
                     }
                     .padding(.top, 80)
                 } else {
@@ -79,8 +77,6 @@ struct TrendsView: View {
                             if let dose = figures.dose {
                                 doseCard(dose)
                             }
-                        case .lifts:
-                            liftsCard
                         case .volume:
                             weeksCard
                             musclesCard
@@ -113,6 +109,10 @@ struct TrendsView: View {
             }
             .onChange(of: muscleMap) { _, _ in recompute() }
             .onChange(of: mode) { _, _ in scrub = nil }
+            // Every number here is relative to today: coming back after a
+            // night, or sitting here past midnight, must not show yesterday's.
+            .onChange(of: scenePhase) { _, phase in if phase == .active { recompute() } }
+            .onReceive(NotificationCenter.default.publisher(for: .NSCalendarDayChanged)) { _ in recompute() }
             .sheet(isPresented: $showingPicker) {
                 ExercisePickerView(history: figures.exercises, library: false) { exercise = $0 }
             }
@@ -131,12 +131,12 @@ struct TrendsView: View {
                 Image(systemName: "chevron.up.chevron.down")
                     .font(.caption2.weight(.semibold))
             }
-            .padding(.horizontal, 14).padding(.vertical, 8)
-            .background(.ultraThinMaterial, in: Capsule())
+            .pill()
             .foregroundStyle(.primary)
         }
         .buttonStyle(.plain)
-        .fixedSize()
+        .lineLimit(1)
+        .minimumScaleFactor(0.8)
         .frame(maxWidth: .infinity, alignment: .leading)
         .accessibilityLabel("Lift")
         .accessibilityValue(Theme.readableName(exercise))
@@ -153,7 +153,7 @@ struct TrendsView: View {
 
     private var chartCard: some View {
         let series = figures.series
-        return CardBox {
+        return Card {
             VStack(alignment: .leading, spacing: 8) {
                 HStack(alignment: .firstTextBaseline) {
                     Text("\(metric.rawValue.lowercased()) · \(metric.unit)")
@@ -169,8 +169,22 @@ struct TrendsView: View {
                 if series.count >= 2 {
                     liftChart(series)
                         .frame(height: 240)
-                    Text("drag along the line to read a session · tap the reading to open that day")
-                        .font(.caption2).foregroundStyle(.tertiary)
+                    // The reading under the finger, and the way into that day —
+                    // outside the plot, where the chart's own gestures can't eat it.
+                    if let picked = scrubbed(in: series) {
+                        Button {
+                            store.requestEdit(exercise: picked.name.isEmpty ? exercise : picked.name, on: picked.date)
+                        } label: {
+                            Label("open \(picked.date.formatted(.dateTime.day().month(.abbreviated))) in Log", systemImage: "arrow.up.right")
+                                .font(.caption.weight(.semibold))
+                        }
+                        .buttonStyle(.bordered)
+                        .controlSize(.small)
+                    } else {
+                        Text(scrolls(series) ? "press and drag to read a session · swipe for older ones"
+                                             : "drag along the line to read a session")
+                            .font(.caption2).foregroundStyle(.tertiary)
+                    }
                 } else {
                     Text("Need at least two sessions of this lift to chart a trend.")
                         .font(.footnote).foregroundStyle(.secondary)
@@ -184,11 +198,25 @@ struct TrendsView: View {
     /// The chart, and a window onto it when the history is longer than one:
     /// two years of sessions were one smear at a fixed width, and the newest
     /// block is what a lifter opens the tab for.
+    /// Longer than one window: two years of sessions were one smear at a
+    /// fixed width, and the newest block is what a lifter opens the tab for.
+    private func scrolls(_ series: [TrendPoint]) -> Bool {
+        guard let first = series.first?.date, let last = series.last?.date else { return false }
+        return last.timeIntervalSince(first) > window
+    }
+
+    /// The points in the window on screen, for an axis that follows the scroll.
+    private func visible(_ series: [TrendPoint]) -> [TrendPoint] {
+        guard scrolls(series) else { return series }
+        let shown = series.filter { $0.date >= scrollX && $0.date <= scrollX.addingTimeInterval(window) }
+        return shown.count >= 2 ? shown : series
+    }
+
     @ViewBuilder
     private func liftChart(_ series: [TrendPoint]) -> some View {
         let chart = Chart { liftMarks(series) }
             .chartXSelection(value: $scrub)
-            .chartYScale(domain: yDomain(series))
+            .chartYScale(domain: yDomain(visible(series)))
             .chartXAxis {
                 AxisMarks(values: .automatic(desiredCount: 4)) {
                     AxisGridLine()
@@ -203,15 +231,14 @@ struct TrendsView: View {
             }
             .accessibilityLabel(chartDescription(series))
 
-        if let first = series.first?.date, let last = series.last?.date,
-           last.timeIntervalSince(first) > window {
+        if scrolls(series), let first = series.first?.date, let last = series.last?.date {
             // Room after the newest point so it isn't pinned to the edge.
             let end = last.addingTimeInterval(window * 0.08)
             chart
                 .chartXScale(domain: first...end)
                 .chartScrollableAxes(.horizontal)
                 .chartXVisibleDomain(length: window)
-                .chartScrollPosition(initialX: end.addingTimeInterval(-window))
+                .chartScrollPosition(x: $scrollX)
         } else {
             chart
         }
@@ -236,7 +263,7 @@ struct TrendsView: View {
             RuleMark(x: .value("Date", picked.date))
                 .foregroundStyle(.secondary.opacity(0.35))
                 .annotation(position: .top, spacing: 6,
-                            overflowResolution: .init(x: .fit(to: .chart), y: .disabled)) {
+                            overflowResolution: .init(x: .fit(to: .plot), y: .disabled)) {
                     reading(picked)
                 }
             PointMark(x: .value("Date", picked.date),
@@ -246,8 +273,8 @@ struct TrendsView: View {
         }
     }
 
-    /// The session under the finger: the value, the day, the sets as logged —
-    /// and a tap opens that day on the Log tab, the same jump History makes.
+    /// The session under the finger: the value, the day, the sets as logged.
+    /// The way into that day is the button under the chart.
     private func reading(_ picked: TrendPoint) -> some View {
         VStack(spacing: 2) {
             Text("\(WorkSet.formatWeight(picked.value)) \(metric.unit)")
@@ -263,17 +290,10 @@ struct TrendsView: View {
                     .lineLimit(1)
                     .minimumScaleFactor(0.7)
             }
-            Label("open", systemImage: "arrow.up.right")
-                .font(.caption2.weight(.semibold))
-                .foregroundStyle(Theme.accent)
         }
         .padding(.horizontal, 8).padding(.vertical, 5)
         .background(.regularMaterial,
                     in: RoundedRectangle(cornerRadius: 8, style: .continuous))
-        .contentShape(Rectangle())
-        .onTapGesture {
-            store.requestEdit(exercise: picked.name.isEmpty ? exercise : picked.name, on: picked.date)
-        }
     }
 
     /// The logged point nearest the finger — a drag snaps to real sessions,
@@ -320,16 +340,16 @@ struct TrendsView: View {
 
     @ViewBuilder
     private var statTiles: some View {
-        statTile(title: "Short-term", subtitle: "last 3 weeks", change: figures.recent,
+        statTile(title: "short-term", subtitle: "last 3 weeks", change: figures.recent,
                  empty: "no two sessions in the window")
-        statTile(title: "Long-term", subtitle: "all time", change: figures.allTime,
+        statTile(title: "long-term", subtitle: "all time", change: figures.allTime,
                  empty: "not enough data")
     }
 
     private func statTile(title: String, subtitle: String, change: TrendChange?, empty: String) -> some View {
-        PanelBox {
+        Panel {
             VStack(alignment: .leading, spacing: 4) {
-                Text(title.lowercased()).font(.caption).foregroundStyle(.secondary)
+                Text(title).font(.caption).foregroundStyle(.secondary)
                 if let c = change {
                     HStack(spacing: 4) {
                         Image(systemName: c.isUp ? "arrow.up.right" : (c.isFlat ? "arrow.right" : "arrow.down.right"))
@@ -363,7 +383,7 @@ struct TrendsView: View {
     private func doseCard(_ dose: DoseResponse) -> some View {
         let lift = Theme.readableName(dose.exercise)
         let top = max(DoseResponse.band.upperBound + 2, (dose.weeks.map(\.sets).max() ?? 0) + 2)
-        return PanelBox {
+        return Panel {
             VStack(alignment: .leading, spacing: 10) {
                 HStack(alignment: .firstTextBaseline) {
                     Text("work and result")
@@ -377,15 +397,25 @@ struct TrendsView: View {
                 // muscle, against the band the total is judged by. The lift's
                 // bar is narrower so an overshoot — a lift whose main share is
                 // a half — shows as one rather than hiding the bar behind it.
+                // The x value is binned by week so each bar has a band to be a
+                // ratio of: on a bare date axis there is no band and a ratio
+                // width is nothing, which drew no bars at all. Ranged bars
+                // from zero, so the two don't stack but sit one inside the other.
                 Chart {
                     RectangleMark(yStart: .value("low", DoseResponse.band.lowerBound),
                                   yEnd: .value("high", DoseResponse.band.upperBound))
                         .foregroundStyle(Theme.accent.opacity(0.12))
                     ForEach(dose.weeks) { week in
-                        BarMark(x: .value("Week", week.start), y: .value("Muscle sets", week.sets), width: .ratio(0.8))
+                        BarMark(x: .value("Week", week.start, unit: .weekOfYear),
+                                yStart: .value("Sets", 0.0),
+                                yEnd: .value("Muscle sets", week.sets),
+                                width: .ratio(0.8))
                             .foregroundStyle(Color.secondary.opacity(0.22))
                             .cornerRadius(3)
-                        BarMark(x: .value("Week", week.start), y: .value("Lift sets", Double(week.liftSets)), width: .ratio(0.45))
+                        BarMark(x: .value("Week", week.start, unit: .weekOfYear),
+                                yStart: .value("Sets", 0.0),
+                                yEnd: .value("Lift sets", Double(week.liftSets)),
+                                width: .ratio(0.45))
                             .foregroundStyle(Theme.accent)
                             .cornerRadius(3)
                     }
@@ -409,7 +439,7 @@ struct TrendsView: View {
                 HStack(spacing: 14) {
                     legendSwatch(Theme.accent, "\(lift)")
                     legendSwatch(Color.secondary.opacity(0.22), "\(dose.muscle.rawValue) in all")
-                    legendSwatch(Theme.accent.opacity(0.14), "\(Int(DoseResponse.band.lowerBound))–\(Int(DoseResponse.band.upperBound)) band")
+                    legendSwatch(Theme.accent.opacity(0.14), "\(Int(DoseResponse.band.lowerBound))–\(Int(DoseResponse.band.upperBound)) sets a week")
                 }
 
                 Text(dose.summary)
@@ -432,85 +462,6 @@ struct TrendsView: View {
         }
     }
 
-    // MARK: - Every lift
-
-    /// The whole log, one row a lift: what was done last, the standing best
-    /// and how long it has stood, how often lately. The same numbers the
-    /// coach's digest gets — now the lifter gets them too. Tap a row to chart it.
-    private var liftsCard: some View {
-        let today = Date()
-        let calendar = Calendar.current
-        return PanelBox {
-            VStack(alignment: .leading, spacing: 0) {
-                HStack(alignment: .firstTextBaseline) {
-                    Text("every lift · last done first")
-                        .font(.caption).foregroundStyle(.secondary)
-                    Spacer()
-                    Text("best · how long it has stood")
-                        .font(.caption2).foregroundStyle(.tertiary)
-                }
-                .padding(.bottom, 6)
-                ForEach(figures.board) { row in
-                    Button {
-                        exercise = row.name
-                        mode = .lift
-                    } label: {
-                        boardRow(row, today: today, calendar: calendar)
-                    }
-                    .buttonStyle(.plain)
-                    if row.id != figures.board.last?.id { Divider() }
-                }
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-        }
-    }
-
-    private func boardRow(_ row: Analytics.LiftSummary, today: Date, calendar: Calendar) -> some View {
-        let since = row.daysSinceLast(today: today, calendar: calendar)
-        let bestAgo = row.daysSinceBest(today: today, calendar: calendar)
-        return HStack(alignment: .center, spacing: 10) {
-            VStack(alignment: .leading, spacing: 2) {
-                Text(Theme.readableName(row.name))
-                    .font(.subheadline.weight(.semibold))
-                    .lineLimit(1)
-                Text("\(ago(since)) · \(row.lastTokens)")
-                    .font(.caption).foregroundStyle(.secondary)
-                    .monospacedDigit()
-                    .lineLimit(1)
-                    .truncationMode(.tail)
-                Text("\(row.sessionsInFourWeeks) in 4 weeks · \(row.sessionsEver) ever")
-                    .font(.caption2).foregroundStyle(.tertiary)
-                    .monospacedDigit()
-            }
-            Spacer(minLength: 8)
-            VStack(alignment: .trailing, spacing: 2) {
-                Text(row.best?.token ?? "—")
-                    .font(.subheadline.weight(.bold).monospacedDigit())
-                if let bestAgo {
-                    // Recent in the accent, an old one muted: which lift has
-                    // gone longest without a record reads off the column.
-                    Text(bestAgo == 0 ? "today" : ago(bestAgo))
-                        .font(.caption2)
-                        .foregroundStyle(bestAgo <= 42 ? Theme.accent : Color.secondary)
-                        .monospacedDigit()
-                }
-            }
-            Image(systemName: "chevron.right")
-                .font(.caption).foregroundStyle(.tertiary)
-        }
-        .padding(.vertical, 9)
-        .contentShape(Rectangle())
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel(Theme.readableName(row.name))
-        .accessibilityValue("last \(ago(since)), \(row.lastTokens); best \(row.best?.token ?? "none")"
-                            + (bestAgo.map { ", \(ago($0))" } ?? "")
-                            + "; \(row.sessionsInFourWeeks) sessions in four weeks")
-    }
-
-    private func ago(_ days: Int) -> String {
-        days == 0 ? "today" : (days == 1 ? "yesterday" : "\(days) days ago")
-    }
-
     // MARK: - Weeks
 
     /// Every day of the last few months as a dot: filled when you trained,
@@ -520,16 +471,15 @@ struct TrendsView: View {
         let weeks = figures.weeks
         // A Monday with nothing logged yet shows the week just finished — and
         // compares it with the four before it, not with itself.
-        let thisWeek = weeks.last
-        let showingThisWeek = (thisWeek?.sessions ?? 0) > 0
-        let featured = showingThisWeek ? thisWeek : weeks.dropLast().last
-        let prior = showingThisWeek ? weeks.dropLast() : weeks.dropLast(2)
-        let lastFour = prior.suffix(4)
+        let pick = weekToShow(weeks) { $0.sessions == 0 }
+        let showingThisWeek = pick.isThisWeek
+        let featured = pick.shown
+        let lastFour = pick.previous
         let perWeek = lastFour.isEmpty ? 0 : Double(lastFour.map(\.sessions).reduce(0, +)) / Double(lastFour.count)
         let setsPerWeek = lastFour.isEmpty ? 0 : Double(lastFour.map(\.sets).reduce(0, +)) / Double(lastFour.count)
         let count = featured?.sessions ?? 0
 
-        return PanelBox {
+        return Panel {
             VStack(alignment: .leading, spacing: 12) {
                 Text("training days")
                     .font(.caption).foregroundStyle(.secondary)
@@ -566,11 +516,10 @@ struct TrendsView: View {
     /// done, not a column of dashes.
     private var musclesCard: some View {
         let weekly = figures.weekly
-        let current = weekly.last ?? [:]
-        let thisWeekHasSets = current.values.reduce(0, +) > 0
-        let shown = thisWeekHasSets ? current : (weekly.dropLast().last ?? [:])
-        // The average is of the weeks before the one shown, never including it.
-        let previous = Array((thisWeekHasSets ? weekly.dropLast() : weekly.dropLast(2)).suffix(4))
+        let pick = weekToShow(weekly) { $0.values.reduce(0, +) == 0 }
+        let thisWeekHasSets = pick.isThisWeek
+        let shown = pick.shown ?? [:]
+        let previous = pick.previous
         let groups = MuscleGroup.ordered.filter { g in
             (shown[g] ?? 0) > 0 || previous.contains { ($0[g] ?? 0) > 0 }
         }
@@ -578,7 +527,7 @@ struct TrendsView: View {
         let scale = max(20, groups.map { shown[$0] ?? 0 }.max() ?? 0,
                         groups.map { avg($0, in: previous) }.max() ?? 0)
 
-        return PanelBox {
+        return Panel {
             VStack(alignment: .leading, spacing: 12) {
                 HStack(alignment: .firstTextBaseline) {
                     Text("sets per muscle")
@@ -613,6 +562,17 @@ struct TrendsView: View {
             }
             .frame(maxWidth: .infinity, alignment: .leading)
         }
+    }
+
+    /// This week while it has anything in it, else last week — and the four
+    /// weeks before whichever is shown, never including it. Both Volume cards
+    /// make this choice, and they have to make it the same way.
+    private func weekToShow<T>(_ weeks: [T], isEmpty: (T) -> Bool) -> (shown: T?, previous: [T], isThisWeek: Bool) {
+        guard let last = weeks.last else { return (nil, [], true) }
+        let thisWeek = !isEmpty(last)
+        let shown = thisWeek ? last : weeks.dropLast().last
+        let prior = thisWeek ? weeks.dropLast() : weeks.dropLast(2)
+        return (shown, Array(prior.suffix(4)), thisWeek)
     }
 
     private func avg(_ group: MuscleGroup, in weeks: [MuscleMap.Credits]) -> Double {
@@ -707,10 +667,12 @@ struct TrendsView: View {
 
     /// The exercise appearing in the most sessions (ties broken alphabetically).
     private func mostLogged(among names: [String]) -> String {
-        let best = Analytics.liftSummaries(in: store.sessions).max { a, b in
-            a.sessionsEver != b.sessionsEver ? a.sessionsEver < b.sessionsEver : a.name > b.name
+        var counts: [String: Int] = [:]
+        for session in store.sessions {
+            for key in Set(session.exercises.map { MuscleMap.canonical($0.name) }) { counts[key, default: 0] += 1 }
         }
-        return best.flatMap { top in names.first { Analytics.matches($0, top.name) } } ?? names.first ?? ""
+        let best = counts.max { a, b in a.value != b.value ? a.value < b.value : a.key > b.key }
+        return best.flatMap { top in names.first { MuscleMap.canonical($0) == top.key } } ?? names.first ?? ""
     }
 
     private func clampMetric() {
@@ -721,7 +683,6 @@ struct TrendsView: View {
     private func recompute() {
         var f = Figures()
         f.exercises = knownLifts()
-        f.board = Analytics.liftSummaries(in: store.sessions)
         f.weeks = Analytics.weekGrid(weeks: 26, in: store.sessions)
         f.weekly = muscleMap.weeklySets(weeks: 6, in: store.sessions)
         f.unmapped = muscleMap.unmapped(in: store.sessions)
@@ -729,6 +690,11 @@ struct TrendsView: View {
             f.metrics = Analytics.availableMetrics(exercise, in: store.sessions)
             let shown = f.metrics.contains(metric) ? metric : (f.metrics.first ?? .topSet)
             f.series = Analytics.series(exercise, metric: shown, in: store.sessions)
+            // A new span starts at its newest block; the same span keeps its place.
+            if f.series.first?.date != figures.series.first?.date || f.series.last?.date != figures.series.last?.date,
+               let last = f.series.last?.date {
+                scrollX = last.addingTimeInterval(window * 0.08 - window)
+            }
             f.recent = Analytics.change(f.series, sinceDays: 21)
             f.allTime = Analytics.change(f.series)
             f.dose = DoseResponse.make(for: exercise, in: store.sessions, map: muscleMap)
@@ -810,16 +776,4 @@ private struct TrainingGrid: View {
         let intensity = heaviest > 0 ? Double(sets) / Double(heaviest) : 1
         return Theme.accent.opacity(0.45 + 0.55 * intensity)
     }
-}
-
-/// The raised surface — the chart.
-private struct CardBox<Content: View>: View {
-    @ViewBuilder var content: Content
-    var body: some View { content.glassCard() }
-}
-
-/// The flat surface — the stat tiles beneath it.
-private struct PanelBox<Content: View>: View {
-    @ViewBuilder var content: Content
-    var body: some View { content.panel() }
 }

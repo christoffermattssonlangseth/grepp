@@ -218,7 +218,9 @@ enum CoachContext {
         how many weeks, the lift's sets a week and the muscle's total, and which side \
         of the \(Int(DoseResponse.band.lowerBound))–\(Int(DoseResponse.band.upperBound)) band \
         that total is on — the same sentence the lifter sees in Trends. Use it rather \
-        than counting again. Under the band, volume is the lever — add a set or a \
+        than counting again. Not every lift has one: a lift last done more than eight \
+        weeks ago, or too young to read, has no dose line — say so rather than \
+        estimating the band. Under the band, volume is the lever — add a set or a \
         second exposure and say so. Inside it, don't reach for volume first; change \
         the effort, the load jump or the rep scheme, or call a deload. Above it, more \
         is not the answer: cut back, recover, then push. Name which case it is.
@@ -427,6 +429,14 @@ enum CoachContext {
 
     Where their evidence brief says otherwise, the brief wins — these are defaults, \
     and they chose those.
+
+    Reverse pyramid, when they ask for it or it fits (few days, few lifts, a \
+    lifter who likes one heavy set): write `rpt` on the line — `- deadlift rpt \
+    2x4-6` — and the app computes that lift's loads itself from the last session: \
+    the top set first, each set after it a tenth lighter for two more reps, the \
+    load up a step (5 kg on squat and deadlift, 2.5 elsewhere) once the top set \
+    reaches the top of its range. Two or three sets a lift, one heavy compound a \
+    day, long rests. Don't put loads on those lines either.
 
     Then write the file: one short line, then the whole programme in a fenced block \
     tagged exactly `program.md`, nothing after the closing fence. Its shape is fixed \
@@ -1069,9 +1079,10 @@ enum CoachContext {
     /// reading of a long column of near-identical lines, and the log over
     /// anything said earlier in the chat.
     static let readingHistoryBrief = """
-    READING HISTORY. The digest above is computed by the app from the log; it does \
-    not misread. The raw log below is there for detail. When the two seem to differ, \
-    the digest is right. When you state a number from the past — a last session, a \
+    READING HISTORY. The digest above is computed by the app from the log; its \
+    arithmetic does not misread. The raw log below is there for detail. When the two \
+    seem to differ, the digest is right. A "dose" line averages completed weeks; the \
+    week in progress is not in it, and the SETS PER MUSCLE table's newest column is. When you state a number from the past — a last session, a \
     best, how many times something was done — give its date and quote the line, so \
     a slip is visible. Earlier messages in this conversation were true on the day \
     they were written; the log and the digest are what is true now, and where they \

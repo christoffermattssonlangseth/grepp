@@ -90,12 +90,16 @@ struct DoseResponse: Equatable {
     /// everything before them — one bad session after a record is not a
     /// stall. Otherwise flat for as many calendar weeks as it's been since
     /// the standing best was first hit, counted to the last week the lift
-    /// was done. The dose is the average of the last four weeks it was done in.
+    /// was done. The dose is the average of the last four completed weeks it
+    /// was done in; the week in progress is left out of it.
     static func verdict(for weeks: [Week]) -> Verdict {
         let done = weeks.filter { $0.best != nil }
         guard done.count >= 3 else { return .tooEarly }
 
-        let recent = Array(done.suffix(4))
+        // The last week of the grid is the one in progress: a Monday's two sets
+        // are not a week's dose. It counts for the result, not for the dose.
+        let completed = done.filter { $0.start != weeks.last?.start }
+        let recent = Array((completed.isEmpty ? done : completed).suffix(4))
         var setSum = 0.0
         var ownSum = 0
         for week in recent {

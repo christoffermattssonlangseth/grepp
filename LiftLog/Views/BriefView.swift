@@ -1,7 +1,7 @@
 import SwiftUI
 
 /// The coach's standing brief, in one place: how you train and what you're
-/// working toward, both editable here and committed straight to your repo.
+/// working toward, both editable here and saved beside the log.
 ///
 /// Presented from the Coach tab, because that's where the brief is used — and
 /// kept off the tab bar, which is full at five.
@@ -75,7 +75,7 @@ struct BriefView: View {
         VStack(alignment: .leading, spacing: 6) {
             Text("What the coach knows about you")
                 .font(.headline)
-            Text("Plain Markdown, kept in your repo beside the log. Every question the coach answers is read against this, and editing it here commits straight to GitHub.")
+            Text("Plain Markdown, kept beside your log. Every question the coach answers is read against this, and saving here writes it back.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
         }

@@ -79,7 +79,7 @@ final class Store: ObservableObject {
     /// Writes that haven't reached GitHub yet, oldest first. Persisted across launches.
     @Published private(set) var pending: [PendingWrite] = []
 
-    /// Contents of `coachingPath` and `goalsPath`, empty when there's no such file.
+    /// Contents of the four brief files, empty where there's no such file.
     /// Cached like the log so they survive a cold start with no signal.
     @Published private(set) var brief = CoachContext.Brief.none
 
@@ -131,7 +131,7 @@ final class Store: ObservableObject {
     /// The outcome of a `commit`, so callers don't have to sniff `status` text.
     enum CommitResult { case pushed, queued, failed }
 
-    /// The two files that make up the coach's standing brief. One identity for
+    /// The four files that make up the coach's standing brief. One identity for
     /// each, so a screen can read, edit and save either without special-casing.
     enum BriefFile: String, CaseIterable, Identifiable {
         case coaching, goals, program, research
@@ -336,7 +336,7 @@ final class Store: ObservableObject {
         }
     }
 
-    /// Refresh the two companion files. Deliberately cannot fail the load: they're
+    /// Refresh the brief files. Deliberately cannot fail the load: they're
     /// optional, a 404 just means the file isn't there, and anything else leaves the
     /// cached copy in place — a hiccup fetching your notes must never cost you the
     /// training history.
@@ -562,10 +562,11 @@ final class Store: ObservableObject {
         // the queue drains.
         if !pending.isEmpty {
             enqueue(write)
-            await flushPending()
+            let flowing = await flushPending()
             sessions = WorkoutParser.applying(pending, to: cachedSessions())
             if pending.isEmpty { status = done; return .pushed }
-            status = "Offline — saved locally, will sync (\(pending.count) queued)"
+            // Paused on an error is not offline: the reason stays on screen.
+            if flowing { status = "Offline — saved locally, will sync (\(pending.count) queued)" }
             return .queued
         }
 
@@ -636,8 +637,10 @@ final class Store: ObservableObject {
 
     /// Replay queued writes against the current remote, oldest first. Stops (keeping
     /// the rest queued) as soon as one can't be delivered — offline again, or a
-    /// permanent error the user needs to fix (e.g. a bad token).
-    func flushPending() async {
+    /// permanent error the user needs to fix (e.g. a bad token). False when it
+    /// stopped on such an error, with the reason in `status`.
+    @discardableResult
+    func flushPending() async -> Bool {
         while let write = pending.first {
             do {
                 let base = try await push(write)
@@ -645,12 +648,13 @@ final class Store: ObservableObject {
                 pending.removeFirst()
                 savePending()
             } catch let error where isOffline(error) {
-                return   // still offline — leave the queue intact
+                return true   // still offline — leave the queue intact
             } catch {
                 status = "Sync paused — \(error.localizedDescription)"
-                return
+                return false
             }
         }
+        return true
     }
 
     private func enqueue(_ write: PendingWrite) {

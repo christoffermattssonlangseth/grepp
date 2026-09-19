@@ -61,6 +61,18 @@ final class DoseResponseTests: XCTestCase {
         XCTAssertTrue(dose.summary.contains("inside the band"), dose.summary)
     }
 
+    func testTheWeekInProgressIsNotInTheDoseAverage() {
+        // Four full weeks of three sets, then a Tuesday with one set so far.
+        let sessions = [
+            day("2026-08-04", squat: 100), day("2026-08-11", squat: 100),
+            day("2026-08-18", squat: 100), day("2026-08-25", squat: 100),
+            day("2026-09-01", squat: 100, sets: 1),
+        ]
+        let dose = DoseResponse.make(for: "squat", in: sessions, map: MuscleMap(), endingOn: date("2026-09-02"), calendar: utc)!
+        guard case .stalledLow(_, let own, _) = dose.verdict else { return XCTFail("\(dose.verdict)") }
+        XCTAssertEqual(own, 3, "the one set on Tuesday does not drag the week's dose down")
+    }
+
     func testTooEarlyWithUnderThreeWeeksAndNilForUnmappedOrAbsentLifts() {
         let sessions = [day("2026-08-18", squat: 100), day("2026-08-25", squat: 105)]
         XCTAssertEqual(DoseResponse.make(for: "squat", in: sessions, map: MuscleMap(), endingOn: date("2026-09-06"), calendar: utc)?.verdict, .tooEarly)

@@ -9,6 +9,9 @@ import SwiftUI
 struct ProgrammeView: View {
     @EnvironmentObject var store: Store
     @Environment(\.dismiss) private var dismiss
+    @AppStorage(Prefs.barWeight) private var barWeight: Double = 20
+    @AppStorage(Prefs.plateInventory) private var inventory = PlateInventory.standard
+    @AppStorage(Prefs.barOverrides) private var barOverrides = BarOverrides()
 
     /// Hands a question back to the Coach screen once this sheet is closed.
     let onAsk: (String) -> Void
@@ -69,17 +72,45 @@ struct ProgrammeView: View {
                                 .padding(.vertical, 2)
                         )
                     }
+                    // Two ways in: the app's own arithmetic, free and instant —
+                    // rpt lines from their last session, the rest as last done —
+                    // or the coach, who reads the log and the rule on each line.
+                    let plan = ReversePyramid.plan(day: day, in: store.sessions,
+                                                   bar: { barOverrides.bar(for: $0) ?? barWeight },
+                                                   inventory: inventory)
+                    let load = Button {
+                        dismiss()
+                        store.requestLog(plan.entries)
+                    } label: {
+                        Label("Load this day", systemImage: "arrow.down.to.line")
+                            .font(.subheadline.weight(.bold))
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 6)
+                    }
+                    // One prominent button on the screen: the day that is next.
+                    Group {
+                        if index == due { load.buttonStyle(.borderedProminent) } else { load.buttonStyle(.bordered) }
+                    }
+                    .tint(Theme.accent)
+                    .disabled(plan.entries.isEmpty)
+                    .listRowBackground(Color.clear)
+                    if !plan.missing.isEmpty {
+                        Text("Not logged yet, so left out until it is: " + plan.missing.map { Theme.readableName($0) }.joined(separator: ", ") + ".")
+                            .font(.caption)
+                            .foregroundStyle(.tertiary)
+                            .listRowBackground(Color.clear)
+                    }
                     Button {
                         dismiss()
                         onAsk("Prescribe \(day.title) from my programme for today, with loads from my log.")
                     } label: {
                         Label("Ask the coach for this day", systemImage: "bubble.left.and.bubble.right")
-                            .font(.subheadline.weight(.bold))
+                            .font(.subheadline.weight(.semibold))
                             .frame(maxWidth: .infinity)
-                            .padding(.vertical, 6)
+                            .padding(.vertical, 4)
                     }
-                    .buttonStyle(.borderedProminent)
-                    .tint(index == due ? Theme.accent : Color.secondary)
+                    .buttonStyle(.plain)
+                    .foregroundStyle(Theme.accent)
                     .listRowBackground(Color.clear)
                 } header: {
                     HStack {
@@ -93,10 +124,12 @@ struct ProgrammeView: View {
                                 .background(Theme.accent, in: Capsule())
                         }
                     }
+                    .accessibilityElement(children: .ignore)
+                    .accessibilityLabel(index == due ? "\(day.title), next" : day.title)
                 }
             }
             Section {
-                Text("Schemes live here; loads come from the coach each time, worked out from your log and the progression rule on each line. Edit the file in Your brief, or ask the coach for a new programme.")
+                Text("Schemes live here, not loads. Load this day works them out from your log: rpt lines as a reverse pyramid from their last session, everything else as last done.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .listRowBackground(Color.clear)
@@ -117,6 +150,14 @@ struct ProgrammeView: View {
             }
             .buttonStyle(.borderedProminent)
             .tint(Theme.accent)
+            // The one programme the app carries itself: reverse pyramid, three
+            // days, worked out from the log with no coach in the loop.
+            Button("Start with reverse pyramid") {
+                Task { _ = await store.save(ReversePyramid.starter, to: .program) }
+            }
+            .buttonStyle(.bordered)
+            .tint(Theme.accent)
+            .disabled(store.isBusy)
         }
     }
 }

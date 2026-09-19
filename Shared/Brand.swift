@@ -13,6 +13,29 @@ enum Brand {
 
     /// Anything drawn *on* the accent.
     static let onAccent = Color.white
+
+    /// A stored kebab-case name as a label, casing kept: "over-head-press"
+    /// reads "over head press". Here so the widget says it the same way.
+    static func readableName(_ raw: String) -> String {
+        raw.replacingOccurrences(of: "-", with: " ")
+    }
+}
+
+/// The UserDefaults keys the app and its extensions share. One spelling each:
+/// a typo in a string literal would have quietly given the lock screen a
+/// default rest for ever.
+enum Prefs {
+    static let muscleMap = "muscle_map"
+    static let barWeight = "bar_weight"
+    static let plateInventory = "plate_inventory"
+    static let barOverrides = "bar_overrides"
+    static let restTarget = "rest_target"
+    static let stravaEnabled = "strava_enabled"
+    static let coachModel = "coach_model"
+    static let coachShowCost = "coach_show_cost"
+    static let coachFableOK = "coach_fable_ok"
+    static let trendsExercise = "trends_exercise"
+    static let trendsMode = "trends_mode"
 }
 
 /// The app's mark: a barbell, drawn rather than shipped as an image so it takes

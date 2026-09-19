@@ -242,6 +242,7 @@ struct ClaudeService {
         var sources: [(title: String, url: String)] = []
         var usage = Usage(searches: 0)
         var stopReason: String?
+        var exhausted = true
 
         // A paused turn hands back its blocks and continues on the next request.
         for _ in 0..<4 {
@@ -288,10 +289,13 @@ struct ClaudeService {
             let reason = reply["stop_reason"] as? String
             guard reason == "pause_turn" else {
                 stopReason = reason == "end_turn" ? nil : reason
+                exhausted = false
                 break
             }
             messages.append(["role": "assistant", "content": content])
         }
+        // Four pauses and still going: the answer is what it is, and says so.
+        if exhausted { stopReason = "pause_turn" }
         return LookupResult(text: text, sources: sources, usage: usage, stopReason: stopReason)
     }
 

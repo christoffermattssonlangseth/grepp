@@ -18,6 +18,23 @@ struct Programme: Equatable {
         let scheme: String
         /// Whatever followed " — " on the line: the progression rule, a cue.
         let note: String
+        /// Marked `rpt` on its line: reverse pyramid, loads computed by the
+        /// app from the last session rather than asked of the coach.
+        var rpt = false
+
+        /// The scheme as numbers, when it has them: `3x4-6` → 3 sets of 4 to 6,
+        /// `3x5` → 3 sets of 5. Nil for AMRAP and the like.
+        var setsAndReps: (sets: Int, reps: ClosedRange<Int>)? {
+            let parts = scheme.split(separator: "x")
+            guard parts.count == 2, let sets = Int(parts[0]) else { return nil }
+            let reps = parts[1].replacingOccurrences(of: "+", with: "").replacingOccurrences(of: "–", with: "-")
+            let bounds = reps.split(separator: "-").compactMap { Int($0) }
+            switch bounds.count {
+            case 1: return (sets, bounds[0]...bounds[0])
+            case 2 where bounds[0] <= bounds[1]: return (sets, bounds[0]...bounds[1])
+            default: return nil
+            }
+        }
     }
 
     struct Day: Equatable, Identifiable {
@@ -104,22 +121,41 @@ struct Programme: Equatable {
               let setsRange = Range(m.range(at: 1), in: clean),
               let repsRange = Range(m.range(at: 2), in: clean) else { return nil }
 
-        let name = clean[..<range.lowerBound]
+        // `rpt` marks the scheme when it sits with the name or right after the
+        // scheme — not anywhere in a note, and not in a sentence that happens
+        // to mention it.
+        var head = String(clean[..<range.lowerBound])
+        var tail = String(clean[range.upperBound...])
+        var rpt = false
+        if rptWord.firstMatch(in: head, range: NSRange(head.startIndex..., in: head)) != nil {
+            rpt = true
+            head = rptWord.stringByReplacingMatches(in: head, options: [], range: NSRange(head.startIndex..., in: head), withTemplate: " ")
+        }
+        let tailTrimmed = tail.trimmingCharacters(in: .whitespaces)
+        if tailTrimmed.lowercased().hasPrefix("rpt"), tailTrimmed.dropFirst(3).first.map({ !$0.isLetter }) ?? true {
+            rpt = true
+            tail = String(tailTrimmed.dropFirst(3))
+        }
+
+        let name = head
             .trimmingCharacters(in: .whitespaces)
             .trimmingCharacters(in: CharacterSet(charactersIn: ":—–-,"))
             .trimmingCharacters(in: .whitespaces)
             .lowercased()
             .replacingOccurrences(of: " ", with: "-")
-        guard !name.isEmpty, name.first!.isLetter else { return nil }
+        // A lift's name is a few words; a sentence with a scheme in it is prose.
+        guard !name.isEmpty, name.first!.isLetter, name.split(separator: "-").count <= 4 else { return nil }
 
         let reps = clean[repsRange].replacingOccurrences(of: " ", with: "").uppercased()
         let normalised = "\(clean[setsRange])x\(reps == "MAX" ? "AMRAP" : reps)"
-        let note = clean[range.upperBound...]
+        let note = tail
             .trimmingCharacters(in: .whitespaces)
             .trimmingCharacters(in: CharacterSet(charactersIn: ":—–-,("))
             .trimmingCharacters(in: CharacterSet(charactersIn: ") "))
-        return Exercise(name: name, scheme: normalised, note: note)
+        return Exercise(name: name, scheme: normalised, note: note, rpt: rpt)
     }
+
+    private static let rptWord = try! NSRegularExpression(pattern: "(?<![a-z])rpt(?![a-z])", options: [.caseInsensitive])
 
     // MARK: - Against the log
 
@@ -129,11 +165,11 @@ struct Programme: Equatable {
     func dueDayIndex(in sessions: [Session]) -> Int {
         guard days.count > 1 else { return 0 }
         for session in sessions.sorted(by: { $0.date > $1.date }) {
-            let done = Set(session.exercises.map { $0.name.lowercased() })
+            let done = Set(session.exercises.map { MuscleMap.canonical($0.name) })
             var bestIndex: Int?
             var bestScore = 0
             for (i, day) in days.enumerated() {
-                let names = Set(day.exercises.map(\.name))
+                let names = Set(day.exercises.map { MuscleMap.canonical($0.name) })
                 let overlap = names.intersection(done).count
                 // At least half the day's lifts, else it wasn't that day.
                 guard overlap * 2 >= names.count, overlap > bestScore else { continue }
@@ -148,7 +184,7 @@ struct Programme: Equatable {
     /// The last time a lift was logged: its sets and the day, newest first.
     static func lastDone(_ name: String, in sessions: [Session]) -> (entry: ExerciseEntry, day: String)? {
         for session in sessions.sorted(by: { $0.date > $1.date }) {
-            if let entry = session.exercises.first(where: { $0.name.caseInsensitiveCompare(name) == .orderedSame }) {
+            if let entry = Analytics.entries(name, in: session).first {
                 return (entry, session.dateString)
             }
         }

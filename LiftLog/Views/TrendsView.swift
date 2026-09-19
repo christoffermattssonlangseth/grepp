@@ -482,14 +482,18 @@ struct TrendsView: View {
     }
 
     /// One picked week in words, and a button per day the lift was done in
-    /// it that opens that day in Log — the same way into the file the line
-    /// chart's reading has.
+    /// it — the day and how many sets — that opens that day in Log, the same
+    /// way into the file the line chart's reading has.
     private func weekReading(_ week: DoseResponse.Week, dose: DoseResponse) -> some View {
         let lift = Theme.readableName(dose.exercise)
         let end = week.start.addingTimeInterval(7 * 86_400)
         let days = store.sessions
             .filter { $0.date >= week.start && $0.date < end }
-            .compactMap { session in Analytics.entries(dose.exercise, in: session).first.map { (date: session.date, entry: $0) } }
+            .compactMap { session -> (date: Date, entry: ExerciseEntry, sets: Int)? in
+                let entries = Analytics.entries(dose.exercise, in: session)
+                guard let first = entries.first else { return nil }
+                return (session.date, first, entries.reduce(0) { $0 + $1.sets.count })
+            }
             .sorted { $0.date < $1.date }
         let all = week.sets == week.sets.rounded() ? String(Int(week.sets)) : String(format: "%.1f", week.sets)
         return VStack(alignment: .leading, spacing: 6) {
@@ -514,7 +518,7 @@ struct TrendsView: View {
                         Button {
                             store.requestEdit(exercise: day.entry.name, on: day.date)
                         } label: {
-                            Text("\(day.date, format: .dateTime.weekday(.abbreviated).day()) · \(day.entry.sets.map(\.token).joined(separator: " "))")
+                            Text("\(day.date, format: .dateTime.weekday(.abbreviated).day()) · \(day.sets) \(day.sets == 1 ? "set" : "sets")")
                                 .font(.caption2.monospacedDigit())
                                 .lineLimit(1)
                                 .minimumScaleFactor(0.7)

@@ -23,6 +23,8 @@ struct TrendsView: View {
     @State private var metric: Analytics.Metric = .topSet
     /// Where a finger is on the chart's x-axis, if it's on it at all.
     @State private var scrub: Date?
+    /// The week under a finger on the work-and-result bars, if any.
+    @State private var weekScrub: Date?
     @State private var showingPicker = false
     /// The left edge of the chart's window when the history is long enough
     /// to scroll; the y-axis follows it.
@@ -100,6 +102,7 @@ struct TrendsView: View {
             }
             .onChange(of: exercise) { _, _ in
                 scrub = nil
+                weekScrub = nil
                 clampMetric()
                 recompute()
             }
@@ -410,12 +413,14 @@ struct TrendsView: View {
                                 width: .ratio(0.8))
                             .foregroundStyle(Color.secondary.opacity(0.22))
                             .cornerRadius(3)
+                            .opacity(pickedWeek == nil || pickedWeek?.start == week.start ? 1 : 0.45)
                         BarMark(x: .value("Week", week.start, unit: .weekOfYear),
                                 yStart: .value("Sets", 0.0),
                                 yEnd: .value("Lift sets", Double(week.liftSets)),
                                 width: .ratio(0.45))
                             .foregroundStyle(Theme.accent)
                             .cornerRadius(3)
+                            .opacity(pickedWeek == nil || pickedWeek?.start == week.start ? 1 : 0.45)
                     }
                 }
                 .chartYScale(domain: 0...top)
@@ -436,6 +441,8 @@ struct TrendsView: View {
                 .frame(height: 110)
                 .accessibilityLabel("\(lift) sets a week and \(dose.muscle.rawValue) sets in all, last \(dose.weeks.count) weeks")
                 .accessibilityValue(dose.summary)
+                // A tap on a week picks it: its numbers, and the days it holds.
+                .chartXSelection(value: $weekScrub)
 
                 HStack(spacing: 14) {
                     legendSwatch(Theme.accent, "\(lift)")
@@ -443,6 +450,10 @@ struct TrendsView: View {
                 }
                 .lineLimit(1)
                 .minimumScaleFactor(0.8)
+
+                if let week = pickedWeek {
+                    weekReading(week, dose: dose)
+                }
 
                 Text(dose.summary)
                     .font(.footnote)
@@ -461,6 +472,59 @@ struct TrendsView: View {
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
+
+    /// The week the finger is on, from the dose card's own weeks.
+    private var pickedWeek: DoseResponse.Week? {
+        guard let weekScrub, let dose = figures.dose else { return nil }
+        return dose.weeks.first { weekScrub >= $0.start && weekScrub < $0.start.addingTimeInterval(7 * 86_400) }
+    }
+
+    /// One picked week in words, and a button per day the lift was done in
+    /// it that opens that day in Log — the same way into the file the line
+    /// chart's reading has.
+    private func weekReading(_ week: DoseResponse.Week, dose: DoseResponse) -> some View {
+        let lift = Theme.readableName(dose.exercise)
+        let end = week.start.addingTimeInterval(7 * 86_400)
+        let days = store.sessions
+            .filter { $0.date >= week.start && $0.date < end }
+            .compactMap { session in Analytics.entries(dose.exercise, in: session).first.map { (date: session.date, entry: $0) } }
+            .sorted { $0.date < $1.date }
+        let all = week.sets == week.sets.rounded() ? String(Int(week.sets)) : String(format: "%.1f", week.sets)
+        return VStack(alignment: .leading, spacing: 6) {
+            HStack(alignment: .firstTextBaseline) {
+                Text("week of \(week.start, format: .dateTime.day().month(.abbreviated))")
+                    .font(.caption.weight(.semibold))
+                Spacer()
+                Text(week.liftSets == 0
+                     ? "no \(lift) · \(all) \(dose.muscle.rawValue) sets"
+                     : "\(week.liftSets) \(lift) sets · \(all) \(dose.muscle.rawValue) in all"
+                       + (week.best.map { " · best \(WorkSet.formatWeight($0)) \(dose.metric.unit)" } ?? ""))
+                    .font(.caption).foregroundStyle(.secondary)
+                    .monospacedDigit()
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.7)
+            }
+            if !days.isEmpty {
+                // Sideways when a week has more days than fit.
+                ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 8) {
+                    ForEach(days, id: \.date) { day in
+                        Button {
+                            store.requestEdit(exercise: day.entry.name, on: day.date)
+                        } label: {
+                            Text("\(day.date, format: .dateTime.weekday(.abbreviated).day()) · \(day.entry.sets.map(\.token).joined(separator: " "))")
+                                .font(.caption2.monospacedDigit())
+                                .lineLimit(1)
+                                .minimumScaleFactor(0.7)
+                        }
+                        .buttonStyle(.bordered)
+                        .controlSize(.small)
+                    }
+                }
+                }
+            }
         }
     }
 

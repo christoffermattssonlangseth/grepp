@@ -382,7 +382,7 @@ struct TrendsView: View {
     /// isn't drawn again here: the chart above already is that line.
     private func doseCard(_ dose: DoseResponse) -> some View {
         let lift = Theme.readableName(dose.exercise)
-        let top = max(DoseResponse.band.upperBound + 2, (dose.weeks.map(\.sets).max() ?? 0) + 2)
+        let top = max(6, (dose.weeks.map(\.sets).max() ?? 0) + 2)
         return Panel {
             VStack(alignment: .leading, spacing: 10) {
                 HStack(alignment: .firstTextBaseline) {
@@ -394,17 +394,15 @@ struct TrendsView: View {
                 }
 
                 // Work: this lift's own sets inside every set for its main
-                // muscle, against the band the total is judged by. The lift's
-                // bar is narrower so an overshoot — a lift whose main share is
-                // a half — shows as one rather than hiding the bar behind it.
+                // muscle. The lift's bar is narrower so an overshoot — a lift
+                // whose main share is a half — shows as one rather than hiding
+                // the bar behind it. The 10–20 band is a muscle's number, not a
+                // lift's: it is drawn on the Volume tab, not here.
                 // The x value is binned by week so each bar has a band to be a
                 // ratio of: on a bare date axis there is no band and a ratio
                 // width is nothing, which drew no bars at all. Ranged bars
                 // from zero, so the two don't stack but sit one inside the other.
                 Chart {
-                    RectangleMark(yStart: .value("low", DoseResponse.band.lowerBound),
-                                  yEnd: .value("high", DoseResponse.band.upperBound))
-                        .foregroundStyle(Theme.accent.opacity(0.10))
                     ForEach(dose.weeks) { week in
                         BarMark(x: .value("Week", week.start, unit: .weekOfYear),
                                 yStart: .value("Sets", 0.0),
@@ -429,12 +427,8 @@ struct TrendsView: View {
                         AxisValueLabel(format: .dateTime.day().month(.abbreviated), centered: true)
                     }
                 }
-                // Lines only where the band's edges are, so the band reads as
-                // one band and not two stripes; the top tick when the data goes past it.
                 .chartYAxis {
-                    AxisMarks(values: top > DoseResponse.band.upperBound + 2
-                                  ? [0, DoseResponse.band.lowerBound, DoseResponse.band.upperBound, top.rounded(.down)]
-                                  : [0, DoseResponse.band.lowerBound, DoseResponse.band.upperBound]) {
+                    AxisMarks(values: .automatic(desiredCount: 3)) {
                         AxisGridLine()
                         AxisValueLabel()
                     }
@@ -443,11 +437,9 @@ struct TrendsView: View {
                 .accessibilityLabel("\(lift) sets a week and \(dose.muscle.rawValue) sets in all, last \(dose.weeks.count) weeks")
                 .accessibilityValue(dose.summary)
 
-                // Short enough to stay on one line beside a long lift name.
                 HStack(spacing: 14) {
                     legendSwatch(Theme.accent, "\(lift)")
                     legendSwatch(Color.secondary.opacity(0.22), "\(dose.muscle.rawValue) in all")
-                    legendSwatch(Theme.accent.opacity(0.14), "\(Int(DoseResponse.band.lowerBound))–\(Int(DoseResponse.band.upperBound)) band")
                 }
                 .lineLimit(1)
                 .minimumScaleFactor(0.8)

@@ -404,7 +404,7 @@ struct TrendsView: View {
                 Chart {
                     RectangleMark(yStart: .value("low", DoseResponse.band.lowerBound),
                                   yEnd: .value("high", DoseResponse.band.upperBound))
-                        .foregroundStyle(Theme.accent.opacity(0.12))
+                        .foregroundStyle(Theme.accent.opacity(0.10))
                     ForEach(dose.weeks) { week in
                         BarMark(x: .value("Week", week.start, unit: .weekOfYear),
                                 yStart: .value("Sets", 0.0),
@@ -421,13 +421,20 @@ struct TrendsView: View {
                     }
                 }
                 .chartYScale(domain: 0...top)
+                // A little air at both ends so the first and last bars don't
+                // touch the frame; labels under their bars, not at their edges.
+                .chartXScale(range: .plotDimension(padding: 6))
                 .chartXAxis {
                     AxisMarks(values: .stride(by: .weekOfYear, count: 2)) {
-                        AxisValueLabel(format: .dateTime.day().month(.abbreviated))
+                        AxisValueLabel(format: .dateTime.day().month(.abbreviated), centered: true)
                     }
                 }
+                // Lines only where the band's edges are, so the band reads as
+                // one band and not two stripes; the top tick when the data goes past it.
                 .chartYAxis {
-                    AxisMarks(values: .automatic(desiredCount: 4)) {
+                    AxisMarks(values: top > DoseResponse.band.upperBound + 2
+                                  ? [0, DoseResponse.band.lowerBound, DoseResponse.band.upperBound, top.rounded(.down)]
+                                  : [0, DoseResponse.band.lowerBound, DoseResponse.band.upperBound]) {
                         AxisGridLine()
                         AxisValueLabel()
                     }
@@ -436,11 +443,14 @@ struct TrendsView: View {
                 .accessibilityLabel("\(lift) sets a week and \(dose.muscle.rawValue) sets in all, last \(dose.weeks.count) weeks")
                 .accessibilityValue(dose.summary)
 
+                // Short enough to stay on one line beside a long lift name.
                 HStack(spacing: 14) {
                     legendSwatch(Theme.accent, "\(lift)")
                     legendSwatch(Color.secondary.opacity(0.22), "\(dose.muscle.rawValue) in all")
-                    legendSwatch(Theme.accent.opacity(0.14), "\(Int(DoseResponse.band.lowerBound))–\(Int(DoseResponse.band.upperBound)) sets a week")
+                    legendSwatch(Theme.accent.opacity(0.14), "\(Int(DoseResponse.band.lowerBound))–\(Int(DoseResponse.band.upperBound)) band")
                 }
+                .lineLimit(1)
+                .minimumScaleFactor(0.8)
 
                 Text(dose.summary)
                     .font(.footnote)

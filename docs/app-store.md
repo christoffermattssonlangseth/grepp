@@ -55,7 +55,7 @@ already in the repository, then the steps outside it, in order.
 3. Product ▸ **Archive**. Xcode signs with the App Store profile
    automatically; the widget is embedded.
 4. Organizer ▸ Distribute App ▸ **TestFlight & App Store** ▸ Upload. Let Xcode
-   manage signing and symbols.
+   manage signing; leave "Upload your app's symbols" unticked.
 5. Processing takes a few minutes; App Store Connect emails when the build is
    ready. Missing-compliance or missing-manifest warnings come by email too;
    both are already answered in the repository.

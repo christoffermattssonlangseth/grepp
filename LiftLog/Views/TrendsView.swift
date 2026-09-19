@@ -23,6 +23,7 @@ struct TrendsView: View {
     @State private var metric: Analytics.Metric = .topSet
     /// Where a finger is on the chart's x-axis, if it's on it at all.
     @State private var scrub: Date?
+    /// The week under a finger on the work-and-result bars, if any.
     @State private var showingPicker = false
     /// The left edge of the chart's window when the history is long enough
     /// to scroll; the y-axis follows it.
@@ -382,7 +383,8 @@ struct TrendsView: View {
     /// isn't drawn again here: the chart above already is that line.
     private func doseCard(_ dose: DoseResponse) -> some View {
         let lift = Theme.readableName(dose.exercise)
-        let top = max(6, (dose.weeks.map(\.sets).max() ?? 0) + 2)
+        // Headroom for the count printed over each bar.
+        let top = max(6, (dose.weeks.map(\.sets).max() ?? 0) + 3)
         return Panel {
             VStack(alignment: .leading, spacing: 10) {
                 HStack(alignment: .firstTextBaseline) {
@@ -416,6 +418,14 @@ struct TrendsView: View {
                                 width: .ratio(0.45))
                             .foregroundStyle(Theme.accent)
                             .cornerRadius(3)
+                            // The number the bar is about, on the bar.
+                            .annotation(position: .top, spacing: 2) {
+                                if week.liftSets > 0 {
+                                    Text("\(week.liftSets)")
+                                        .font(.caption2.monospacedDigit())
+                                        .foregroundStyle(.secondary)
+                                }
+                            }
                     }
                 }
                 .chartYScale(domain: 0...top)

@@ -385,8 +385,9 @@ struct TrendsView: View {
     /// isn't drawn again here: the chart above already is that line.
     private func doseCard(_ dose: DoseResponse) -> some View {
         let lift = Theme.readableName(dose.exercise)
-        // Headroom for the count printed over each bar.
-        let top = max(6, (dose.weeks.map(\.sets).max() ?? 0) + 3)
+        // Headroom for the count printed over each week's taller bar.
+        let tallest = dose.weeks.map { max($0.sets, Double($0.liftSets)) }.max() ?? 0
+        let top = max(6, tallest + 3)
         return Panel {
             VStack(alignment: .leading, spacing: 10) {
                 HStack(alignment: .firstTextBaseline) {
@@ -422,14 +423,22 @@ struct TrendsView: View {
                             .foregroundStyle(Theme.accent)
                             .cornerRadius(3)
                             .opacity(pickedWeek == nil || pickedWeek?.start == week.start ? 1 : 0.5)
-                            // The number the bar is about, on the bar.
-                            .annotation(position: .top, spacing: 2) {
-                                if week.liftSets > 0 {
+                        // The lift's count, over whichever bar is taller so
+                        // it sits on the panel and not inside the grey bar.
+                        // Its own mark, drawn after both bars, and never
+                        // dropped for being near the top: the domain leaves
+                        // room for it.
+                        if week.liftSets > 0 {
+                            PointMark(x: .value("Week", week.start, unit: .weekOfYear),
+                                      y: .value("Top", max(week.sets, Double(week.liftSets))))
+                                .symbolSize(0)
+                                .annotation(position: .top, spacing: 2,
+                                            overflowResolution: .init(x: .fit(to: .plot), y: .disabled)) {
                                     Text("\(week.liftSets)")
                                         .font(.caption2.monospacedDigit())
                                         .foregroundStyle(.secondary)
                                 }
-                            }
+                        }
                     }
                 }
                 .chartYScale(domain: 0...top)

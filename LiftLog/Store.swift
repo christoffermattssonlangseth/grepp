@@ -327,6 +327,17 @@ final class Store: ObservableObject {
     /// The programme on file, parsed.
     var programme: Programme { Programme.parse(brief.program) }
 
+    /// The targets in the goals file, for lifts the log knows.
+    var targets: [Target] { Targets.parse(brief.goals, lifts: knownExercises) }
+
+    /// Add one target line to the goals file, under a heading when the file
+    /// is empty. The rest of the file is kept as written.
+    func addTarget(_ line: String) async -> CommitResult {
+        let current = brief.goals.trimmingCharacters(in: .whitespacesAndNewlines)
+        let text = current.isEmpty ? "# Goals\n\n\(line)\n" : current + "\n" + line + "\n"
+        return await save(text, to: .goals)
+    }
+
     private func cacheKey(for file: BriefFile) -> String {
         switch file {
         case .coaching: return coachingCacheKey

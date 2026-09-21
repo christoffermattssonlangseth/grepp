@@ -624,7 +624,10 @@ enum CoachContext {
     ```
 
     Write it in their words, short, as Markdown. Put in only what they actually told \
-    you: never invent a target, a date or a number to round the file out. If they \
+    you: never invent a target, a date or a number to round the file out. Give each \
+    lift target its own line with the lift, the number with kg (or reps) and "by" a \
+    date — "- squat 140 kg by 30 Jun 2027" — because Trends reads those lines and \
+    projects the day the lift gets there. If they \
     already have goals in their brief, carry forward the ones still true and drop the \
     ones they've moved on from — this replaces the file, it doesn't append to it.
     """

@@ -40,6 +40,8 @@ struct TrendsView: View {
         var recent: TrendChange?
         var allTime: TrendChange?
         var dose: DoseResponse?
+        /// Every lift's state, for the dots in the picker.
+        var states: [String: DoseResponse.State] = [:]
         var weeks: [Analytics.TrainingWeek] = []
         var weekly: [MuscleMap.Credits] = []
         var unmapped: [String] = []
@@ -117,7 +119,9 @@ struct TrendsView: View {
             .onChange(of: scenePhase) { _, phase in if phase == .active { recompute() } }
             .onReceive(NotificationCenter.default.publisher(for: .NSCalendarDayChanged)) { _ in recompute() }
             .sheet(isPresented: $showingPicker) {
-                ExercisePickerView(history: figures.exercises, library: false) { exercise = $0 }
+                ExercisePickerView(history: figures.exercises, library: false,
+                                   marks: figures.states.compactMapValues(stateColor),
+                                   markNames: figures.states.compactMapValues(stateName)) { exercise = $0 }
             }
         }
     }
@@ -361,9 +365,8 @@ struct TrendsView: View {
                     }
                     .font(.title3.weight(.bold))
                     .animation(.snappy, value: c.delta)
-                    // Accent for up, muted for down. System green/red read as traffic
-                    // lights against steel, and red should mean an error, not a dip.
-                    .foregroundStyle(c.isUp ? Theme.accent : Color.secondary)
+                    // Green for up, muted for down: a dip is not an error.
+                    .foregroundStyle(c.isUp ? Theme.progressing : Color.secondary)
                     if let percent = c.percent {
                         Text(String(format: "%+.0f%%", percent))
                             .font(.footnote).foregroundStyle(.secondary)
@@ -477,6 +480,17 @@ struct TrendsView: View {
                         .minimumScaleFactor(0.7)
                 }
 
+                // The verdict as a colour first, then as the sentence.
+                if let color = stateColor(dose.state), let name = stateName(dose.state) {
+                    HStack(spacing: 6) {
+                        Circle().fill(color).frame(width: 8, height: 8)
+                        Text(name)
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(color)
+                    }
+                    .accessibilityElement(children: .combine)
+                }
+
                 Text(dose.summary)
                     .font(.footnote)
                     .foregroundStyle(.primary)
@@ -494,6 +508,24 @@ struct TrendsView: View {
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
+
+    /// Green for a lift going up, amber for one that has stopped; nothing
+    /// for one too young to say — no colour is the honest colour there.
+    private func stateColor(_ state: DoseResponse.State) -> Color? {
+        switch state {
+        case .progressing: return Theme.progressing
+        case .stalled: return Theme.stalled
+        case .tooEarly: return nil
+        }
+    }
+
+    private func stateName(_ state: DoseResponse.State) -> String? {
+        switch state {
+        case .progressing: return "progressing"
+        case .stalled: return "stalled"
+        case .tooEarly: return nil
         }
     }
 
@@ -738,6 +770,7 @@ struct TrendsView: View {
         f.weeks = Analytics.weekGrid(weeks: 26, in: store.sessions)
         f.weekly = muscleMap.weeklySets(weeks: 6, in: store.sessions)
         f.unmapped = muscleMap.unmapped(in: store.sessions)
+        f.states = DoseResponse.states(for: f.exercises, in: store.sessions, map: muscleMap)
         if !exercise.isEmpty {
             f.metrics = Analytics.availableMetrics(exercise, in: store.sessions)
             let shown = f.metrics.contains(metric) ? metric : (f.metrics.first ?? .topSet)

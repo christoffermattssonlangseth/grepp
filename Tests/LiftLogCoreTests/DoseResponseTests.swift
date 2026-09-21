@@ -73,6 +73,23 @@ final class DoseResponseTests: XCTestCase {
         XCTAssertEqual(own, 3, "the one set on Tuesday does not drag the week's dose down")
     }
 
+    func testStatesColourEveryLiftAtOnceAndSkipTheOnesWithNothingToSay() {
+        let bench = { (kg: Double) in ExerciseEntry(name: "bench-press", sets: [WorkSet(weight: kg, added: nil, reps: 5)]) }
+        let sessions = [
+            day("2026-08-04", squat: 100, extra: [bench(60)]), day("2026-08-11", squat: 102.5, extra: [bench(60)]),
+            day("2026-08-18", squat: 105, extra: [bench(60)]), day("2026-08-25", squat: 107.5, extra: [bench(60)]),
+            Session(date: date("2026-08-27"), exercises: [ExerciseEntry(name: "sled-push", sets: [WorkSet(weight: 80, added: nil, reps: 10)])]),
+        ]
+        let states = DoseResponse.states(for: ["squat", "bench-press", "sled-push", "deadlift"], in: sessions,
+                                         map: MuscleMap(), endingOn: date("2026-09-06"), calendar: utc)
+        XCTAssertEqual(states["squat"], .progressing)
+        XCTAssertEqual(states["bench-press"], .stalled)
+        XCTAssertNil(states["sled-push"], "unmapped: nothing to say")
+        XCTAssertNil(states["deadlift"], "never done")
+        XCTAssertEqual(DoseResponse.make(for: "squat", in: Array(sessions.prefix(2)), map: MuscleMap(),
+                                         endingOn: date("2026-09-06"), calendar: utc)?.state, .tooEarly)
+    }
+
     func testTooEarlyWithUnderThreeWeeksAndNilForUnmappedOrAbsentLifts() {
         let sessions = [day("2026-08-18", squat: 100), day("2026-08-25", squat: 105)]
         XCTAssertEqual(DoseResponse.make(for: "squat", in: sessions, map: MuscleMap(), endingOn: date("2026-09-06"), calendar: utc)?.verdict, .tooEarly)

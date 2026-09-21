@@ -43,8 +43,10 @@ product.
 ## What it does
 
 **Log.** Big number pads. A plate calculator under the weight field, worked out
-from the plates you own and the bar that lift uses. A PR badge when a set beats
-your best. A rest timer that starts on every set and flips the card when you're
+from the plates you own and the bar that lift uses, and a warm-up ramp under
+the lift's plan before the first set lands: the bar for ten, then half, seven
+tenths and eighty-five hundredths of the top set for five, three and one,
+each with its plates a side. A PR badge when a set beats your best. A rest timer that starts on every set and flips the card when you're
 due. Each finished exercise pushes to GitHub on its own. The date is a pill
 in the corner; when it isn't today, a banner says so, and the first set on a
 day you didn't pick asks first, unless the session simply ran past midnight. Got
@@ -123,9 +125,13 @@ memory of the literature and meant to be checked, not trusted.
 
 **Trends.** Two views. *Lift*: a chart per lift (top set, Est. 1RM, or reps
 and added load for bodyweight lifts), four months at a time with the rest a
-flick away; drag along the line to read a session, tap the reading to open
+flick away, record days as green dots; drag along the line to read a session, tap the reading to open
 that day. Under it, change over the last three weeks (counted from today) and
-all time, and **work and result**: the lift's own weekly sets over the last
+all time; a **target** card when goals.md names a number for the lift ("- squat
+140 kg by 30 Jun 2027", in any wording that has the lift, the number and a
+date after "by"), with the day the last twelve weeks' pace reaches it, green
+when that is in time and amber when it isn't or the pace is flat, and a "Set a
+target" button that writes such a line; and **work and result**: the lift's own weekly sets over the last
 eight weeks, the count on each bar, inside every set for its main muscle
 (tap a week for its numbers in one line), and one computed verdict, green
 for progressing and amber for stalled, with a sentence naming the lever —
@@ -147,8 +153,8 @@ Disagree with a share? Deeper in the same screen, every lift's shares can be
 set per muscle, in quarters. No tonnage, on purpose.
 
 **History.** Every day, newest first, by month with older months folded, and
-a search that finds every day of a lift. Sets per muscle under each date, and
-whether it's on Strava. Tap an exercise to edit, swipe to delete or to move
+a search that finds every day of a lift. Sets per muscle under each date, a
+PR badge on any lift that set a record that day, and whether it's on Strava. Tap an exercise to edit, swipe to delete or to move
 it to another day; the date itself is a menu that moves the whole day. A move
 is one commit, and the coach's plan-versus-done record moves with it.
 

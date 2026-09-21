@@ -49,6 +49,21 @@ enum Theme {
     static func readableName(_ raw: String) -> String { Brand.readableName(raw) }
 }
 
+/// "PR" or "REP PR": the same capsule wherever a record is shown — on a set as
+/// it lands, on a lift in today's session, on a day in History.
+struct RecordBadge: View {
+    let record: Analytics.Record
+    var body: some View {
+        Text(record == .load ? "PR" : "REP PR")
+            .font(.caption2.weight(.heavy))
+            .tracking(0.5)
+            .padding(.horizontal, 6).padding(.vertical, 2)
+            .background(Theme.progressing, in: Capsule())
+            .foregroundStyle(.white)
+            .accessibilityLabel(record == .load ? "personal record" : "rep record")
+    }
+}
+
 /// The raised surface — the number pad, the chart, the things you act on.
 struct Card<Content: View>: View {
     @ViewBuilder var content: Content

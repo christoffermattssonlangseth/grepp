@@ -34,6 +34,7 @@ final class TargetsTests: XCTestCase {
         XCTAssertEqual(Targets.date(after: "by", in: "squat 140 kg by 2026-12-24", today: day("2026-09-21"), calendar: utc), day("2026-12-24"))
         XCTAssertEqual(Targets.date(after: "by", in: "squat 140 kg by 1 march", today: day("2026-09-21"), calendar: utc), day("2027-03-01"))
         XCTAssertEqual(Targets.date(after: "by", in: "squat 140 kg by october, then deload", today: day("2026-09-21"), calendar: utc), day("2026-10-31"))
+        XCTAssertEqual(Targets.date(after: "by", in: "squat 140 kg by end of sept", today: day("2026-09-21"), calendar: utc), day("2026-09-30"))
         XCTAssertNil(Targets.date(after: "by", in: "squat 140 kg by christmas", today: day("2026-09-21"), calendar: utc))
     }
 

@@ -79,7 +79,13 @@ enum Targets {
             return day == nil ? endOfMonth(d, calendar) : d
         }
         if let day { return next(month: month, day: day, after: today, calendar: calendar) }
-        return endOfMonth(next(month: month, day: 1, after: today, calendar: calendar), calendar)
+        // A bare month: its end this year while that is still ahead, else next year's.
+        var c = calendar.dateComponents([.year], from: today)
+        c.month = month; c.day = 1
+        let thisYear = endOfMonth(calendar.date(from: c) ?? today, calendar)
+        if thisYear >= calendar.startOfDay(for: today) { return thisYear }
+        c.year = (c.year ?? 0) + 1
+        return endOfMonth(calendar.date(from: c) ?? thisYear, calendar)
     }
 
     private static let monthNames = ["january", "february", "march", "april", "may", "june", "july",

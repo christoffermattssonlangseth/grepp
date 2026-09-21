@@ -80,10 +80,13 @@ final class DoseResponseTests: XCTestCase {
             day("2026-08-18", squat: 105, extra: [bench(60)]), day("2026-08-25", squat: 107.5, extra: [bench(60)]),
             Session(date: date("2026-08-27"), exercises: [ExerciseEntry(name: "sled-push", sets: [WorkSet(weight: 80, added: nil, reps: 10)])]),
         ]
-        let states = DoseResponse.states(for: ["squat", "bench-press", "sled-push", "deadlift"], in: sessions,
-                                         map: MuscleMap(), endingOn: date("2026-09-06"), calendar: utc)
+        let all = DoseResponse.all(for: ["squat", "bench-press", "sled-push", "deadlift"], in: sessions,
+                                   map: MuscleMap(), endingOn: date("2026-09-06"), calendar: utc)
+        let states = all.mapValues(\.state)
         XCTAssertEqual(states["squat"], .progressing)
         XCTAssertEqual(states["bench-press"], .stalled)
+        XCTAssertEqual(all["squat"]?.short, "+7.5 kg")
+        XCTAssertEqual(all["bench-press"]?.short, "flat 3 weeks")
         XCTAssertNil(states["sled-push"], "unmapped: nothing to say")
         XCTAssertNil(states["deadlift"], "never done")
         XCTAssertEqual(DoseResponse.make(for: "squat", in: Array(sessions.prefix(2)), map: MuscleMap(),

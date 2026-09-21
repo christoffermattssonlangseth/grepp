@@ -6,15 +6,43 @@ import Foundation
 /// lift the log knows and a load in kg (or a count of reps), and the date
 /// after "by" is optional. Nothing is written back for it to work.
 struct Target: Equatable {
+    /// What the number is a number of: a top set in kg, an estimated one-rep
+    /// max in kg, or reps. "1RM" anywhere on the line, or in the heading
+    /// over it, makes it a max; a count of reps is a count of reps.
+    enum Kind: Equatable {
+        case topSet, oneRepMax, reps
+
+        var metric: Analytics.Metric {
+            switch self {
+            case .topSet: return .topSet
+            case .oneRepMax: return .oneRepMax
+            case .reps: return .maxReps
+            }
+        }
+        var unit: String { self == .reps ? "reps" : "kg" }
+        /// "top set", "est. 1RM", "reps" — how the card names the number.
+        var label: String {
+            switch self {
+            case .topSet: return "top set"
+            case .oneRepMax: return "est. 1RM"
+            case .reps: return "reps"
+            }
+        }
+    }
+
     /// The canonical lift name.
     let lift: String
     let value: Double
-    /// True when the number is a rep count, not a load.
-    let isReps: Bool
+    let kind: Kind
     /// The day it is wanted by, if the line says.
     let by: Date?
     /// The line as written.
     let line: String
+
+    var isReps: Bool { kind == .reps }
+
+    /// "140 kg" / "12 reps".
+    var amount: String { kind == .reps ? "\(Int(value)) reps" : "\(WorkSet.formatWeight(value)) kg" }
 }
 
 enum Targets {
@@ -26,19 +54,30 @@ enum Targets {
     /// "by", "before", "until" or "till" ahead of the date.
     static func parse(_ goals: String, lifts: [String], today: Date = Date(),
                       calendar: Calendar = .current) -> [Target] {
-        // Longest names first, so "romanian deadlift" is not read as "deadlift".
-        let known = Dictionary(grouping: lifts) { MuscleMap.canonical($0) }
-            .keys.sorted { $0.count != $1.count ? $0.count > $1.count : $0 < $1 }
+        // Every name a known lift goes by — its own and its aliases, so
+        // "bench" is bench-press — longest first, so "romanian deadlift" is
+        // not read as "deadlift".
+        let canonicals = Set(lifts.map { MuscleMap.canonical($0) })
+        var names: [(words: String, lift: String)] = canonicals.map { ($0.replacingOccurrences(of: "-", with: " "), $0) }
+        for (alias, target) in MuscleMap.aliases where canonicals.contains(target) {
+            names.append((alias.replacingOccurrences(of: "-", with: " "), target))
+        }
+        for name in lifts where canonicals.contains(MuscleMap.canonical(name)) {
+            names.append((MuscleMap.key(name).replacingOccurrences(of: "-", with: " "), MuscleMap.canonical(name)))
+        }
+        names.sort { $0.words.count != $1.words.count ? $0.words.count > $1.words.count : $0.words < $1.words }
         func lift(in text: String) -> String? {
             // Words only, so "squat:" and "(bench)" are the lifts they name.
             let words = MuscleMap.key(text).map { $0.isLetter || $0.isNumber ? $0 : " " }
             let flat = " " + String(words).split(separator: " ").joined(separator: " ") + " "
-            return known.first { flat.contains(" " + $0.replacingOccurrences(of: "-", with: " ") + " ") }
+            return names.first { flat.contains(" " + $0.words + " ") }?.lift
         }
 
         var out: [Target] = []
         var seen = Set<String>()
         var heading: String?
+        // "## 1RM goals": every line under it is a max until the next heading.
+        var sectionIsMax = false
         for rawLine in goals.split(separator: "\n") {
             let line = rawLine.trimmingCharacters(in: .whitespaces)
             guard !line.isEmpty else { continue }
@@ -47,8 +86,9 @@ enum Targets {
                 .trimmingCharacters(in: CharacterSet(charactersIn: "*: "))
             if isHeading {
                 // "## Squat" names the lift for the lines under it; any other
-                // heading ends that.
+                // heading ends that. "## 1RM goals" makes the section maxes.
                 heading = lift(in: text)
+                sectionIsMax = isMax(text)
                 continue
             }
             // "Squat 140 kg and bench 100 kg by June": one date for the line,
@@ -57,21 +97,29 @@ enum Targets {
             let lineLift = lift(in: text)
             let clauses = split(text, on: clauseBreak)
             let liftsInLine = Set(clauses.compactMap(lift(in:)))
-            for clause in clauses where !clause.isEmpty {
-                // "Currently 120" is where they are, not where they're going.
-                if clause.range(of: #"\b(currently|now|today|at the moment|was|last)\b"#, options: .regularExpression) != nil { continue }
-                let name = lift(in: clause) ?? (liftsInLine.count <= 1 ? lineLift : nil) ?? heading
+            for whole in clauses where !whole.isEmpty {
+                // "Currently 120" is where they are, not where they're going:
+                // that and everything after it is cut before the number is read.
+                let clause = whole.replacingOccurrences(of: #"\b(currently|now|today|at the moment|was|last)\b.*$"#, with: "", options: .regularExpression)
+                let name = lift(in: whole) ?? (liftsInLine.count <= 1 ? lineLift : nil) ?? heading
                 guard let name, !seen.contains(name), let number = number(in: clause) else { continue }
                 seen.insert(name)
                 // A clause with its own "by" keeps its own date, readable or
                 // not; one without borrows the sentence's.
                 let ownDate = clause.range(of: #"\b(by|before|until|till)\b"#, options: .regularExpression) != nil
-                out.append(Target(lift: name, value: number.value, isReps: number.isReps,
+                let kind: Target.Kind = number.isReps ? .reps
+                    : (sectionIsMax || isMax(clause) || isMax(text)) ? .oneRepMax : .topSet
+                out.append(Target(lift: name, value: number.value, kind: kind,
                                   by: ownDate ? date(in: clause, today: today, calendar: calendar) : lineDate,
                                   line: line))
             }
         }
         return out
+    }
+
+    /// "1RM", "1 RM", "e1RM", "one rep max", "1-rep max", "one-rep maximum".
+    static func isMax(_ text: String) -> Bool {
+        text.range(of: #"\b(e?1\s*-?\s*rm|(one|1)[\s-]*rep[\s-]*max(imum)?)\b"#, options: [.regularExpression, .caseInsensitive]) != nil
     }
 
     private static let clauseBreak = try! NSRegularExpression(pattern: #"\s*(?:[;,]|\band\b|&|\.\s|\.$)\s*"#)
@@ -88,22 +136,37 @@ enum Targets {
         return pieces.map { $0.trimmingCharacters(in: .whitespaces) }
     }
 
-    /// "140 kg", "140kg", "12 reps"; failing that, a bare number that reads
-    /// as a load — 10 to 500, not part of a 3x5 scheme, not a year, not a
-    /// percentage or a count of weeks.
+    /// The load the line is about. Every "140 kg", "140kg" or "12 reps" on
+    /// it, less the increments — "+5 kg", "add 5 kg", "5 kg a month", "2.5 kg
+    /// more" — and of what is left the largest, since a goal outweighs the
+    /// steps to it. Failing that, a bare number that reads as a load: 10 to
+    /// 500, not part of a 3x5 scheme, not a year, not a percentage or a
+    /// count of weeks.
     static func number(in text: String) -> (value: Double, isReps: Bool)? {
-        if let match = text.range(of: #"(\d+(?:[.,]\d+)?)\s*(kg|kilos?|reps?)\b"#, options: .regularExpression) {
-            let piece = String(text[match])
-            let digits = piece.prefix { "0123456789.,".contains($0) }.replacingOccurrences(of: ",", with: ".")
-            guard let value = Double(digits) else { return nil }
-            return (value, piece.hasSuffix("rep") || piece.hasSuffix("reps"))
+        let ns = text as NSString
+        var best: (value: Double, isReps: Bool)?
+        for m in unitNumber.matches(in: text, range: NSRange(location: 0, length: ns.length)) {
+            let before = ns.substring(to: m.range.location).lowercased()
+            let after = ns.substring(from: m.range.location + m.range.length).lowercased()
+            if before.range(of: #"(\+|\b(add|adding|another|plus|up|increase|increasing)\s*)\s*$"#, options: .regularExpression) != nil { continue }
+            if after.range(of: #"^\s*(more|(per|a|an|each|every)\s+(week|month|session|workout|fortnight))\b"#, options: .regularExpression) != nil { continue }
+            let digits = ns.substring(with: m.range(at: 1)).replacingOccurrences(of: ",", with: ".")
+            guard let value = Double(digits) else { continue }
+            let unit = ns.substring(with: m.range(at: 2)).lowercased()
+            let isReps = unit.hasPrefix("rep")
+            if best == nil || (isReps == best!.isReps && value > best!.value) || (!isReps && best!.isReps) {
+                best = (value, isReps)
+            }
         }
+        if let best { return best }
         guard let match = text.range(of: #"(?<![\dx.,])(\d+(?:[.,]\d+)?)(?![\dx.,]|\s*(?:%|x|weeks?|days?|months?|sets?|rm\b))"#,
                                      options: .regularExpression) else { return nil }
         let digits = String(text[match]).replacingOccurrences(of: ",", with: ".")
         guard let value = Double(digits), value >= 10, value <= 500 else { return nil }
         return (value, false)
     }
+
+    private static let unitNumber = try! NSRegularExpression(pattern: #"(\d+(?:[.,]\d+)?)\s*(kg|kilos?|reps?)\b"#, options: .caseInsensitive)
 
     /// The date after "by", "before", "until" or "till", whichever comes.
     static func date(in text: String, today: Date, calendar: Calendar) -> Date? {
@@ -174,12 +237,12 @@ enum Targets {
         return calendar.date(from: c) ?? thisYear
     }
 
-    /// "- bench press 100 kg by 1 Dec 2026" — the line the app writes when a
-    /// target is set from Trends, in the shape it reads.
-    static func line(lift: String, value: Double, isReps: Bool, by: Date?) -> String {
+    /// "- bench press 100 kg by 1 Dec 2026", "- squat 1RM 140 kg by …" — the
+    /// line the app writes when a target is set from Trends, in the shape it reads.
+    static func line(lift: String, value: Double, kind: Target.Kind, by: Date?) -> String {
         let name = lift.replacingOccurrences(of: "-", with: " ")
-        let amount = isReps ? "\(Int(value)) reps" : "\(WorkSet.formatWeight(value)) kg"
-        var text = "- \(name) \(amount)"
+        let amount = kind == .reps ? "\(Int(value)) reps" : "\(WorkSet.formatWeight(value)) kg"
+        var text = kind == .oneRepMax ? "- \(name) 1RM \(amount)" : "- \(name) \(amount)"
         if let by {
             let f = DateFormatter()
             f.locale = Locale(identifier: "en_US_POSIX")

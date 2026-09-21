@@ -524,6 +524,22 @@ struct LogView: View {
                     }
                     .font(.footnote.weight(.semibold)).foregroundStyle(.secondary)
                 }
+                // The way up to the first working set, from the plan's top
+                // set or the weight in the field, with plates a side in
+                // brackets. Only before the first set lands: once the lift is
+                // under way the warm-up is behind you.
+                if sets.isEmpty, !isBodyweight, let top = plan?.first?.weight ?? parsedWeight,
+                   let rungs = WarmUp.ramp(to: top, bar: effectiveBar, inventory: inventory) {
+                    Label {
+                        Text("warm-up  " + WarmUp.line(rungs, bar: effectiveBar))
+                            .font(.system(.footnote, design: .monospaced).weight(.semibold))
+                            .fixedSize(horizontal: false, vertical: true)
+                    } icon: {
+                        Image(systemName: "flame")
+                    }
+                    .font(.footnote.weight(.semibold)).foregroundStyle(.secondary)
+                    .accessibilityLabel("warm-up: " + WarmUp.line(rungs, bar: effectiveBar))
+                }
             }
         }
     }

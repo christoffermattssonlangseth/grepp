@@ -12,6 +12,9 @@ struct SettingsView: View {
     /// Strava off means none of it: no post button, no marks in History, no
     /// backfill — the connection and keys are kept for when it comes back.
     @AppStorage(Prefs.stravaEnabled) private var stravaEnabled = true
+    @AppStorage(Prefs.healthEnabled) private var healthEnabled = false
+    /// Bumped after Health answers, so the caption below the switch follows.
+    @State private var healthAsked = 0
     @State private var stravaError: String?
     @State private var stravaID = ""
     @State private var stravaSecret = ""
@@ -179,6 +182,20 @@ struct SettingsView: View {
                     """)
                         .font(.caption)
                         .foregroundStyle(.secondary)
+                }
+                .listRowBackground(Rectangle().fill(.regularMaterial))
+
+                Section("Apple Health") {
+                    Toggle("Save sessions to Health", isOn: $healthEnabled)
+                        .disabled(!HealthWriter.isAvailable)
+                        .onChange(of: healthEnabled) { _, on in
+                            guard on else { return }
+                            Task { _ = await HealthWriter.requestAccess(); healthAsked += 1 }
+                        }
+                    Text(healthCaption)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .id(healthAsked)
                 }
                 .listRowBackground(Rectangle().fill(.regularMaterial))
 
@@ -417,6 +434,14 @@ struct SettingsView: View {
             get: { inventory.counts[size] ?? 0 },
             set: { inventory.counts[size] = $0 }
         )
+    }
+
+    private var healthCaption: String {
+        if !HealthWriter.isAvailable { return "Health isn't available on this device." }
+        if healthEnabled && HealthWriter.status == .sharingDenied {
+            return "Health said no. Allow Grepp to write workouts under the Health app ▸ Sharing ▸ Apps, and it starts with the next lift."
+        }
+        return "Each day's lifting is saved as one strength-training workout, from the first set to the last lift finished, so it counts in Fitness. Nothing is read from Health."
     }
 
     private func labeled(_ label: String, text: Binding<String>, placeholder: String) -> some View {

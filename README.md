@@ -172,6 +172,11 @@ is one commit, and the coach's plan-versus-done record moves with it.
 **Widget.** *Last session* on the home screen: how long ago, the lifts and
 their sets, and **Up next** when a session is loaded and not yet lifted.
 
+**Apple Health.** Off until switched on in Settings ▸ Apple Health. On, each
+day's lifting is saved as one strength-training workout, from the first set
+to the last lift finished, so it counts in Fitness; a day that grows replaces
+its workout rather than adding one. Nothing is read from Health.
+
 **Strava.** A **Post to Strava** button under today's session. The day goes up
 as a Weight Training activity named after its lifts, the log lines in the
 description with a "Tracked with Grepp" sign-off, and the length from your

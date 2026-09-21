@@ -5,6 +5,11 @@
 	<!-- Only TLS to services the lifter chose: exempt, so no export questionnaire per upload. -->
 	<key>ITSAppUsesNonExemptEncryption</key>
 	<false/>
+	<!-- Workouts are written, never read; both strings because the dialog shows both. -->
+	<key>NSHealthUpdateUsageDescription</key>
+	<string>Grepp saves each lifting session as a workout, so it counts in Fitness. It reads nothing from Health.</string>
+	<key>NSHealthShareUsageDescription</key>
+	<string>Grepp does not read anything from Health.</string>
 	<key>NSUbiquitousContainers</key>
 	<dict>
 		<key>iCloud.CML.LiftLog</key>

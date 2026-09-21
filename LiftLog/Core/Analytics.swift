@@ -85,6 +85,21 @@ enum Analytics {
         var sets: Int { days.compactMap { $0?.sets }.reduce(0, +) }
     }
 
+    /// Weeks in a row, up to now, with at least `minimum` sessions in each.
+    /// The week in progress counts once it qualifies; until then the run is
+    /// read from the week before it, so a Monday doesn't break a streak.
+    static func streak(_ weeks: [TrainingWeek], minimum: Int) -> Int {
+        guard minimum > 0, !weeks.isEmpty else { return 0 }
+        var run = weeks
+        if let last = run.last, last.sessions < minimum { run.removeLast() }
+        var n = 0
+        for week in run.reversed() {
+            guard week.sessions >= minimum else { break }
+            n += 1
+        }
+        return n
+    }
+
     /// The last `weeks` weeks ending on `today`'s week, oldest first, each
     /// aligned Monday to Sunday. Days are matched on the log's own date key so
     /// a session logged as 2026-09-04 lands on 4 September wherever the phone is.

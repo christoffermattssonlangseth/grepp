@@ -94,7 +94,9 @@ equipment), and writes `program.md`: days under headings, one lift per line
 with its set scheme and progression rule, no loads. Save it, and from then on
 "what should I do today" is that programme's next day with loads from your
 log, and the Programme screen in the Coach toolbar lists the days with a
-button each. The design rules it follows are the usual evidence-based ones
+button each, under a line on how the last four weeks went against the file:
+programme days done, sessions that were none of its days, and the lifts left
+out of their day most often. The design rules it follows are the usual evidence-based ones
 (hard sets per muscle per week, two exposures, 1–3 reps in reserve, reactive
 deloads), stated as defaults your evidence brief overrides; Liftosaur's
 programme-design guide was the checklist for what to cover.
@@ -136,15 +138,22 @@ eight weeks, the count on each bar, inside every set for its main muscle
 (tap a week for its numbers in one line), and one computed verdict, green
 for progressing and amber for stalled, with a sentence naming the lever —
 flat at low volume means add sets, flat inside or above the band means
-volume isn't it. Under it, **your lifts**: one line per lift with its dot,
+volume isn't it, and, on a stalled lift, **Load next step** puts the last
+session with that one change into the Log tab: one more set under the band,
+one more rep on the top set inside it, a tenth off every set above it. Under
+it, **your lifts**: one line per lift with its dot,
 what it moved by or how long it has stood, stalled ones first; tap one to
 show it. The lift picker carries the same dots. One tap sends that
 sentence and the eight weeks to the coach as a question, and the coach's
 digest carries the same sentence, so the tab and the chat agree on a stall.
 "Bench", "Bench press" and "bench-press" are one lift everywhere. Est. 1RM is
 Epley, trusted to twelve reps and no further.
-*Volume*: a training-days grid, Monday to Sunday, and sets per muscle for the
-week as bars against a 10–20 band with the four-week average marked. A
+*Volume*: a training-days grid, Monday to Sunday, with the weeks in a row
+you've hit the programme's days (two a week without one); sets per muscle for
+the week as bars against a 10–20 band with the four-week average marked; and
+**balance**, push against pull and quads against hamstrings as sets a week
+over the four weeks before, a split bar each, even when the smaller side has
+seven tenths of the larger and named when it hasn't. A
 compound counts fully for what it's a lift for and half for each muscle that
 also works (bench is chest, half triceps, half front delts; an overhead press
 is front and side delts both, half triceps), every logged set is a working

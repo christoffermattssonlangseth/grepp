@@ -38,6 +38,42 @@ struct ProgrammeView: View {
         let due = programme.dueDayIndex(in: store.sessions)
 
         return List {
+            // How the last four weeks went against the file, before the file.
+            if let a = programme.adherence(in: store.sessions) {
+                Section {
+                    VStack(alignment: .leading, spacing: 4) {
+                        HStack(alignment: .firstTextBaseline) {
+                            Text("\(a.daysDone) programme \(a.daysDone == 1 ? "day" : "days")")
+                                .font(.subheadline.weight(.bold))
+                            Text(String(format: "· %.1f a week", a.perWeek))
+                                .font(.subheadline).foregroundStyle(.secondary).monospacedDigit()
+                            Spacer()
+                            Text("last \(a.weeks) weeks").font(.caption2).foregroundStyle(.tertiary)
+                        }
+                        if a.other > 0 {
+                            Text("\(a.other) \(a.other == 1 ? "session" : "sessions") that \(a.other == 1 ? "wasn't" : "weren't") a programme day.")
+                                .font(.caption).foregroundStyle(.secondary)
+                        }
+                        if a.skipped.isEmpty {
+                            if a.daysDone > 0 {
+                                Text("Every lift on every day done.").font(.caption).foregroundStyle(Theme.progressing)
+                            }
+                        } else {
+                            Text("Skipped most: " + a.skipped.prefix(3).map {
+                                "\(Theme.readableName($0.name)) \($0.missed) of \($0.due)"
+                            }.joined(separator: " · "))
+                                .font(.caption).foregroundStyle(Theme.stalled)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                    }
+                    .listRowBackground(
+                        RoundedRectangle(cornerRadius: 12, style: .continuous)
+                            .fill(.regularMaterial)
+                            .padding(.vertical, 2)
+                    )
+                    .accessibilityElement(children: .combine)
+                }
+            }
             // By position: an upper/lower programme has two days called Upper.
             ForEach(Array(programme.days.enumerated()), id: \.offset) { index, day in
                 Section {

@@ -91,6 +91,7 @@ struct TrendsView: View {
                         case .volume:
                             weeksCard
                             musclesCard
+                            balanceCard
                         }
                     }
                     .padding()
@@ -598,14 +599,39 @@ struct TrendsView: View {
                     .fixedSize(horizontal: false, vertical: true)
 
                 if dose.verdict != .tooEarly {
-                    Button {
-                        store.requestCoach(dose.coachQuestion())
-                    } label: {
-                        Label("Ask the coach about this", systemImage: "bubble.left.and.text.bubble.right")
-                            .font(.footnote.weight(.semibold))
+                    // The advice as a session: the last one with the one
+                    // change the verdict asks for, straight into the Log.
+                    HStack(spacing: 8) {
+                        if let step = dose.nextStep(in: store.sessions) {
+                            Button {
+                                store.requestLog([step.entry])
+                            } label: {
+                                Label("Load next step: \(step.label)", systemImage: "arrow.down.to.line")
+                                    .font(.footnote.weight(.semibold))
+                                    .lineLimit(1)
+                                    .minimumScaleFactor(0.8)
+                            }
+                            .buttonStyle(.borderedProminent)
+                            .controlSize(.small)
+                            .tint(Theme.accent)
+                            .accessibilityHint(step.entry.sets.map(\.token).joined(separator: " "))
+                        }
+                        Button {
+                            store.requestCoach(dose.coachQuestion())
+                        } label: {
+                            Label("Ask the coach", systemImage: "bubble.left.and.text.bubble.right")
+                                .font(.footnote.weight(.semibold))
+                        }
+                        .buttonStyle(.bordered)
+                        .controlSize(.small)
                     }
-                    .buttonStyle(.bordered)
-                    .controlSize(.small)
+                    if let step = dose.nextStep(in: store.sessions) {
+                        Text("next: " + step.entry.sets.map(\.token).joined(separator: "  "))
+                            .font(.system(.caption2, design: .monospaced))
+                            .foregroundStyle(.tertiary)
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.7)
+                    }
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -708,11 +734,27 @@ struct TrendsView: View {
         let perWeek = lastFour.isEmpty ? 0 : Double(lastFour.map(\.sessions).reduce(0, +)) / Double(lastFour.count)
         let setsPerWeek = lastFour.isEmpty ? 0 : Double(lastFour.map(\.sets).reduce(0, +)) / Double(lastFour.count)
         let count = featured?.sessions ?? 0
+        // Showing up as planned: the programme's days a week when there is
+        // one, else two. The grid is 26 weeks long, so a run that fills it
+        // reads as 26 or more.
+        let minimum = max(1, min(7, store.programme.days.isEmpty ? 2 : store.programme.days.count))
+        let streak = Analytics.streak(weeks, minimum: minimum)
 
         return Panel {
             VStack(alignment: .leading, spacing: 12) {
-                Text("training days")
-                    .font(.caption).foregroundStyle(.secondary)
+                HStack(alignment: .firstTextBaseline) {
+                    Text("training days")
+                        .font(.caption).foregroundStyle(.secondary)
+                    Spacer()
+                    if streak > 0 {
+                        Text("\(streak == weeks.count ? "\(streak)+" : "\(streak)") \(streak == 1 ? "week" : "weeks") in a row · \(minimum)+ a week")
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(streak >= 4 ? Theme.progressing : Color.secondary)
+                            .monospacedDigit()
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.8)
+                    }
+                }
                 TrainingGrid(weeks: weeks)
                 HStack(alignment: .firstTextBaseline) {
                     VStack(alignment: .leading, spacing: 2) {
@@ -787,6 +829,62 @@ struct TrendsView: View {
                 if !unmapped.isEmpty {
                     Text("not counted: " + unmapped.map { Theme.readableName($0) }.joined(separator: ", ")
                          + " — assign in Settings ▸ Muscles")
+                        .font(.caption2).foregroundStyle(.tertiary)
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
+
+    // MARK: - Balance
+
+    /// Push against pull, quads against hamstrings, as sets a week over the
+    /// four weeks before the one shown. A split bar and a verdict: even, or
+    /// which side is short.
+    private var balanceCard: some View {
+        let pick = weekToShow(figures.weekly) { $0.values.reduce(0, +) == 0 }
+        let pairs = Balance.pairs(over: pick.previous)
+        return Panel {
+            VStack(alignment: .leading, spacing: 12) {
+                HStack(alignment: .firstTextBaseline) {
+                    Text("balance").font(.caption).foregroundStyle(.secondary)
+                    Spacer()
+                    Text("previous 4 weeks, sets a week").font(.caption2).foregroundStyle(.tertiary)
+                }
+                if pairs.isEmpty {
+                    Text("A few weeks of sets per muscle first.").font(.footnote).foregroundStyle(.secondary)
+                } else {
+                    ForEach(pairs) { pair in
+                        let short = pair.short
+                        let readable = pair.a.sets + pair.b.sets >= Balance.Pair.minimum
+                        VStack(alignment: .leading, spacing: 4) {
+                            HStack {
+                                Text("\(pair.a.name) \(String(format: "%.0f", pair.a.sets))")
+                                    .font(.caption.weight(.semibold)).monospacedDigit()
+                                Spacer()
+                                Text(pair.verdict)
+                                    .font(.caption)
+                                    .foregroundStyle(!readable ? Color.secondary : (short == nil ? Theme.progressing : Theme.stalled))
+                                Spacer()
+                                Text("\(String(format: "%.0f", pair.b.sets)) \(pair.b.name)")
+                                    .font(.caption.weight(.semibold)).monospacedDigit()
+                            }
+                            GeometryReader { geo in
+                                let total = max(1, pair.a.sets + pair.b.sets)
+                                HStack(spacing: 2) {
+                                    RoundedRectangle(cornerRadius: 3)
+                                        .fill(short?.name == pair.a.name ? Theme.stalled : Theme.accent)
+                                        .frame(width: max(2, geo.size.width * pair.a.sets / total - 1))
+                                    RoundedRectangle(cornerRadius: 3)
+                                        .fill(short?.name == pair.b.name ? Theme.stalled : Color.secondary.opacity(0.35))
+                                }
+                            }
+                            .frame(height: 8)
+                        }
+                        .accessibilityElement(children: .ignore)
+                        .accessibilityLabel("\(pair.a.name) \(String(format: "%.0f", pair.a.sets)) sets a week, \(pair.b.name) \(String(format: "%.0f", pair.b.sets)), \(pair.verdict)")
+                    }
+                    Text("Even means the smaller side has at least seven tenths of the larger.")
                         .font(.caption2).foregroundStyle(.tertiary)
                 }
             }

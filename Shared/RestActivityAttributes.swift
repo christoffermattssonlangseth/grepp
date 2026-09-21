@@ -8,7 +8,7 @@ import Foundation
 /// straight on from one lift's last set into the next lift's first. Keeping
 /// the exercise in the state means one activity is updated all session long
 /// rather than ended and re-requested at every change of bar.
-struct RestActivityAttributes: ActivityAttributes {
+nonisolated struct RestActivityAttributes: ActivityAttributes {
     struct ContentState: Codable, Hashable {
         /// The lift being rested from, already made readable ("seal row").
         var exercise: String

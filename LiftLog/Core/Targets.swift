@@ -53,45 +53,43 @@ enum Targets {
         return nil
     }
 
-    /// The date after "by": 2026-12-01, 1 Dec 2026, 1 December, December,
+    /// The date after "by": 2026-12-01, 1 Dec 2026, 1 December, December.
     /// Christmas is not a date. A month alone means the end of its next
     /// occurrence; a day and month without a year, its next occurrence.
+    /// Month names are read here, not by a formatter, so a bare month or an
+    /// odd order parses the same on every locale.
     static func date(after word: String, in text: String, today: Date, calendar: Calendar) -> Date? {
         guard let range = text.range(of: #"\b"# + word + #"\s+([a-z0-9 .\-/]+?)(?:[,;.]|$)"#, options: .regularExpression) else { return nil }
         var phrase = String(text[range]).dropFirst(word.count).trimmingCharacters(in: .whitespaces)
         if phrase.hasSuffix(".") { phrase.removeLast() }
         phrase = phrase.trimmingCharacters(in: .whitespaces)
         if let iso = Session.dateFormatter.date(from: phrase) { return iso }
-        // The line was lowercased to find the lift; month names go back to
-        // their case for the formatter.
-        phrase = phrase.split(separator: " ").map { $0.prefix(1).uppercased() + $0.dropFirst() }.joined(separator: " ")
 
-        let f = DateFormatter()
-        f.locale = Locale(identifier: "en_US_POSIX")
-        f.calendar = calendar
-        f.timeZone = calendar.timeZone
-        for format in ["d MMMM yyyy", "d MMM yyyy", "MMMM d yyyy", "MMM d yyyy", "MMMM yyyy", "MMM yyyy"] {
-            f.dateFormat = format
-            if let d = f.date(from: phrase) {
-                return format.hasPrefix("d") || format.contains(" d ") ? d : endOfMonth(d, calendar) }
+        var day: Int?, month: Int?, year: Int?
+        for token in phrase.split(separator: " ").map(String.init) {
+            if let m = monthIndex(token) { month = m; continue }
+            // "end of june", "mid march": the words around a month are let by.
+            let digits = token.prefix { $0.isNumber }
+            guard !digits.isEmpty, let n = Int(digits) else { continue }
+            if n > 31 { year = n } else { day = n }
         }
-        // No year: the next time that day or month comes round.
-        for format in ["d MMMM", "d MMM", "MMMM d", "MMM d"] {
-            f.dateFormat = format
-            if let d = f.date(from: phrase) {
-                let c = calendar.dateComponents([.month, .day], from: d)
-                return next(month: c.month ?? 1, day: c.day ?? 1, after: today, calendar: calendar)
-            }
+        guard let month else { return nil }
+        if let year {
+            guard let d = calendar.date(from: DateComponents(year: year, month: month, day: day ?? 1)) else { return nil }
+            return day == nil ? endOfMonth(d, calendar) : d
         }
-        for format in ["MMMM", "MMM"] {
-            f.dateFormat = format
-            if let d = f.date(from: phrase) {
-                let month = calendar.component(.month, from: d)
-                let first = next(month: month, day: 1, after: today, calendar: calendar)
-                return endOfMonth(first, calendar)
-            }
-        }
-        return nil
+        if let day { return next(month: month, day: day, after: today, calendar: calendar) }
+        return endOfMonth(next(month: month, day: 1, after: today, calendar: calendar), calendar)
+    }
+
+    private static let monthNames = ["january", "february", "march", "april", "may", "june", "july",
+                                     "august", "september", "october", "november", "december"]
+
+    /// "december", "dec", "sept" → 12, 12, 9.
+    private static func monthIndex(_ token: String) -> Int? {
+        let word = token.lowercased().filter(\.isLetter)
+        guard word.count >= 3 else { return nil }
+        return monthNames.firstIndex { $0.hasPrefix(word) || (word.count >= 4 && word.hasPrefix($0.prefix(4))) }.map { $0 + 1 }
     }
 
     private static func endOfMonth(_ d: Date, _ calendar: Calendar) -> Date {

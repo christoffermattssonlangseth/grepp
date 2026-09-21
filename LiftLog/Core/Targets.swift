@@ -63,8 +63,11 @@ enum Targets {
                 let name = lift(in: clause) ?? (liftsInLine.count <= 1 ? lineLift : nil) ?? heading
                 guard let name, !seen.contains(name), let number = number(in: clause) else { continue }
                 seen.insert(name)
+                // A clause with its own "by" keeps its own date, readable or
+                // not; one without borrows the sentence's.
+                let ownDate = clause.range(of: #"\b(by|before|until|till)\b"#, options: .regularExpression) != nil
                 out.append(Target(lift: name, value: number.value, isReps: number.isReps,
-                                  by: date(in: clause, today: today, calendar: calendar) ?? lineDate,
+                                  by: ownDate ? date(in: clause, today: today, calendar: calendar) : lineDate,
                                   line: line))
             }
         }

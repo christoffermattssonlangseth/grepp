@@ -2,8 +2,9 @@ import SwiftUI
 import Charts
 import Combine
 
-/// Per-lift progression: a chart over time plus short- and long-term change.
-/// Generic and lift-focused — no personal goals or targets.
+/// Per-lift progression: a chart over time, short- and long-term change,
+/// and, for a lift with a target in goals.md, the day it gets there at this
+/// pace.
 struct TrendsView: View {
     @EnvironmentObject var store: Store
     @Environment(\.dynamicTypeSize) private var typeSize
@@ -26,6 +27,7 @@ struct TrendsView: View {
     @State private var weekScrub: Date?
     /// The week under a finger on the work-and-result bars, if any.
     @State private var showingPicker = false
+    @State private var settingTarget = false
     /// The left edge of the chart's window when the history is long enough
     /// to scroll; the y-axis follows it.
     @State private var scrollX: Date = .distantPast
@@ -39,6 +41,9 @@ struct TrendsView: View {
         var series: [TrendPoint] = []
         var recent: TrendChange?
         var allTime: TrendChange?
+        /// The lift's target from goals.md, and where the trend says it lands.
+        var target: Target?
+        var projection: Projection?
         var dose: DoseResponse?
         /// Every lift read at once, for the list and the dots in the picker.
         var all: [String: DoseResponse] = [:]
@@ -78,6 +83,7 @@ struct TrendsView: View {
                             if figures.metrics.count > 1 { metricPicker }
                             chartCard
                             statsRow
+                            targetCard
                             if let dose = figures.dose {
                                 doseCard(dose)
                             }
@@ -114,11 +120,16 @@ struct TrendsView: View {
                 recompute()
             }
             .onChange(of: muscleMap) { _, _ in recompute() }
+            .onChange(of: store.brief.goals) { _, _ in recompute() }
             .onChange(of: mode) { _, _ in scrub = nil }
             // Every number here is relative to today: coming back after a
             // night, or sitting here past midnight, must not show yesterday's.
             .onChange(of: scenePhase) { _, phase in if phase == .active { recompute() } }
             .onReceive(NotificationCenter.default.publisher(for: .NSCalendarDayChanged)) { _ in recompute() }
+            .sheet(isPresented: $settingTarget) {
+                TargetSheet(lift: exercise, isReps: figures.metrics == [.maxReps],
+                            current: figures.series.last?.value)
+            }
             .sheet(isPresented: $showingPicker) {
                 ExercisePickerView(history: figures.exercises, library: false,
                                    marks: figures.all.compactMapValues { stateColor($0.state) },
@@ -342,6 +353,85 @@ struct TrendsView: View {
         return "\(metric.rawValue) over \(series.count) sessions from \(from) to \(to), " +
             "from \(WorkSet.formatWeight(first.value)) to \(WorkSet.formatWeight(last.value)) \(metric.unit)" +
             (records > 0 ? ", \(records) \(records == 1 ? "record" : "records")" : "")
+    }
+
+    // MARK: - Target
+
+    /// The target for this lift out of goals.md and the day the trend says
+    /// it lands: green when that is before the date asked for, or there is
+    /// none; amber when the pace is flat or the date has slipped past. With
+    /// no target, one button to set one, which writes a line to goals.md.
+    private var targetCard: some View {
+        Panel {
+            if let target = figures.target {
+                let unit = target.isReps ? "reps" : "kg"
+                let wanted = (target.isReps ? String(Int(target.value)) : WorkSet.formatWeight(target.value)) + " " + unit
+                let color = targetColor(target, figures.projection)
+                VStack(alignment: .leading, spacing: 4) {
+                    HStack(alignment: .firstTextBaseline) {
+                        Text("target").font(.caption).foregroundStyle(.secondary)
+                        Spacer()
+                        if let by = target.by {
+                            Text("by \(by, format: .dateTime.day().month(.abbreviated).year())")
+                                .font(.caption2).foregroundStyle(.tertiary)
+                        }
+                    }
+                    HStack(spacing: 6) {
+                        Circle().fill(color).frame(width: 8, height: 8)
+                        Text(wanted).font(.title3.weight(.bold)).foregroundStyle(color)
+                        if let p = figures.projection {
+                            Text("· now \(target.isReps ? String(Int(p.current)) : WorkSet.formatWeight(p.current))")
+                                .font(.subheadline).foregroundStyle(.secondary).monospacedDigit()
+                        }
+                    }
+                    Text(targetLine(target, figures.projection))
+                        .font(.footnote).foregroundStyle(.primary)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Text("from goals.md").font(.caption2).foregroundStyle(.tertiary)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .accessibilityElement(children: .combine)
+            } else {
+                HStack {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("target").font(.caption).foregroundStyle(.secondary)
+                        Text("A number to hit, and the day this pace gets there.")
+                            .font(.footnote).foregroundStyle(.secondary)
+                    }
+                    Spacer()
+                    Button("Set a target") { settingTarget = true }
+                        .buttonStyle(.bordered)
+                        .controlSize(.small)
+                        .disabled(exercise.isEmpty)
+                }
+            }
+        }
+    }
+
+    private func targetColor(_ target: Target, _ p: Projection?) -> Color {
+        guard let p else { return Color.secondary }
+        if p.isMet { return Theme.progressing }
+        guard let date = p.date else { return Theme.stalled }
+        if let by = target.by, date > by { return Theme.stalled }
+        return Theme.progressing
+    }
+
+    /// "At this pace, around 14 Nov." / "Met." / "No pace yet: flat over the
+    /// last twelve weeks." / "…14 Nov, past the date asked for."
+    private func targetLine(_ target: Target, _ p: Projection?) -> String {
+        guard let p else { return "Two sessions of this lift are needed to read a pace." }
+        if p.isMet { return "Met. The log is at or past it." }
+        guard let date = p.date, let perDay = p.perDay else {
+            return "No pace yet: flat or falling over the last twelve weeks."
+        }
+        let unit = target.isReps ? "reps" : "kg"
+        let weekly = perDay * 7
+        let pace = String(format: weekly >= 1 ? "%.0f" : "%.1f", weekly) + " \(unit) a week"
+        let when = date.formatted(.dateTime.day().month(.abbreviated).year())
+        if let by = target.by, date > by {
+            return "At this pace, \(pace), around \(when) — past the date asked for."
+        }
+        return "At this pace, \(pace), around \(when)."
     }
 
     // MARK: - Stats
@@ -838,6 +928,15 @@ struct TrendsView: View {
             }
             f.recent = Analytics.change(f.series, sinceDays: 21)
             f.allTime = Analytics.change(f.series)
+            // The target is judged on the top set (or reps), whatever metric
+            // the chart is showing: a 100 kg target is a top-set number.
+            let canonical = MuscleMap.canonical(exercise)
+            let repsOnly = f.metrics == [.maxReps]
+            if let target = store.targets.first(where: { $0.lift == canonical && $0.isReps == repsOnly }) {
+                f.target = target
+                let line = Analytics.series(exercise, metric: target.isReps ? .maxReps : .topSet, in: store.sessions)
+                f.projection = Analytics.projection(line, to: target.value)
+            }
             f.dose = DoseResponse.make(for: exercise, in: store.sessions, map: muscleMap)
         }
         figures = f
@@ -916,5 +1015,80 @@ private struct TrainingGrid: View {
         guard let sets = day.sets else { return Color.secondary.opacity(0.14) }
         let intensity = heaviest > 0 ? Double(sets) / Double(heaviest) : 1
         return Theme.accent.opacity(0.45 + 0.55 * intensity)
+    }
+}
+
+/// A number to hit for the lift shown, and the day it's wanted by, written
+/// to goals.md as one line the coach and Trends both read.
+private struct TargetSheet: View {
+    @EnvironmentObject var store: Store
+    @Environment(\.dismiss) private var dismiss
+    let lift: String
+    let isReps: Bool
+    let current: Double?
+
+    @State private var valueText = ""
+    @State private var hasDate = false
+    @State private var by = Calendar.current.date(byAdding: .month, value: 3, to: Date()) ?? Date()
+    @State private var saving = false
+    @State private var failed = false
+
+    private var value: Double? { Double(valueText.replacingOccurrences(of: ",", with: ".")) }
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section {
+                    HStack {
+                        TextField(isReps ? "reps" : "kg", text: $valueText)
+                            .keyboardType(isReps ? .numberPad : .decimalPad)
+                            .font(.title2.weight(.bold))
+                        Text(isReps ? "reps" : "kg").foregroundStyle(.secondary)
+                    }
+                } header: {
+                    Text(Theme.readableName(lift))
+                } footer: {
+                    if let current {
+                        Text("Now \(isReps ? String(Int(current)) : WorkSet.formatWeight(current)) \(isReps ? "reps" : "kg").")
+                    }
+                }
+                .listRowBackground(Rectangle().fill(.regularMaterial))
+                Section {
+                    Toggle("By a date", isOn: $hasDate)
+                    if hasDate {
+                        DatePicker("Date", selection: $by, in: Date()..., displayedComponents: .date)
+                    }
+                } footer: {
+                    Text("Written as one line to goals.md, beside whatever is there.")
+                }
+                .listRowBackground(Rectangle().fill(.regularMaterial))
+                if failed {
+                    Text("Couldn't save goals.md. Check the connection and try again.")
+                        .font(.footnote).foregroundStyle(Theme.stalled)
+                        .listRowBackground(Rectangle().fill(.regularMaterial))
+                }
+            }
+            .scrollContentBackground(.hidden)
+            .background(Theme.backgroundView)
+            .navigationTitle("Set a target")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Save") { Task { await save() } }
+                        .disabled(value == nil || (value ?? 0) <= 0 || saving)
+                }
+            }
+        }
+    }
+
+    private func save() async {
+        guard let value else { return }
+        saving = true
+        failed = false
+        let line = Targets.line(lift: MuscleMap.canonical(lift), value: value, isReps: isReps, by: hasDate ? by : nil)
+        let result = await store.addTarget(line)
+        saving = false
+        if result == .pushed { dismiss() } else { failed = true }
     }
 }

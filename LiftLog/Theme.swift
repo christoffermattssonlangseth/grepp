@@ -17,6 +17,15 @@ enum Theme {
     /// one edit here instead of a hunt through the views.
     static let onAccent = Brand.onAccent
 
+    /// A lift going up. Green, because that is what green means to everyone,
+    /// kept dull enough not to shout beside the steel: 3.6:1 on white, which
+    /// is enough for the bold figures it colours and the dots it fills.
+    static let progressing = Color(red: 0.20, green: 0.60, blue: 0.36)   // #33995C
+
+    /// A lift that has stopped. Amber, not red: a stall is a fact to act on,
+    /// not an error.
+    static let stalled = Color(red: 0.80, green: 0.55, blue: 0.10)   // #CC8C1A
+
     /// Strava's own orange, for its button only — their brand rules ask for it.
     static let strava = Color(red: 0.988, green: 0.298, blue: 0.008)   // #FC4C02
 

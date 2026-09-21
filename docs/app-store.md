@@ -45,7 +45,9 @@ already in the repository, then the steps outside it, in order.
 7. **Review notes.** Reviewers need to see the Coach. Either paste a Claude
    key with a spending cap into the notes, revoked after review, or state that
    the Coach requires the user's own key and every other screen works without
-   one, which is also true. Say the app has no login.
+   one, which is also true. Say the app has no login. Health: the app writes
+   workouts only, never reads, and the privacy policy says so — reviewers
+   check that a HealthKit app's policy covers it.
 
 ## The upload
 

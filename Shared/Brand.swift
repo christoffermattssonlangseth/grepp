@@ -31,6 +31,7 @@ nonisolated enum Prefs {
     static let barOverrides = "bar_overrides"
     static let restTarget = "rest_target"
     static let stravaEnabled = "strava_enabled"
+    static let healthEnabled = "health_enabled"
     static let coachModel = "coach_model"
     static let coachShowCost = "coach_show_cost"
     static let coachFableOK = "coach_fable_ok"

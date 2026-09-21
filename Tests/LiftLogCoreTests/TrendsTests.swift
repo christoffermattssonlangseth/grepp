@@ -17,6 +17,13 @@ final class TrendsTests: XCTestCase {
 
     // MARK: - one lift, whatever the log calls it
 
+    func testSeriesFlagsTheDaysTheMetricFirstWentPastEverythingBefore() {
+        let sessions = [squatDay("2026-08-01", 100), squatDay("2026-08-08", 100),
+                        squatDay("2026-08-15", 105), squatDay("2026-08-22", 102.5), squatDay("2026-08-29", 110)]
+        let series = Analytics.series("squat", metric: .topSet, in: sessions, through: day("2026-09-01"))
+        XCTAssertEqual(series.map(\.isRecord), [false, false, true, false, true])
+    }
+
     func testSeriesReadsEveryLineOfALiftOnOneDay() {
         let sessions = [session("2026-09-01", [lift("squat", "100x5 100x5"), lift("squat", "120x3")])]
         let series = Analytics.series("squat", metric: .topSet, in: sessions)

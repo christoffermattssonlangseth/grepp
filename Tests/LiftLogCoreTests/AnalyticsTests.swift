@@ -33,6 +33,22 @@ final class AnalyticsTests: XCTestCase {
 
     // MARK: - records
 
+    func testRecordDaysAreJudgedLikeTheBadgeAndKeyedByDayAndLift() {
+        let sessions = [
+            session("2026-08-01", "squat", [WorkSet(weight: 100, added: nil, reps: 5)]),
+            session("2026-08-08", "squat", [WorkSet(weight: 100, added: nil, reps: 5), WorkSet(weight: 100, added: nil, reps: 6)]),
+            session("2026-08-15", "Squat", [WorkSet(weight: 90, added: nil, reps: 8), WorkSet(weight: 110, added: nil, reps: 3)]),
+            session("2026-08-22", "squat", [WorkSet(weight: 105, added: nil, reps: 5)]),
+            session("2026-08-22", "bench-press", [WorkSet(weight: 60, added: nil, reps: 5)]),
+        ]
+        let records = Analytics.records(in: sessions)
+        XCTAssertNil(records["2026-08-01"], "the first day of a lift is a start, not a record")
+        XCTAssertEqual(records["2026-08-08"]?["squat"], .reps, "one more rep at the same load")
+        XCTAssertEqual(records["2026-08-15"]?["squat"], .load, "heavier wins over the 90x8 rep record the same day")
+        XCTAssertNil(records["2026-08-22"]?["squat"], "105 is under 110 and 105x5 has no history to beat")
+        XCTAssertNil(records["2026-08-22"]?["bench-press"], "a lift's first day")
+    }
+
     private let squat100 = [Session(date: Session.dateFormatter.date(from: "2026-08-01")!,
                                     exercises: [ExerciseEntry(name: "squat", sets: [WorkSet(weight: 100, added: nil, reps: 5)])])]
 

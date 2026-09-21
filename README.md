@@ -125,7 +125,7 @@ memory of the literature and meant to be checked, not trusted.
 
 **Trends.** Two views. *Lift*: a chart per lift (top set, Est. 1RM, or reps
 and added load for bodyweight lifts), four months at a time with the rest a
-flick away; drag along the line to read a session, tap the reading to open
+flick away, record days as green dots; drag along the line to read a session, tap the reading to open
 that day. Under it, change over the last three weeks (counted from today) and
 all time, and **work and result**: the lift's own weekly sets over the last
 eight weeks, the count on each bar, inside every set for its main muscle
@@ -149,8 +149,8 @@ Disagree with a share? Deeper in the same screen, every lift's shares can be
 set per muscle, in quarters. No tonnage, on purpose.
 
 **History.** Every day, newest first, by month with older months folded, and
-a search that finds every day of a lift. Sets per muscle under each date, and
-whether it's on Strava. Tap an exercise to edit, swipe to delete or to move
+a search that finds every day of a lift. Sets per muscle under each date, a
+PR badge on any lift that set a record that day, and whether it's on Strava. Tap an exercise to edit, swipe to delete or to move
 it to another day; the date itself is a menu that moves the whole day. A move
 is one commit, and the coach's plan-versus-done record moves with it.
 

@@ -407,11 +407,15 @@ struct LogView: View {
                     Text("\(todayExercises.count == 1 ? "1 lift" : "\(todayExercises.count) lifts") · \(todaySetCount) sets")
                         .font(.caption.weight(.semibold)).foregroundStyle(.secondary)
                 }
+                let records = Analytics.records(in: store.sessions)[Session.dateFormatter.string(from: date)] ?? [:]
                 ForEach(todayExercises) { ex in
                     HStack(spacing: 8) {
                         VStack(alignment: .leading, spacing: 3) {
-                            Text(Theme.readableName(ex.name))
-                                .font(.subheadline.weight(.heavy)).tracking(0.5)
+                            HStack(spacing: 8) {
+                                Text(Theme.readableName(ex.name))
+                                    .font(.subheadline.weight(.heavy)).tracking(0.5)
+                                if let record = records[MuscleMap.canonical(ex.name)] { RecordBadge(record: record) }
+                            }
                             Text(ex.sets.map(\.token).joined(separator: "  "))
                                 .font(.system(.footnote, design: .monospaced).weight(.medium))
                                 .foregroundStyle(.secondary)
@@ -743,7 +747,7 @@ struct LogView: View {
                             .background(Theme.accent, in: Circle())
                         Text(set.loadLabel)
                             .font(.body.weight(.semibold))
-                        if let record = record(at: idx) { recordBadge(record) }
+                        if let record = record(at: idx) { RecordBadge(record: record) }
                         Spacer()
                         Text("× \(set.reps)").font(.title3.weight(.heavy))
                         Button {
@@ -895,14 +899,6 @@ struct LogView: View {
         return Analytics.record(for: sets[index], exercise: name, in: past, plus: Array(sets[..<index]))
     }
 
-    private func recordBadge(_ record: Analytics.Record) -> some View {
-        let label: String = record == .load ? "PR" : "REP PR"
-        return Text(label)
-            .font(.caption2.weight(.heavy)).tracking(0.5)
-            .padding(.horizontal, 6).padding(.vertical, 2)
-            .background(Theme.accent, in: Capsule())
-            .foregroundStyle(Theme.onAccent)
-    }
 
     /// "per side  25 · 5 · 2.5 · 1.25" for the weight in the field, or "empty bar".
     /// When the exact weight can't be made from a standard set, the nearest load

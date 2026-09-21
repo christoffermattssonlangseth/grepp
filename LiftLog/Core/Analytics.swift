@@ -9,6 +9,8 @@ struct TrendPoint: Identifiable {
     var tokens: String = ""
     /// The lift's name as the log spelled it that day.
     var name: String = ""
+    /// The day this metric first went past everything before it.
+    var isRecord: Bool = false
 }
 
 /// The change between two points on a series.
@@ -214,6 +216,40 @@ enum Analytics {
             }
         }
         .sorted { $0.date < $1.date }
+        .flagged()
+    }
+
+    /// Every day a lift set a record, keyed by day then canonical name: a
+    /// heavier set than anything before it, or more reps than ever at that
+    /// load, judged the way the Log badge judges a set as it lands — every
+    /// earlier day and the sets before it that day. The first day of a lift
+    /// is not a record. Heavier wins over more reps when a day has both.
+    static func records(in sessions: [Session]) -> [String: [String: Record]] {
+        struct Standing { var maxLoad = -Double.infinity; var bestReps: [Double: Int] = [:]; var any = false }
+        var standing: [String: Standing] = [:]
+        var out: [String: [String: Record]] = [:]
+        for session in sessions.sorted(by: { $0.date < $1.date }) {
+            for entry in session.exercises {
+                let key = MuscleMap.canonical(entry.name)
+                var s = standing[key] ?? Standing()
+                for set in entry.sets {
+                    let mine = load(of: set)
+                    if s.any {
+                        var record: Record?
+                        if mine > s.maxLoad { record = .load }
+                        else if let best = s.bestReps[mine], set.reps > best { record = .reps }
+                        if let record, out[session.dateString, default: [:]][key] != .load {
+                            out[session.dateString, default: [:]][key] = record
+                        }
+                    }
+                    s.any = true
+                    s.maxLoad = max(s.maxLoad, mine)
+                    s.bestReps[mine] = max(s.bestReps[mine] ?? 0, set.reps)
+                }
+                standing[key] = s
+            }
+        }
+        return out
     }
 
     /// Change from the earliest point (long-term). `sinceDays` limits the
@@ -313,5 +349,19 @@ enum Analytics {
                         sessionsInFourWeeks: row.inFourWeeks, sessionsEver: row.ever, order: row.order)
         }
         .sorted { $0.last != $1.last ? $0.last > $1.last : $0.order < $1.order }
+    }
+}
+
+private extension Array where Element == TrendPoint {
+    /// Mark each point that beats every point before it. The first point is
+    /// a start, not a record.
+    func flagged() -> [TrendPoint] {
+        var best = -Double.infinity
+        return enumerated().map { i, point in
+            var p = point
+            p.isRecord = i > 0 && point.value > best
+            best = Swift.max(best, point.value)
+            return p
+        }
     }
 }

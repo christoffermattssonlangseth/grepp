@@ -36,11 +36,49 @@ struct DoseResponse: Equatable {
         case stalledHigh(weeks: Int, liftSets: Double, sets: Double)
     }
 
+    /// The verdict as a colour would carry it: three states, not five.
+    enum State: Equatable {
+        case progressing, stalled, tooEarly
+    }
+
     let exercise: String
     let muscle: MuscleGroup
     let metric: Analytics.Metric
     let weeks: [Week]
     let verdict: Verdict
+
+    var state: State {
+        switch verdict {
+        case .tooEarly: return .tooEarly
+        case .progressing: return .progressing
+        case .stalledLow, .stalledMid, .stalledHigh: return .stalled
+        }
+    }
+
+    /// The verdict in a few characters, for a row in a list: what it moved
+    /// by, or how long it has stood.
+    var short: String {
+        switch verdict {
+        case .tooEarly: return "too early"
+        case .progressing(let delta, _, _): return "+\(WorkSet.formatWeight(delta)) \(metric.unit)"
+        case .stalledLow(let weeks, _, _), .stalledMid(let weeks, _, _), .stalledHigh(let weeks, _, _):
+            return "flat \(weeks) \(weeks == 1 ? "week" : "weeks")"
+        }
+    }
+
+    /// Every lift in the log read at once, for a list that colours each one.
+    /// Lifts whose muscle isn't mapped, or that haven't been done in the
+    /// window, are left out: nothing to say is not a state.
+    static func all(for exercises: [String], in sessions: [Session], map: MuscleMap,
+                    endingOn today: Date = Date(), calendar: Calendar = .current) -> [String: DoseResponse] {
+        var out: [String: DoseResponse] = [:]
+        for exercise in exercises {
+            if let dose = make(for: exercise, in: sessions, map: map, endingOn: today, calendar: calendar) {
+                out[exercise] = dose
+            }
+        }
+        return out
+    }
 
     /// The band a programme usually aims for, in hard sets a week. One
     /// number for the bars, the verdict and the coach's rule alike.

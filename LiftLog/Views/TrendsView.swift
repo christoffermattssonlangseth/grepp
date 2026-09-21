@@ -40,6 +40,8 @@ struct TrendsView: View {
         var recent: TrendChange?
         var allTime: TrendChange?
         var dose: DoseResponse?
+        /// Every lift read at once, for the list and the dots in the picker.
+        var all: [String: DoseResponse] = [:]
         var weeks: [Analytics.TrainingWeek] = []
         var weekly: [MuscleMap.Credits] = []
         var unmapped: [String] = []
@@ -79,6 +81,7 @@ struct TrendsView: View {
                             if let dose = figures.dose {
                                 doseCard(dose)
                             }
+                            if figures.all.count > 1 { liftsCard }
                         case .volume:
                             weeksCard
                             musclesCard
@@ -117,7 +120,9 @@ struct TrendsView: View {
             .onChange(of: scenePhase) { _, phase in if phase == .active { recompute() } }
             .onReceive(NotificationCenter.default.publisher(for: .NSCalendarDayChanged)) { _ in recompute() }
             .sheet(isPresented: $showingPicker) {
-                ExercisePickerView(history: figures.exercises, library: false) { exercise = $0 }
+                ExercisePickerView(history: figures.exercises, library: false,
+                                   marks: figures.all.compactMapValues { stateColor($0.state) },
+                                   markNames: figures.all.compactMapValues { stateName($0.state) }) { exercise = $0 }
             }
         }
     }
@@ -361,9 +366,8 @@ struct TrendsView: View {
                     }
                     .font(.title3.weight(.bold))
                     .animation(.snappy, value: c.delta)
-                    // Accent for up, muted for down. System green/red read as traffic
-                    // lights against steel, and red should mean an error, not a dip.
-                    .foregroundStyle(c.isUp ? Theme.accent : Color.secondary)
+                    // Green for up, muted for down: a dip is not an error.
+                    .foregroundStyle(c.isUp ? Theme.progressing : Color.secondary)
                     if let percent = c.percent {
                         Text(String(format: "%+.0f%%", percent))
                             .font(.footnote).foregroundStyle(.secondary)
@@ -477,6 +481,17 @@ struct TrendsView: View {
                         .minimumScaleFactor(0.7)
                 }
 
+                // The verdict as a colour first, then as the sentence.
+                if let color = stateColor(dose.state), let name = stateName(dose.state) {
+                    HStack(spacing: 6) {
+                        Circle().fill(color).frame(width: 8, height: 8)
+                        Text(name)
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(color)
+                    }
+                    .accessibilityElement(children: .combine)
+                }
+
                 Text(dose.summary)
                     .font(.footnote)
                     .foregroundStyle(.primary)
@@ -494,6 +509,69 @@ struct TrendsView: View {
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
+
+    // MARK: - Every lift
+
+    /// One line per lift with something to say: its dot, its name, what it
+    /// moved by or how long it has stood. Stalled first, since those are
+    /// the ones to do something about; a tap makes it the lift shown.
+    private var liftsCard: some View {
+        let rows = figures.all.values.sorted { a, b in
+            if a.state != b.state { return a.state == .stalled }
+            return a.exercise < b.exercise
+        }
+        return Panel {
+            VStack(alignment: .leading, spacing: 10) {
+                HStack(alignment: .firstTextBaseline) {
+                    Text("your lifts").font(.caption).foregroundStyle(.secondary)
+                    Spacer()
+                    Text("last 8 weeks").font(.caption2).foregroundStyle(.tertiary)
+                }
+                ForEach(rows, id: \.exercise) { dose in
+                    let current = dose.exercise == exercise
+                    Button {
+                        exercise = dose.exercise
+                    } label: {
+                        HStack(spacing: 10) {
+                            Circle()
+                                .fill(stateColor(dose.state) ?? Color.secondary.opacity(0.3))
+                                .frame(width: 8, height: 8)
+                            Text(Theme.readableName(dose.exercise))
+                                .font(.subheadline.weight(current ? .semibold : .regular))
+                                .lineLimit(1)
+                            Spacer()
+                            Text(dose.short)
+                                .font(.subheadline.monospacedDigit())
+                                .foregroundStyle(stateColor(dose.state) ?? Color.secondary)
+                        }
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("\(Theme.readableName(dose.exercise)), \(stateName(dose.state) ?? "too early"), \(dose.short)")
+                    .accessibilityAddTraits(current ? .isSelected : [])
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
+
+    /// Green for a lift going up, amber for one that has stopped; nothing
+    /// for one too young to say — no colour is the honest colour there.
+    private func stateColor(_ state: DoseResponse.State) -> Color? {
+        switch state {
+        case .progressing: return Theme.progressing
+        case .stalled: return Theme.stalled
+        case .tooEarly: return nil
+        }
+    }
+
+    private func stateName(_ state: DoseResponse.State) -> String? {
+        switch state {
+        case .progressing: return "progressing"
+        case .stalled: return "stalled"
+        case .tooEarly: return nil
         }
     }
 
@@ -738,6 +816,7 @@ struct TrendsView: View {
         f.weeks = Analytics.weekGrid(weeks: 26, in: store.sessions)
         f.weekly = muscleMap.weeklySets(weeks: 6, in: store.sessions)
         f.unmapped = muscleMap.unmapped(in: store.sessions)
+        f.all = DoseResponse.all(for: f.exercises, in: store.sessions, map: muscleMap)
         if !exercise.isEmpty {
             f.metrics = Analytics.availableMetrics(exercise, in: store.sessions)
             let shown = f.metrics.contains(metric) ? metric : (f.metrics.first ?? .topSet)

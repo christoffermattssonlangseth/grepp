@@ -7,6 +7,11 @@ struct ExercisePickerView: View {
     let history: [String]
     /// Off for choosing among lifts already logged: no library, no new names.
     var library = true
+    /// A colour per lift that has a state to show — progressing, stalled —
+    /// drawn as a dot before its name; lifts not in it get no dot.
+    var marks: [String: Color] = [:]
+    /// What the dot means, for VoiceOver, keyed like `marks`.
+    var markNames: [String: String] = [:]
     let onPick: (String) -> Void
 
     @Environment(\.dismiss) private var dismiss
@@ -78,7 +83,10 @@ struct ExercisePickerView: View {
 
     private func row(_ label: String, picks name: String) -> some View {
         Button { pick(name) } label: {
-            HStack {
+            HStack(spacing: 10) {
+                if let mark = marks[name] {
+                    Circle().fill(mark).frame(width: 8, height: 8)
+                }
                 Text(label)
                 Spacer()
                 Image(systemName: "chevron.right")
@@ -86,6 +94,7 @@ struct ExercisePickerView: View {
             }
         }
         .foregroundStyle(.primary)
+        .accessibilityLabel(markNames[name].map { "\(label), \($0)" } ?? label)
     }
 
     private func pick(_ name: String) {

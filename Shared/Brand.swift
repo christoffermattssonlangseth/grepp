@@ -24,7 +24,7 @@ enum Brand {
 /// The UserDefaults keys the app and its extensions share. One spelling each:
 /// a typo in a string literal would have quietly given the lock screen a
 /// default rest for ever.
-enum Prefs {
+nonisolated enum Prefs {
     static let muscleMap = "muscle_map"
     static let barWeight = "bar_weight"
     static let plateInventory = "plate_inventory"

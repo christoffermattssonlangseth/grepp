@@ -7,8 +7,8 @@ final class WarmUpTests: XCTestCase {
         let rungs = WarmUp.ramp(to: 100)!
         XCTAssertEqual(rungs.map(\.weight), [20, 50, 70, 85])
         XCTAssertEqual(rungs.map(\.reps), [10, 5, 3, 1])
-        XCTAssertEqual(rungs.map(\.perSide), [[], [15], [25], [25, 7.5]])
-        XCTAssertEqual(WarmUp.line(rungs, bar: 20), "bar ×10 · 50 (15) ×5 · 70 (25) ×3 · 85 (25+7.5) ×1")
+        XCTAssertEqual(rungs.map(\.perSide), [[], [15], [25], [25, 5, 2.5]])
+        XCTAssertEqual(WarmUp.line(rungs, bar: 20), "bar ×10 · 50 (15) ×5 · 70 (25) ×3 · 85 (25+5+2.5) ×1")
     }
 
     func testRungsRoundDownToTheRackAndSkipTheBar() {

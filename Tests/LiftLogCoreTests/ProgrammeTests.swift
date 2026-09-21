@@ -109,6 +109,27 @@ extension ProgrammeTests {
         })
     }
 
+    func testAdherenceCountsProgrammeDaysAndTheLiftsLeftOut() {
+        let p = Programme.parse(file)
+        let today = Session.dateFormatter.date(from: "2026-09-21")!
+        let sessions = [
+            session("2026-09-01", ["squat", "romanian-deadlift"]),            // Day A without calf-raise
+            session("2026-09-04", ["bench-press", "chin-ups"]),               // Day B, whole
+            session("2026-09-08", ["squat", "romanian-deadlift", "calf-raise"]),
+            session("2026-09-11", ["bench-press"]),                           // Day B without chin-ups
+            session("2026-09-13", ["curl", "lateral-raise"]),                 // not a programme day
+            session("2026-07-01", ["squat", "romanian-deadlift"]),            // outside the window
+        ]
+        let a = p.adherence(in: sessions, weeks: 4, today: today)!
+        XCTAssertEqual(a.daysDone, 4)
+        XCTAssertEqual(a.other, 1)
+        XCTAssertEqual(a.perWeek, 1.0)
+        XCTAssertEqual(a.skipped.map(\.name), ["calf-raise", "chin-ups"])
+        XCTAssertEqual(a.skipped.map(\.missed), [1, 1])
+        XCTAssertEqual(a.skipped.map(\.due), [2, 2])
+        XCTAssertNil(Programme.parse("").adherence(in: sessions, today: today))
+    }
+
     func testDueDayIsTheOneAfterTheDayLastDone() {
         let p = Programme.parse("""
         ## A

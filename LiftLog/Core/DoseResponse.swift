@@ -55,6 +55,42 @@ struct DoseResponse: Equatable {
         }
     }
 
+    /// The verdict as a session: the last session with the one change the
+    /// verdict asks for, ready for the Log tab. Nil when there is nothing to
+    /// change — progressing, or too early to say.
+    struct NextStep: Equatable {
+        let label: String
+        let entry: ExerciseEntry
+    }
+
+    func nextStep(in sessions: [Session]) -> NextStep? {
+        guard let last = Programme.lastDone(exercise, in: sessions)?.entry, !last.sets.isEmpty else { return nil }
+        let sets = last.sets.map { WorkSet(weight: $0.weight, added: $0.added, reps: $0.reps) }
+        switch verdict {
+        case .tooEarly, .progressing:
+            return nil
+        case .stalledLow:
+            // Under the band: one more set, a copy of the last one.
+            return NextStep(label: "one more set",
+                            entry: ExerciseEntry(name: last.name, sets: sets + [sets[sets.count - 1]]))
+        case .stalledMid:
+            // Inside it: the same loads, one more rep on the set that counts.
+            var next = sets
+            if let top = ReversePyramid.topSet(of: last), let i = sets.firstIndex(of: top) {
+                next[i] = WorkSet(weight: top.weight, added: top.added, reps: top.reps + 1)
+            }
+            return NextStep(label: "one more rep on the top set", entry: ExerciseEntry(name: last.name, sets: next))
+        case .stalledHigh:
+            // Above it: a lighter session, a tenth off every set, to recover.
+            let lighter = sets.map { set -> WorkSet in
+                if let w = set.weight { return WorkSet(weight: (w * 0.9 / 2.5).rounded() * 2.5, added: nil, reps: set.reps) }
+                if let a = set.added { let less = a - 2.5; return WorkSet(weight: nil, added: less > 0 ? less : nil, reps: set.reps) }
+                return WorkSet(weight: nil, added: nil, reps: max(1, set.reps - 2))
+            }
+            return NextStep(label: "a lighter session, a tenth off", entry: ExerciseEntry(name: last.name, sets: lighter))
+        }
+    }
+
     /// The verdict in a few characters, for a row in a list: what it moved
     /// by, or how long it has stood.
     var short: String {

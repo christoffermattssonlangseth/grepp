@@ -182,6 +182,70 @@ struct Programme: Equatable {
     }
 
     /// The last time a lift was logged: its sets and the day, newest first.
+    /// How the last weeks went against the file: sessions that were one of
+    /// its days, and the lifts left out of those days most often.
+    struct Adherence: Equatable {
+        struct Skip: Equatable, Identifiable {
+            var id: String { name }
+            let name: String
+            /// Days the lift's day was done without it, and days it was due.
+            let missed: Int
+            let due: Int
+        }
+        let weeks: Int
+        /// Sessions in the window that were a programme day.
+        let daysDone: Int
+        /// Sessions in the window that were none of the days.
+        let other: Int
+        let skipped: [Skip]
+
+        var perWeek: Double { Double(daysDone) / Double(max(1, weeks)) }
+    }
+
+    /// A session is a programme day when at least half the day's lifts are
+    /// in it, the same rule that picks the day that is next.
+    func day(matching session: Session) -> Day? {
+        let done = Set(session.exercises.map { MuscleMap.canonical($0.name) })
+        var best: Day?
+        var bestScore = 0
+        for day in days {
+            let names = Set(day.exercises.map { MuscleMap.canonical($0.name) })
+            let overlap = names.intersection(done).count
+            guard overlap * 2 >= names.count, overlap > bestScore else { continue }
+            bestScore = overlap
+            best = day
+        }
+        return best
+    }
+
+    func adherence(in sessions: [Session], weeks: Int = 4, today: Date = Date(),
+                   calendar: Calendar = .current) -> Adherence? {
+        guard !isEmpty, weeks > 0 else { return nil }
+        let start = calendar.date(byAdding: .day, value: -7 * weeks, to: calendar.startOfDay(for: today)) ?? today
+        var daysDone = 0
+        var other = 0
+        var missed: [String: Int] = [:]
+        var due: [String: Int] = [:]
+        var order: [String] = []
+        for session in sessions where session.date >= start && session.date <= today {
+            guard let day = day(matching: session) else { other += 1; continue }
+            daysDone += 1
+            let done = Set(session.exercises.map { MuscleMap.canonical($0.name) })
+            for exercise in day.exercises {
+                let key = MuscleMap.canonical(exercise.name)
+                if due[key] == nil { order.append(key) }
+                due[key, default: 0] += 1
+                if !done.contains(key) { missed[key, default: 0] += 1 }
+            }
+        }
+        let skipped = order.compactMap { key -> Adherence.Skip? in
+            guard let m = missed[key], m > 0 else { return nil }
+            return Adherence.Skip(name: key, missed: m, due: due[key] ?? m)
+        }
+        .sorted { $0.missed != $1.missed ? $0.missed > $1.missed : $0.name < $1.name }
+        return Adherence(weeks: weeks, daysDone: daysDone, other: other, skipped: skipped)
+    }
+
     static func lastDone(_ name: String, in sessions: [Session]) -> (entry: ExerciseEntry, day: String)? {
         for session in sessions.sorted(by: { $0.date > $1.date }) {
             if let entry = Analytics.entries(name, in: session).first {

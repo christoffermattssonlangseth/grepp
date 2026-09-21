@@ -17,6 +17,26 @@ final class TrendsTests: XCTestCase {
 
     // MARK: - one lift, whatever the log calls it
 
+    func testAStreakCountsQualifyingWeeksBackFromNowAndForgivesTheWeekInProgress() {
+        var sessions: [Session] = []
+        // Three sessions a week for four weeks, then two, then one this Monday.
+        for week in 0..<4 {
+            for offset in [0, 2, 4] {
+                let d = calendar.date(byAdding: .day, value: -7 * (5 - week) + offset, to: day("2026-09-21"))!
+                sessions.append(session(Session.dateFormatter.string(from: d), [lift("squat", "100x5")]))
+            }
+        }
+        for offset in [0, 2] {
+            let d = calendar.date(byAdding: .day, value: -7 + offset, to: day("2026-09-21"))!
+            sessions.append(session(Session.dateFormatter.string(from: d), [lift("squat", "100x5")]))
+        }
+        sessions.append(session("2026-09-21", [lift("squat", "100x5")]))
+        let weeks = Analytics.weekGrid(weeks: 26, endingOn: day("2026-09-21"), calendar: calendar, in: sessions)
+        XCTAssertEqual(Analytics.streak(weeks, minimum: 2), 5, "the Monday with one session is not counted against")
+        XCTAssertEqual(Analytics.streak(weeks, minimum: 3), 0, "last week had two")
+        XCTAssertEqual(Analytics.streak(weeks, minimum: 1), 6, "this week already qualifies")
+    }
+
     func testSeriesFlagsTheDaysTheMetricFirstWentPastEverythingBefore() {
         let sessions = [squatDay("2026-08-01", 100), squatDay("2026-08-08", 100),
                         squatDay("2026-08-15", 105), squatDay("2026-08-22", 102.5), squatDay("2026-08-29", 110)]

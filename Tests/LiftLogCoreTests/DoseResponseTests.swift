@@ -93,6 +93,33 @@ final class DoseResponseTests: XCTestCase {
                                          endingOn: date("2026-09-06"), calendar: utc)?.state, .tooEarly)
     }
 
+    func testTheNextStepIsTheLastSessionWithTheVerdictsOneChange() {
+        let low = [
+            day("2026-08-04", squat: 100), day("2026-08-11", squat: 100),
+            day("2026-08-18", squat: 100), day("2026-08-25", squat: 100, sets: 2),
+        ]
+        let dose = DoseResponse.make(for: "squat", in: low, map: MuscleMap(), endingOn: date("2026-09-06"), calendar: utc)!
+        let step = dose.nextStep(in: low)!
+        XCTAssertEqual(step.label, "one more set")
+        XCTAssertEqual(step.entry.sets.map(\.token), ["100x5", "100x5", "100x5"])
+
+        // Inside the band: eleven sets a week between squat and leg press.
+        let press = ExerciseEntry(name: "leg-press", sets: Array(repeating: WorkSet(weight: 200, added: nil, reps: 10), count: 8))
+        let mid = [
+            day("2026-08-04", squat: 100, extra: [press]), day("2026-08-11", squat: 100, extra: [press]),
+            day("2026-08-18", squat: 100, extra: [press]), day("2026-08-25", squat: 100, extra: [press]),
+        ]
+        let midDose = DoseResponse.make(for: "squat", in: mid, map: MuscleMap(), endingOn: date("2026-09-06"), calendar: utc)!
+        guard case .stalledMid = midDose.verdict else { return XCTFail("\(midDose.verdict)") }
+        XCTAssertEqual(midDose.nextStep(in: mid)?.label, "one more rep on the top set")
+        XCTAssertEqual(midDose.nextStep(in: mid)?.entry.sets.map(\.token), ["100x6", "100x5", "100x5"])
+
+        let up = [day("2026-08-04", squat: 100), day("2026-08-11", squat: 102.5),
+                  day("2026-08-18", squat: 105), day("2026-08-25", squat: 107.5)]
+        let upDose = DoseResponse.make(for: "squat", in: up, map: MuscleMap(), endingOn: date("2026-09-06"), calendar: utc)!
+        XCTAssertNil(upDose.nextStep(in: up), "progressing: nothing to change")
+    }
+
     func testTooEarlyWithUnderThreeWeeksAndNilForUnmappedOrAbsentLifts() {
         let sessions = [day("2026-08-18", squat: 100), day("2026-08-25", squat: 105)]
         XCTAssertEqual(DoseResponse.make(for: "squat", in: sessions, map: MuscleMap(), endingOn: date("2026-09-06"), calendar: utc)?.verdict, .tooEarly)

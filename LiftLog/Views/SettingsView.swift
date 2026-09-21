@@ -438,7 +438,7 @@ struct SettingsView: View {
 
     private var healthCaption: String {
         if !HealthWriter.isAvailable { return "Health isn't available on this device." }
-        if healthEnabled && HealthWriter.status == .sharingDenied {
+        if healthEnabled && HealthWriter.isDenied {
             return "Health said no. Allow Grepp to write workouts under the Health app ▸ Sharing ▸ Apps, and it starts with the next lift."
         }
         return "Each day's lifting is saved as one strength-training workout, from the first set to the last lift finished, so it counts in Fitness. Nothing is read from Health."

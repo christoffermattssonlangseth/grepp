@@ -127,7 +127,11 @@ memory of the literature and meant to be checked, not trusted.
 and added load for bodyweight lifts), four months at a time with the rest a
 flick away, record days as green dots; drag along the line to read a session, tap the reading to open
 that day. Under it, change over the last three weeks (counted from today) and
-all time, and **work and result**: the lift's own weekly sets over the last
+all time; a **target** card when goals.md names a number for the lift ("- squat
+140 kg by 30 Jun 2027", in any wording that has the lift, the number and a
+date after "by"), with the day the last twelve weeks' pace reaches it, green
+when that is in time and amber when it isn't or the pace is flat, and a "Set a
+target" button that writes such a line; and **work and result**: the lift's own weekly sets over the last
 eight weeks, the count on each bar, inside every set for its main muscle
 (tap a week for its numbers in one line), and one computed verdict, green
 for progressing and amber for stalled, with a sentence naming the lever —

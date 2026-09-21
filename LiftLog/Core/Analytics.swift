@@ -22,8 +22,8 @@ struct TrendChange {
     var isFlat: Bool { delta == 0 }
 }
 
-/// Progression metrics derived from the logged sessions. Purely lift-focused —
-/// no personal targets, just how each movement is trending.
+/// Progression metrics derived from the logged sessions: how each movement
+/// is trending, and, given a target from goals.md, when it gets there.
 enum Analytics {
     enum Metric: String, CaseIterable, Identifiable {
         case topSet = "Top set"      // heaviest weight lifted — the direct intensity signal

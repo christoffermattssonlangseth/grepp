@@ -127,9 +127,11 @@ flick away; drag along the line to read a session, tap the reading to open
 that day. Under it, change over the last three weeks (counted from today) and
 all time, and **work and result**: the lift's own weekly sets over the last
 eight weeks, the count on each bar, inside every set for its main muscle
-(tap a week for its numbers in one line), and one computed sentence naming
-the lever — flat at low volume means add sets,
-flat inside or above the band means volume isn't it. One tap sends that
+(tap a week for its numbers in one line), and one computed verdict, green
+for progressing and amber for stalled, with a sentence naming the lever —
+flat at low volume means add sets, flat inside or above the band means
+volume isn't it. The lift picker carries the same dot beside every lift in
+the log, so one glance says which lifts are moving and which have stopped. One tap sends that
 sentence and the eight weeks to the coach as a question, and the coach's
 digest carries the same sentence, so the tab and the chat agree on a stall.
 "Bench", "Bench press" and "bench-press" are one lift everywhere. Est. 1RM is

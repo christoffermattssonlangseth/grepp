@@ -128,8 +128,8 @@ struct TrendsView: View {
             .onChange(of: scenePhase) { _, phase in if phase == .active { recompute() } }
             .onReceive(NotificationCenter.default.publisher(for: .NSCalendarDayChanged)) { _ in recompute() }
             .sheet(isPresented: $settingTarget) {
-                TargetSheet(lift: exercise, isReps: figures.metrics == [.maxReps],
-                            current: figures.series.last?.value)
+                TargetSheet(lift: exercise, repsOnly: figures.metrics == [.maxReps],
+                            sessions: store.sessions)
             }
             .sheet(isPresented: $showingPicker) {
                 ExercisePickerView(history: figures.exercises, library: false,
@@ -365,12 +365,11 @@ struct TrendsView: View {
     private var targetCard: some View {
         Panel {
             if let target = figures.target {
-                let unit = target.isReps ? "reps" : "kg"
-                let wanted = (target.isReps ? String(Int(target.value)) : WorkSet.formatWeight(target.value)) + " " + unit
+                let wanted = target.amount
                 let color = targetColor(target, figures.projection)
                 VStack(alignment: .leading, spacing: 4) {
                     HStack(alignment: .firstTextBaseline) {
-                        Text("target").font(.caption).foregroundStyle(.secondary)
+                        Text("target · \(target.kind.label)").font(.caption).foregroundStyle(.secondary)
                         Spacer()
                         if let by = target.by {
                             Text("by \(by, format: .dateTime.day().month(.abbreviated).year())")
@@ -425,7 +424,7 @@ struct TrendsView: View {
         guard let date = p.date, let perDay = p.perDay else {
             return "No pace yet: flat or falling over the last twelve weeks."
         }
-        let unit = target.isReps ? "reps" : "kg"
+        let unit = target.kind.unit
         let weekly = perDay * 7
         let pace = String(format: weekly >= 1 ? "%.0f" : "%.1f", weekly) + " \(unit) a week"
         let when = date.formatted(.dateTime.day().month(.abbreviated).year())
@@ -1007,13 +1006,13 @@ struct TrendsView: View {
             }
             f.recent = Analytics.change(f.series, sinceDays: 21)
             f.allTime = Analytics.change(f.series)
-            // The target is judged on the top set (or reps), whatever metric
-            // the chart is showing: a 100 kg target is a top-set number.
+            // The target is judged on its own number — top set, estimated
+            // 1RM, or reps — whatever metric the chart is showing.
             let canonical = MuscleMap.canonical(exercise)
             let repsOnly = f.metrics == [.maxReps]
             if let target = store.targets.first(where: { $0.lift == canonical && $0.isReps == repsOnly }) {
                 f.target = target
-                let line = Analytics.series(exercise, metric: target.isReps ? .maxReps : .topSet, in: store.sessions)
+                let line = Analytics.series(exercise, metric: target.kind.metric, in: store.sessions)
                 f.projection = Analytics.projection(line, to: target.value)
             }
             f.dose = DoseResponse.make(for: exercise, in: store.sessions, map: muscleMap)
@@ -1103,9 +1102,10 @@ private struct TargetSheet: View {
     @EnvironmentObject var store: Store
     @Environment(\.dismiss) private var dismiss
     let lift: String
-    let isReps: Bool
-    let current: Double?
+    let repsOnly: Bool
+    let sessions: [Session]
 
+    @State private var kind: Target.Kind = .topSet
     @State private var valueText = ""
     @State private var hasDate = false
     @State private var by = Calendar.current.date(byAdding: .month, value: 3, to: Date()) ?? Date()
@@ -1113,11 +1113,21 @@ private struct TargetSheet: View {
     @State private var failed = false
 
     private var value: Double? { Double(valueText.replacingOccurrences(of: ",", with: ".")) }
+    private var isReps: Bool { kind == .reps }
+    /// Where the lift stands on the number the target is of.
+    private var current: Double? { Analytics.series(lift, metric: kind.metric, in: sessions).last?.value }
 
     var body: some View {
         NavigationStack {
             Form {
                 Section {
+                    if !repsOnly {
+                        Picker("Number", selection: $kind) {
+                            Text("top set").tag(Target.Kind.topSet)
+                            Text("est. 1RM").tag(Target.Kind.oneRepMax)
+                        }
+                        .pickerStyle(.segmented)
+                    }
                     HStack {
                         TextField(isReps ? "reps" : "kg", text: $valueText)
                             .keyboardType(isReps ? .numberPad : .decimalPad)
@@ -1128,10 +1138,11 @@ private struct TargetSheet: View {
                     Text(Theme.readableName(lift))
                 } footer: {
                     if let current {
-                        Text("Now \(isReps ? String(Int(current)) : WorkSet.formatWeight(current)) \(isReps ? "reps" : "kg").")
+                        Text("Now \(isReps ? String(Int(current)) : WorkSet.formatWeight(current)) \(kind.unit), \(kind.label).")
                     }
                 }
                 .listRowBackground(Rectangle().fill(.regularMaterial))
+                .onAppear { if repsOnly { kind = .reps } }
                 Section {
                     Toggle("By a date", isOn: $hasDate)
                     if hasDate {
@@ -1165,7 +1176,7 @@ private struct TargetSheet: View {
         guard let value else { return }
         saving = true
         failed = false
-        let line = Targets.line(lift: MuscleMap.canonical(lift), value: value, isReps: isReps, by: hasDate ? by : nil)
+        let line = Targets.line(lift: MuscleMap.canonical(lift), value: value, kind: kind, by: hasDate ? by : nil)
         let result = await store.addTarget(line)
         saving = false
         if result == .pushed { dismiss() } else { failed = true }

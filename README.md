@@ -43,8 +43,10 @@ product.
 ## What it does
 
 **Log.** Big number pads. A plate calculator under the weight field, worked out
-from the plates you own and the bar that lift uses. A PR badge when a set beats
-your best. A rest timer that starts on every set and flips the card when you're
+from the plates you own and the bar that lift uses, and a warm-up ramp under
+the lift's plan before the first set lands: the bar for ten, then half, seven
+tenths and eighty-five hundredths of the top set for five, three and one,
+each with its plates a side. A PR badge when a set beats your best. A rest timer that starts on every set and flips the card when you're
 due. Each finished exercise pushes to GitHub on its own. The date is a pill
 in the corner; when it isn't today, a banner says so, and the first set on a
 day you didn't pick asks first, unless the session simply ran past midnight. Got

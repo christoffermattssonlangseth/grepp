@@ -17,6 +17,10 @@ enum HealthWriter {
 
     static var status: HKAuthorizationStatus { health.authorizationStatus(for: .workoutType()) }
 
+    /// Health was asked and said no. A Bool, so no screen needs HealthKit's
+    /// own types: the project keeps member lookups to modules it imports.
+    static var isDenied: Bool { status == .sharingDenied }
+
     /// Ask to write workouts, and only that. True when allowed.
     static func requestAccess() async -> Bool {
         guard isAvailable else { return false }

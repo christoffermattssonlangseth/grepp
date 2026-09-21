@@ -80,6 +80,22 @@ final class TargetsTests: XCTestCase {
         XCTAssertFalse(Targets.isMax("3x5 at 100 kg"))
     }
 
+    func testIncrementsAreNotTheTargetAndTheLargestLoadIs() {
+        let goals = """
+        - Deadlift: +5 kg per month, to 160 kg by December
+        - Squat 140 kg, add 2.5 kg a week
+        - Bench 100 kg (currently 80, up 5 kg since June)
+        - chin-ups 15 reps, adding 1 rep each week
+        """
+        let targets = Targets.parse(goals, lifts: ["deadlift", "squat", "bench-press", "chin-ups"],
+                                    today: day("2026-09-21"), calendar: utc)
+        XCTAssertEqual(targets.map(\.lift), ["deadlift", "squat", "bench-press", "chin-ups"])
+        XCTAssertEqual(targets.map(\.value), [160, 140, 100, 15])
+        XCTAssertEqual(targets[0].by, day("2026-12-31"))
+        XCTAssertEqual(Targets.number(in: "add 5 kg to the 120 kg")?.value, 120)
+        XCTAssertNil(Targets.number(in: "5 kg a month"))
+    }
+
     func testDatesWithoutAYearRollForwardAndISOIsRead() {
         XCTAssertEqual(Targets.date(after: "by", in: "squat 140 kg by 2026-12-24", today: day("2026-09-21"), calendar: utc), day("2026-12-24"))
         XCTAssertEqual(Targets.date(after: "by", in: "squat 140 kg by 1 march", today: day("2026-09-21"), calendar: utc), day("2027-03-01"))

@@ -126,22 +126,37 @@ enum Targets {
         return pieces.map { $0.trimmingCharacters(in: .whitespaces) }
     }
 
-    /// "140 kg", "140kg", "12 reps"; failing that, a bare number that reads
-    /// as a load — 10 to 500, not part of a 3x5 scheme, not a year, not a
-    /// percentage or a count of weeks.
+    /// The load the line is about. Every "140 kg", "140kg" or "12 reps" on
+    /// it, less the increments — "+5 kg", "add 5 kg", "5 kg a month", "2.5 kg
+    /// more" — and of what is left the largest, since a goal outweighs the
+    /// steps to it. Failing that, a bare number that reads as a load: 10 to
+    /// 500, not part of a 3x5 scheme, not a year, not a percentage or a
+    /// count of weeks.
     static func number(in text: String) -> (value: Double, isReps: Bool)? {
-        if let match = text.range(of: #"(\d+(?:[.,]\d+)?)\s*(kg|kilos?|reps?)\b"#, options: .regularExpression) {
-            let piece = String(text[match])
-            let digits = piece.prefix { "0123456789.,".contains($0) }.replacingOccurrences(of: ",", with: ".")
-            guard let value = Double(digits) else { return nil }
-            return (value, piece.hasSuffix("rep") || piece.hasSuffix("reps"))
+        let ns = text as NSString
+        var best: (value: Double, isReps: Bool)?
+        for m in unitNumber.matches(in: text, range: NSRange(location: 0, length: ns.length)) {
+            let before = ns.substring(to: m.range.location).lowercased()
+            let after = ns.substring(from: m.range.location + m.range.length).lowercased()
+            if before.range(of: #"(\+|\b(add|adding|another|plus|up|increase|increasing)\s*)\s*$"#, options: .regularExpression) != nil { continue }
+            if after.range(of: #"^\s*(more|(per|a|an|each|every)\s+(week|month|session|workout|fortnight))\b"#, options: .regularExpression) != nil { continue }
+            let digits = ns.substring(with: m.range(at: 1)).replacingOccurrences(of: ",", with: ".")
+            guard let value = Double(digits) else { continue }
+            let unit = ns.substring(with: m.range(at: 2)).lowercased()
+            let isReps = unit.hasPrefix("rep")
+            if best == nil || (isReps == best!.isReps && value > best!.value) || (!isReps && best!.isReps) {
+                best = (value, isReps)
+            }
         }
+        if let best { return best }
         guard let match = text.range(of: #"(?<![\dx.,])(\d+(?:[.,]\d+)?)(?![\dx.,]|\s*(?:%|x|weeks?|days?|months?|sets?|rm\b))"#,
                                      options: .regularExpression) else { return nil }
         let digits = String(text[match]).replacingOccurrences(of: ",", with: ".")
         guard let value = Double(digits), value >= 10, value <= 500 else { return nil }
         return (value, false)
     }
+
+    private static let unitNumber = try! NSRegularExpression(pattern: #"(\d+(?:[.,]\d+)?)\s*(kg|kilos?|reps?)\b"#, options: .caseInsensitive)
 
     /// The date after "by", "before", "until" or "till", whichever comes.
     static func date(in text: String, today: Date, calendar: Calendar) -> Date? {

@@ -30,6 +30,35 @@ final class TargetsTests: XCTestCase {
         XCTAssertNil(targets[2].by)
     }
 
+    func testProseHeadingsAndBareNumbersAreReadToo() {
+        let goals = """
+        # Goals
+
+        Squat 140 and bench press 100 kg until June 2027; deadlift 180 kg before christmas.
+
+        ## Chin-ups
+        Target: 15 reps by March.
+        Currently 11.
+
+        **Over head press**
+        - 60 kg. Was 52.5 in August.
+        - 3x5 at 55 kg first
+        """
+        let lifts = ["squat", "bench-press", "deadlift", "chin-ups", "over-head-press"]
+        let targets = Targets.parse(goals, lifts: lifts, today: day("2026-09-21"), calendar: utc)
+        XCTAssertEqual(targets.map(\.lift), ["squat", "bench-press", "deadlift", "chin-ups", "over-head-press"])
+        XCTAssertEqual(targets.map(\.value), [140, 100, 180, 15, 60])
+        XCTAssertEqual(targets.map(\.isReps), [false, false, false, true, false])
+        XCTAssertEqual(targets[0].by, day("2027-06-30"), "one date for the sentence")
+        XCTAssertEqual(targets[1].by, day("2027-06-30"))
+        XCTAssertNil(targets[2].by, "christmas is not a date")
+        XCTAssertEqual(targets[3].by, day("2027-03-31"))
+        XCTAssertNil(targets[4].by)
+        XCTAssertEqual(Targets.number(in: "3x5 at 55")?.value, 55, "a scheme is not a load")
+        XCTAssertNil(Targets.number(in: "3x5 for 6 weeks"))
+        XCTAssertNil(Targets.number(in: "2026 is the year"))
+    }
+
     func testDatesWithoutAYearRollForwardAndISOIsRead() {
         XCTAssertEqual(Targets.date(after: "by", in: "squat 140 kg by 2026-12-24", today: day("2026-09-21"), calendar: utc), day("2026-12-24"))
         XCTAssertEqual(Targets.date(after: "by", in: "squat 140 kg by 1 march", today: day("2026-09-21"), calendar: utc), day("2027-03-01"))

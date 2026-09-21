@@ -167,6 +167,11 @@ struct HistoryView: View {
     }
 
     /// One day: its lifts, under a header with the date and where the sets went.
+    /// Every record day in the log, once per body pass: one walk over the
+    /// sets, keyed by day and lift, so a search that rebuilds a session's
+    /// lifts still finds its records.
+    private var records: [String: [String: Analytics.Record]] { Analytics.records(in: store.sessions) }
+
     private func daySection(_ session: Session) -> some View {
         Section {
             ForEach(session.exercises) { ex in
@@ -176,7 +181,12 @@ struct HistoryView: View {
                     store.requestEdit(exercise: ex.name, on: session.date)
                 } label: {
                     VStack(alignment: .leading, spacing: 2) {
-                        Text(ex.name).font(.headline)
+                        HStack(spacing: 8) {
+                            Text(ex.name).font(.headline)
+                            if let record = records[session.dateString]?[MuscleMap.canonical(ex.name)] {
+                                RecordBadge(record: record)
+                            }
+                        }
                         // Mono, because this *is* the line from the file.
                         Text(ex.sets.map(\.token).joined(separator: "  "))
                             .font(.system(.subheadline, design: .monospaced))

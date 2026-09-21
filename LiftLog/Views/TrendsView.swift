@@ -168,7 +168,9 @@ struct TrendsView: View {
                         .font(.caption).foregroundStyle(.secondary)
                     Spacer()
                     if let last = series.last?.date {
-                        Text("last \(last, format: .dateTime.day().month(.abbreviated)) · \(series.count) sessions")
+                        let records = series.filter(\.isRecord).count
+                        Text("last \(last, format: .dateTime.day().month(.abbreviated)) · \(series.count) sessions"
+                             + (records > 0 ? " · \(records) \(records == 1 ? "record" : "records")" : ""))
                             .font(.caption2).foregroundStyle(.tertiary)
                             .monospacedDigit()
                     }
@@ -189,8 +191,9 @@ struct TrendsView: View {
                         .buttonStyle(.bordered)
                         .controlSize(.small)
                     } else {
-                        Text(scrolls(series) ? "press and drag to read a session · swipe for older ones"
-                                             : "drag along the line to read a session")
+                        Text((scrolls(series) ? "press and drag to read a session · swipe for older ones"
+                                              : "drag along the line to read a session")
+                             + (series.contains(where: \.isRecord) ? " · green dots are records" : ""))
                             .font(.caption2).foregroundStyle(.tertiary)
                     }
                 } else {
@@ -263,8 +266,8 @@ struct TrendsView: View {
                 .foregroundStyle(.tint)
             PointMark(x: .value("Date", point.date),
                       y: .value(metric.rawValue, point.value))
-                .foregroundStyle(.tint)
-                .symbolSize(28)
+                .foregroundStyle(point.isRecord ? Theme.progressing : Theme.accent)
+                .symbolSize(point.isRecord ? 64 : 28)
         }
         // Drag along the line to read a session off it.
         if let picked = scrubbed(in: series) {
@@ -291,6 +294,11 @@ struct TrendsView: View {
             Text(picked.date, format: .dateTime.day().month(.abbreviated))
                 .font(.caption2)
                 .foregroundStyle(.secondary)
+            if picked.isRecord {
+                Text("record")
+                    .font(.caption2.weight(.bold))
+                    .foregroundStyle(Theme.progressing)
+            }
             if !picked.tokens.isEmpty {
                 Text(picked.tokens)
                     .font(.caption2.monospacedDigit())
@@ -330,8 +338,10 @@ struct TrendsView: View {
         guard let first = series.first, let last = series.last else { return metric.rawValue }
         let from = first.date.formatted(.dateTime.day().month(.abbreviated).year())
         let to = last.date.formatted(.dateTime.day().month(.abbreviated).year())
+        let records = series.filter(\.isRecord).count
         return "\(metric.rawValue) over \(series.count) sessions from \(from) to \(to), " +
-            "from \(WorkSet.formatWeight(first.value)) to \(WorkSet.formatWeight(last.value)) \(metric.unit)"
+            "from \(WorkSet.formatWeight(first.value)) to \(WorkSet.formatWeight(last.value)) \(metric.unit)" +
+            (records > 0 ? ", \(records) \(records == 1 ? "record" : "records")" : "")
     }
 
     // MARK: - Stats

@@ -180,8 +180,8 @@ struct TrendsView: View {
                     Spacer()
                     if let last = series.last?.date {
                         let records = series.filter(\.isRecord).count
-                        Text("last \(last, format: .dateTime.day().month(.abbreviated)) · \(series.count) sessions"
-                             + (records > 0 ? " · \(records) \(records == 1 ? "record" : "records")" : ""))
+                        let tail = records > 0 ? " · \(records) \(records == 1 ? "record" : "records")" : ""
+                        Text("last \(last, format: .dateTime.day().month(.abbreviated)) · \(series.count) sessions\(tail)")
                             .font(.caption2).foregroundStyle(.tertiary)
                             .monospacedDigit()
                     }

@@ -22,7 +22,7 @@ enum Targets {
     static func parse(_ goals: String, lifts: [String], today: Date = Date(),
                       calendar: Calendar = .current) -> [Target] {
         // Longest names first, so "romanian deadlift" is not read as "deadlift".
-        let known = Dictionary(grouping: lifts, by: MuscleMap.canonical)
+        let known = Dictionary(grouping: lifts) { MuscleMap.canonical($0) }
             .keys.sorted { $0.count != $1.count ? $0.count > $1.count : $0 < $1 }
         var out: [Target] = []
         for rawLine in goals.split(separator: "\n") {

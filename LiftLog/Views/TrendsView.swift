@@ -490,8 +490,8 @@ struct TrendsView: View {
     /// isn't drawn again here: the chart above already is that line.
     private func doseCard(_ dose: DoseResponse) -> some View {
         let lift = Theme.readableName(dose.exercise)
-        // Headroom for the count printed over each week's taller bar.
-        let tallest = dose.weeks.map { max($0.sets, Double($0.liftSets)) }.max() ?? 0
+        // Headroom for the count printed over each bar.
+        let tallest = dose.weeks.map { Double($0.liftSets) }.max() ?? 0
         let top = max(6, tallest + 3)
         return Panel {
             VStack(alignment: .leading, spacing: 10) {
@@ -503,39 +503,27 @@ struct TrendsView: View {
                         .font(.caption2).foregroundStyle(.tertiary)
                 }
 
-                // Work: this lift's own sets inside every set for its main
-                // muscle. The lift's bar is narrower so an overshoot — a lift
-                // whose main share is a half — shows as one rather than hiding
-                // the bar behind it. The 10–20 band is a muscle's number, not a
-                // lift's: it is drawn on the Volume tab, not here.
+                // Work: this lift's own sets a week. The muscle's total is in
+                // the sentence and the tap read-out, not drawn: a second bar
+                // behind the first read as an outline. The 10–20 band is a
+                // muscle's number, not a lift's: it is on the Volume tab.
                 // The x value is binned by week so each bar has a band to be a
                 // ratio of: on a bare date axis there is no band and a ratio
-                // width is nothing, which drew no bars at all. Ranged bars
-                // from zero, so the two don't stack but sit one inside the other.
+                // width is nothing, which drew no bars at all.
                 Chart {
                     ForEach(dose.weeks) { week in
                         BarMark(x: .value("Week", week.start, unit: .weekOfYear),
-                                yStart: .value("Sets", 0.0),
-                                yEnd: .value("Muscle sets", week.sets),
-                                width: .ratio(0.8))
-                            .foregroundStyle(Color.secondary.opacity(0.22))
-                            .cornerRadius(3)
-                            .opacity(pickedWeek == nil || pickedWeek?.start == week.start ? 1 : 0.5)
-                        BarMark(x: .value("Week", week.start, unit: .weekOfYear),
-                                yStart: .value("Sets", 0.0),
-                                yEnd: .value("Lift sets", Double(week.liftSets)),
-                                width: .ratio(0.45))
+                                y: .value("Lift sets", Double(week.liftSets)),
+                                width: .ratio(0.6))
                             .foregroundStyle(Theme.accent)
                             .cornerRadius(3)
                             .opacity(pickedWeek == nil || pickedWeek?.start == week.start ? 1 : 0.5)
-                        // The lift's count, over whichever bar is taller so
-                        // it sits on the panel and not inside the grey bar.
-                        // Its own mark, drawn after both bars, and never
-                        // dropped for being near the top: the domain leaves
-                        // room for it.
+                        // The count over its bar: its own mark, drawn after
+                        // the bar and never dropped for being near the top;
+                        // the domain leaves room for it.
                         if week.liftSets > 0 {
                             PointMark(x: .value("Week", week.start, unit: .weekOfYear),
-                                      y: .value("Top", max(week.sets, Double(week.liftSets))))
+                                      y: .value("Top", Double(week.liftSets)))
                                 .symbolSize(0)
                                 .annotation(position: .top, spacing: 2,
                                             overflowResolution: .init(x: .fit(to: .plot), y: .disabled)) {
@@ -562,17 +550,10 @@ struct TrendsView: View {
                     }
                 }
                 .frame(height: 110)
-                .accessibilityLabel("\(lift) sets a week and \(dose.muscle.rawValue) sets in all, last \(dose.weeks.count) weeks")
+                .accessibilityLabel("\(lift) sets a week, last \(dose.weeks.count) weeks")
                 .accessibilityValue(dose.summary)
                 // A tap on a week picks it and reads it out in one line.
                 .chartXSelection(value: $weekScrub)
-
-                HStack(spacing: 14) {
-                    legendSwatch(Theme.accent, "\(lift)")
-                    legendSwatch(Color.secondary.opacity(0.22), "\(dose.muscle.rawValue) in all")
-                }
-                .lineLimit(1)
-                .minimumScaleFactor(0.8)
 
                 if let week = pickedWeek {
                     Text(weekLine(week, dose: dose))

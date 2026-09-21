@@ -54,14 +54,23 @@ enum Targets {
     /// "by", "before", "until" or "till" ahead of the date.
     static func parse(_ goals: String, lifts: [String], today: Date = Date(),
                       calendar: Calendar = .current) -> [Target] {
-        // Longest names first, so "romanian deadlift" is not read as "deadlift".
-        let known = Dictionary(grouping: lifts) { MuscleMap.canonical($0) }
-            .keys.sorted { $0.count != $1.count ? $0.count > $1.count : $0 < $1 }
+        // Every name a known lift goes by — its own and its aliases, so
+        // "bench" is bench-press — longest first, so "romanian deadlift" is
+        // not read as "deadlift".
+        let canonicals = Set(lifts.map { MuscleMap.canonical($0) })
+        var names: [(words: String, lift: String)] = canonicals.map { ($0.replacingOccurrences(of: "-", with: " "), $0) }
+        for (alias, target) in MuscleMap.aliases where canonicals.contains(target) {
+            names.append((alias.replacingOccurrences(of: "-", with: " "), target))
+        }
+        for name in lifts where canonicals.contains(MuscleMap.canonical(name)) {
+            names.append((MuscleMap.key(name).replacingOccurrences(of: "-", with: " "), MuscleMap.canonical(name)))
+        }
+        names.sort { $0.words.count != $1.words.count ? $0.words.count > $1.words.count : $0.words < $1.words }
         func lift(in text: String) -> String? {
             // Words only, so "squat:" and "(bench)" are the lifts they name.
             let words = MuscleMap.key(text).map { $0.isLetter || $0.isNumber ? $0 : " " }
             let flat = " " + String(words).split(separator: " ").joined(separator: " ") + " "
-            return known.first { flat.contains(" " + $0.replacingOccurrences(of: "-", with: " ") + " ") }
+            return names.first { flat.contains(" " + $0.words + " ") }?.lift
         }
 
         var out: [Target] = []
@@ -88,10 +97,11 @@ enum Targets {
             let lineLift = lift(in: text)
             let clauses = split(text, on: clauseBreak)
             let liftsInLine = Set(clauses.compactMap(lift(in:)))
-            for clause in clauses where !clause.isEmpty {
-                // "Currently 120" is where they are, not where they're going.
-                if clause.range(of: #"\b(currently|now|today|at the moment|was|last)\b"#, options: .regularExpression) != nil { continue }
-                let name = lift(in: clause) ?? (liftsInLine.count <= 1 ? lineLift : nil) ?? heading
+            for whole in clauses where !whole.isEmpty {
+                // "Currently 120" is where they are, not where they're going:
+                // that and everything after it is cut before the number is read.
+                let clause = whole.replacingOccurrences(of: #"\b(currently|now|today|at the moment|was|last)\b.*$"#, with: "", options: .regularExpression)
+                let name = lift(in: whole) ?? (liftsInLine.count <= 1 ? lineLift : nil) ?? heading
                 guard let name, !seen.contains(name), let number = number(in: clause) else { continue }
                 seen.insert(name)
                 // A clause with its own "by" keeps its own date, readable or

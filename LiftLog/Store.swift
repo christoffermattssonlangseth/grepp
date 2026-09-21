@@ -214,6 +214,7 @@ final class Store: ObservableObject {
     private let plansKey = "plan_records"
     private let sessionStartsKey = "session_starts"
     private let stravaPostsKey = "strava_posts"
+    private let healthWorkoutsKey = "health_workouts"
     private var defaults: UserDefaults { .standard }
 
     /// The exercise being logged right now, persisted so a kill mid-session
@@ -233,6 +234,8 @@ final class Store: ObservableObject {
         plans = loadPlans()
         stravaPosts = defaults.data(forKey: stravaPostsKey)
             .flatMap { try? JSONDecoder().decode([String: Int].self, from: $0) } ?? [:]
+        healthWorkouts = defaults.data(forKey: healthWorkoutsKey)
+            .flatMap { try? JSONDecoder().decode([String: String].self, from: $0) } ?? [:]
         brief = CoachContext.Brief(coaching: defaults.string(forKey: coachingCacheKey) ?? "",
                                    goals: defaults.string(forKey: goalsCacheKey) ?? "",
                                    research: defaults.string(forKey: researchCacheKey) ?? "",
@@ -725,6 +728,19 @@ final class Store: ObservableObject {
     func setStravaActivity(_ id: Int, on date: Date) {
         stravaPosts[Session.dateFormatter.string(from: date)] = id
         defaults.set(try? JSONEncoder().encode(stravaPosts), forKey: stravaPostsKey)
+    }
+
+    /// Apple Health workout ids for days saved there, keyed by the log's
+    /// date, so a day that grows replaces its workout rather than adding one.
+    @Published private(set) var healthWorkouts: [String: String] = [:]
+
+    func healthWorkout(on date: Date) -> String? {
+        healthWorkouts[Session.dateFormatter.string(from: date)]
+    }
+
+    func setHealthWorkout(_ id: String, on date: Date) {
+        healthWorkouts[Session.dateFormatter.string(from: date)] = id
+        defaults.set(try? JSONEncoder().encode(healthWorkouts), forKey: healthWorkoutsKey)
     }
 
     /// A prescription was loaded into the Log tab.

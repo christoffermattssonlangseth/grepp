@@ -1041,6 +1041,11 @@ struct LogView: View {
             store.completePlan(entry, on: date)
             exerciseFinished += 1
             focus = nil
+            // Today's session to Apple Health, when that is on: the whole
+            // day as one workout, replaced as it grows.
+            if isToday, let session = store.sessions.first(where: { $0.dateString == Session.dateFormatter.string(from: date) }) {
+                Task { await HealthWriter.sync(session, store: store) }
+            }
             // The day stays for the next lift — a backfill is several — but it
             // has to be confirmed again: one lift on purpose isn't the next.
             dateChosen = false

@@ -131,7 +131,9 @@ flick away, record days as green dots; drag along the line to read a session, ta
 that day. Under it, change over the last three weeks (counted from today) and
 all time; a **target** card when goals.md names a number for the lift ("- squat
 140 kg by 30 Jun 2027", in any wording that has the lift, the number and a
-date after "by"), with the day the last twelve weeks' pace reaches it, green
+date after "by"; "1RM" on the line or in the heading over it makes it a one-rep
+max, judged on the estimated 1RM rather than the top set), with the day the
+last twelve weeks' pace reaches it, green
 when that is in time and amber when it isn't or the pace is flat, and a "Set a
 target" button that writes such a line; and **work and result**: the lift's own weekly sets over the last
 eight weeks, the count on each bar (tap a week for its numbers in one line,
@@ -169,6 +171,11 @@ is one commit, and the coach's plan-versus-done record moves with it.
 
 **Widget.** *Last session* on the home screen: how long ago, the lifts and
 their sets, and **Up next** when a session is loaded and not yet lifted.
+
+**Apple Health.** Off until switched on in Settings ▸ Apple Health. On, each
+day's lifting is saved as one strength-training workout, from the first set
+to the last lift finished, so it counts in Fitness; a day that grows replaces
+its workout rather than adding one. Nothing is read from Health.
 
 **Strava.** A **Post to Strava** button under today's session. The day goes up
 as a Weight Training activity named after its lifts, the log lines in the

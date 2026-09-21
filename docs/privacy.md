@@ -37,6 +37,11 @@ until you tap send, and a message with a DOI or link in it also lets the model
 fetch that paper from journal sites, PubMed, preprint servers or doi.org for
 that one answer.
 
+**Apple Health.** If you turn on Save sessions to Health, the app writes each
+day's lifting to Apple Health on your phone as a strength-training workout
+with its start and end time. Nothing is read from Health, and Health data
+stays under Apple's Health privacy terms on your device.
+
 **Strava.** If you connect Strava and tap Post, the app sends that day's lifts
 and a summary to Strava as an activity, using tokens from your own Strava
 account. Nothing is read back from Strava.

@@ -24,7 +24,7 @@ final class TargetsTests: XCTestCase {
                                     today: day("2026-09-21"), calendar: utc)
         XCTAssertEqual(targets.map(\.lift), ["squat", "bench-press", "chin-ups", "romanian-deadlift"])
         XCTAssertEqual(targets.map(\.value), [140, 100, 12, 120])
-        XCTAssertEqual(targets.map(\.isReps), [false, false, true, false])
+        XCTAssertEqual(targets.map(\.kind), [.topSet, .topSet, .reps, .topSet])
         XCTAssertEqual(targets[0].by, day("2027-06-30"), "a month alone is the end of its next occurrence")
         XCTAssertEqual(targets[1].by, day("2026-12-01"))
         XCTAssertNil(targets[2].by)
@@ -48,7 +48,7 @@ final class TargetsTests: XCTestCase {
         let targets = Targets.parse(goals, lifts: lifts, today: day("2026-09-21"), calendar: utc)
         XCTAssertEqual(targets.map(\.lift), ["squat", "bench-press", "deadlift", "chin-ups", "over-head-press"])
         XCTAssertEqual(targets.map(\.value), [140, 100, 180, 15, 60])
-        XCTAssertEqual(targets.map(\.isReps), [false, false, false, true, false])
+        XCTAssertEqual(targets.map(\.kind), [.topSet, .topSet, .topSet, .reps, .topSet])
         XCTAssertEqual(targets[0].by, day("2027-06-30"), "one date for the sentence")
         XCTAssertEqual(targets[1].by, day("2027-06-30"))
         XCTAssertNil(targets[2].by, "christmas is not a date")
@@ -57,6 +57,27 @@ final class TargetsTests: XCTestCase {
         XCTAssertEqual(Targets.number(in: "3x5 at 55")?.value, 55, "a scheme is not a load")
         XCTAssertNil(Targets.number(in: "3x5 for 6 weeks"))
         XCTAssertNil(Targets.number(in: "2026 is the year"))
+    }
+
+    func testOneRepMaxGoalsAreMaxesByLineOrBySection() {
+        let goals = """
+        # 1RM goals
+        - Squat 140 kg by June
+        - Bench 100
+
+        ## Other
+        - deadlift 180 kg
+        - Over head press one rep max 70 kg
+        - chin-ups 15 reps
+        """
+        let targets = Targets.parse(goals, lifts: ["squat", "bench-press", "deadlift", "over-head-press", "chin-ups"],
+                                    today: day("2026-09-21"), calendar: utc)
+        XCTAssertEqual(targets.map(\.lift), ["squat", "bench-press", "deadlift", "over-head-press", "chin-ups"])
+        XCTAssertEqual(targets.map(\.kind), [.oneRepMax, .oneRepMax, .topSet, .oneRepMax, .reps])
+        XCTAssertEqual(targets[0].kind.metric, .oneRepMax)
+        XCTAssertTrue(Targets.isMax("e1RM 140"))
+        XCTAssertTrue(Targets.isMax("1 rm"))
+        XCTAssertFalse(Targets.isMax("3x5 at 100 kg"))
     }
 
     func testDatesWithoutAYearRollForwardAndISOIsRead() {
@@ -68,8 +89,11 @@ final class TargetsTests: XCTestCase {
     }
 
     func testTheLineTheAppWritesIsOneItReads() {
-        let line = Targets.line(lift: "bench-press", value: 100, isReps: false, by: day("2026-12-01"))
+        let line = Targets.line(lift: "bench-press", value: 100, kind: .topSet, by: day("2026-12-01"))
         XCTAssertEqual(line, "- bench press 100 kg by 1 Dec 2026")
+        let max = Targets.line(lift: "squat", value: 140, kind: .oneRepMax, by: nil)
+        XCTAssertEqual(max, "- squat 1RM 140 kg")
+        XCTAssertEqual(Targets.parse(max, lifts: ["squat"], today: day("2026-09-21"), calendar: utc).first?.kind, .oneRepMax)
         let back = Targets.parse(line, lifts: ["bench-press"], today: day("2026-09-21"), calendar: utc)
         XCTAssertEqual(back.first?.value, 100)
         XCTAssertEqual(back.first?.by, day("2026-12-01"))

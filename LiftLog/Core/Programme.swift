@@ -21,6 +21,13 @@ struct Programme: Equatable {
         /// Marked `rpt` on its line: reverse pyramid, loads computed by the
         /// app from the last session rather than asked of the coach.
         var rpt = false
+        /// The line of the file it came from, so an edit touches that line
+        /// and no other. Not part of equality: a lift is its words.
+        var line = -1
+
+        static func == (a: Exercise, b: Exercise) -> Bool {
+            a.name == b.name && a.scheme == b.scheme && a.note == b.note && a.rpt == b.rpt
+        }
 
         /// The scheme as numbers, when it has them: `3x4-6` → 3 sets of 4 to 6,
         /// `3x5` → 3 sets of 5. Nil for AMRAP and the like.
@@ -41,6 +48,12 @@ struct Programme: Equatable {
         var id: String { title }
         let title: String
         let exercises: [Exercise]
+        /// The heading's line, and the line after the day's last: the block
+        /// an edit of the day may touch. Not part of equality.
+        var line = -1
+        var end = -1
+
+        static func == (a: Day, b: Day) -> Bool { a.title == b.title && a.exercises == b.exercises }
     }
 
     let title: String
@@ -55,16 +68,17 @@ struct Programme: Equatable {
     static func parse(_ markdown: String) -> Programme {
         var title = ""
         var days: [Day] = []
-        var current: (title: String, exercises: [Exercise])?
+        var current: (title: String, exercises: [Exercise], line: Int)?
+        let lines = markdown.split(separator: "\n", omittingEmptySubsequences: false)
 
-        func closeDay() {
+        func closeDay(at end: Int) {
             if let current, !current.exercises.isEmpty {
-                days.append(Day(title: current.title, exercises: current.exercises))
+                days.append(Day(title: current.title, exercises: current.exercises, line: current.line, end: end))
             }
             current = nil
         }
 
-        for raw in markdown.split(separator: "\n", omittingEmptySubsequences: false) {
+        for (index, raw) in lines.enumerated() {
             let line = raw.trimmingCharacters(in: .whitespaces)
             if line.isEmpty { continue }
 
@@ -74,24 +88,25 @@ struct Programme: Equatable {
                 if level == 1 && title.isEmpty && days.isEmpty && current == nil {
                     title = text
                 } else if !text.isEmpty {
-                    closeDay()
-                    current = (text, [])
+                    closeDay(at: index)
+                    current = (text, [], index)
                 }
                 continue
             }
             // A bold line on its own is a day too: **Day A — Lower**
             if line.hasPrefix("**"), line.hasSuffix("**"), line.count > 4, !line.dropFirst(2).dropLast(2).contains("**") {
-                closeDay()
-                current = (String(line.dropFirst(2).dropLast(2)).trimmingCharacters(in: .whitespaces), [])
+                closeDay(at: index)
+                current = (String(line.dropFirst(2).dropLast(2)).trimmingCharacters(in: .whitespaces), [], index)
                 continue
             }
 
-            if let body = listItem(line), let exercise = parseExercise(body) {
-                if current == nil { current = ("Session", []) }
+            if let body = listItem(line), var exercise = parseExercise(body) {
+                if current == nil { current = ("Session", [], -1) }
+                exercise.line = index
                 current?.exercises.append(exercise)
             }
         }
-        closeDay()
+        closeDay(at: lines.count)
         return Programme(title: title, days: days)
     }
 
@@ -255,4 +270,113 @@ struct Programme: Equatable {
         return nil
     }
 
+}
+
+// MARK: - Editing the file
+
+/// Edits to program.md that touch the lines they mean to and no others:
+/// the coach's prose between the days, a note under a heading, the title,
+/// all come back byte for byte. Every edit takes the file and gives the
+/// file; the screen keeps a draft and saves it once.
+enum ProgrammeText {
+    /// The line a lift is written as: "- squat rpt 3x5 — add 2.5 kg when
+    /// all sets hit", in the shape the parser reads.
+    static func line(for exercise: Programme.Exercise) -> String {
+        var text = "- \(exercise.name)"
+        if exercise.rpt { text += " rpt" }
+        text += " \(exercise.scheme)"
+        if !exercise.note.isEmpty { text += " — \(exercise.note)" }
+        return text
+    }
+
+    private static func lines(_ md: String) -> [String] {
+        md.split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
+    }
+
+    static func replacing(line index: Int, with text: String, in md: String) -> String {
+        var all = lines(md)
+        guard all.indices.contains(index) else { return md }
+        all[index] = text
+        return all.joined(separator: "\n")
+    }
+
+    static func removing(line index: Int, in md: String) -> String {
+        var all = lines(md)
+        guard all.indices.contains(index) else { return md }
+        all.remove(at: index)
+        return all.joined(separator: "\n")
+    }
+
+    static func inserting(_ text: String, at index: Int, in md: String) -> String {
+        var all = lines(md)
+        let at = min(max(0, index), all.count)
+        all.insert(text, at: at)
+        return all.joined(separator: "\n")
+    }
+
+    /// A lift added to a day: after its last lift, or straight under the
+    /// heading of a day with none.
+    static func adding(_ exercise: Programme.Exercise, to day: Programme.Day, in md: String) -> String {
+        let after = day.exercises.last?.line ?? day.line
+        return inserting(line(for: exercise), at: after + 1, in: md)
+    }
+
+    /// The day's lifts in a new order, written back over the same lines, so
+    /// a note between two lifts stays where it was.
+    static func reordering(_ day: Programme.Day, to order: [Programme.Exercise], in md: String) -> String {
+        let slots = day.exercises.map(\.line).sorted()
+        guard slots.count == order.count else { return md }
+        var all = lines(md)
+        for (slot, exercise) in zip(slots, order) {
+            guard all.indices.contains(slot), all.indices.contains(exercise.line) else { return md }
+        }
+        let texts = order.map { lines(md)[$0.line] }
+        for (slot, text) in zip(slots, texts) { all[slot] = text }
+        return all.joined(separator: "\n")
+    }
+
+    /// A new day at the end of the file, its heading at the level the file
+    /// uses, with its first lifts.
+    static func appendingDay(_ title: String, exercises: [Programme.Exercise], to md: String) -> String {
+        let level = lines(md).compactMap { raw -> Int? in
+            let t = raw.trimmingCharacters(in: .whitespaces)
+            let hashes = t.prefix { $0 == "#" }.count
+            return hashes >= 2 ? hashes : nil
+        }.first ?? 2
+        var text = md
+        if !text.isEmpty && !text.hasSuffix("\n") { text += "\n" }
+        if !text.isEmpty { text += "\n" }
+        text += String(repeating: "#", count: level) + " " + title + "\n"
+        for exercise in exercises { text += line(for: exercise) + "\n" }
+        return text
+    }
+
+    /// The heading with a new title, its marks kept: "## Day A" stays a
+    /// second-level heading, "**Day A**" stays bold.
+    static func renaming(_ day: Programme.Day, to title: String, in md: String) -> String {
+        let all = lines(md)
+        guard all.indices.contains(day.line) else { return md }
+        let raw = all[day.line]
+        let trimmed = raw.trimmingCharacters(in: .whitespaces)
+        let text: String
+        if trimmed.hasPrefix("#") {
+            text = String(trimmed.prefix { $0 == "#" }) + " " + title
+        } else {
+            text = "**" + title + "**"
+        }
+        return replacing(line: day.line, with: text, in: md)
+    }
+
+    /// The day gone: its heading, its lifts and whatever sits between them
+    /// up to the next heading. The days after it are untouched.
+    static func removing(_ day: Programme.Day, from md: String) -> String {
+        var all = lines(md)
+        guard all.indices.contains(day.line), day.end > day.line else { return md }
+        all.removeSubrange(day.line..<min(day.end, all.count))
+        // Not two blank lines where the day was.
+        if day.line > 0, day.line < all.count, all[day.line].isEmpty, all[day.line - 1].isEmpty {
+            all.remove(at: day.line)
+        }
+        return all.joined(separator: "\n")
+    }
 }

@@ -59,6 +59,11 @@ final class ProgrammeTests: XCTestCase {
         XCTAssertEqual([h.name, h.scheme, h.note], ["chin-ups", "3xAMRAP", "bodyweight"])
         let i = Programme.parseExercise("dips AMRAP x 2")!
         XCTAssertEqual([i.name, i.scheme], ["dips", "2xAMRAP"])
+        let j = Programme.parseExercise("chin-ups 3 sets, reps only, no added load — add a rep a set, top set AMRAP")!
+        XCTAssertEqual([j.name, j.scheme], ["chin-ups", "3 sets"])
+        XCTAssertEqual(j.note, "reps only, no added load — add a rep a set, top set AMRAP")
+        XCTAssertNil(j.setsAndReps)
+        XCTAssertEqual(Programme.parse("## Day\n" + ProgrammeText.line(for: j)).days[0].exercises[0], j)
     }
 
     func testLenientHeadingsAndLists() {

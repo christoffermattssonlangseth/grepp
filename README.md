@@ -94,7 +94,9 @@ equipment), and writes `program.md`: days under headings, one lift per line
 with its set scheme and progression rule, no loads. Save it, and from then on
 "what should I do today" is that programme's next day with loads from your
 log, and the Programme screen in the Coach toolbar lists the days with a
-button each, under a line on how the last four weeks went against the file:
+button each, and an Edit button: rename, add or remove days, add, change,
+reorder or remove lifts, and Save writes program.md with the coach's notes
+between the days untouched. Under the days, a line on how the last four weeks went against the file:
 programme days done, sessions that were none of its days, and the lifts left
 out of their day most often. The design rules it follows are the usual evidence-based ones
 (hard sets per muscle per week, two exposures, 1–3 reps in reserve, reactive

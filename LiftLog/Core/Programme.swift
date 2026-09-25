@@ -121,20 +121,32 @@ struct Programme: Equatable {
         return nil
     }
 
-    /// The set scheme in a line: `3x5`, `3 x 8–10`, `4×AMRAP`, `2 x max`.
-    private static let scheme = try! NSRegularExpression(
-        pattern: "(\\d+)\\s*[x×]\\s*(\\d+(?:\\s*[-–]\\s*\\d+)?\\+?|amrap|max)",
-        options: [.caseInsensitive])
+    /// The set scheme in a line, in the shapes a coach writes it: `3x5`,
+    /// `3 x 8–10`, `4×AMRAP`, `2 x max`, `3 sets × 6–10`, `3 sets of 8`,
+    /// `3 sets to failure`, `AMRAP x 3`. The first is the file's own
+    /// spelling and wins when a line has two.
+    private static let schemes: [NSRegularExpression] = [
+        "(\\d+)\\s*(?:sets?\\s*)?(?:[x×]|of)\\s*(\\d+(?:\\s*[-–]\\s*\\d+)?\\+?|amrap|max|failure)",
+        "(\\d+)\\s*sets?\\s*(?:to\\s+)?(failure|amrap|max)",
+        "(amrap|max)\\s*[x×]\\s*(\\d+)",
+    ].map { try! NSRegularExpression(pattern: $0, options: [.caseInsensitive]) }
 
     /// `squat 3x5 — add 2.5 kg when all sets hit` → name, scheme, note. Also
     /// `Squat: 3 x 5`, `**Bench press** 3x8-10 (add 2.5 kg)`, `squat 3x5 @ 90 kg`.
     static func parseExercise(_ text: String) -> Exercise? {
         let clean = text.replacingOccurrences(of: "**", with: "")
         let whole = NSRange(clean.startIndex..., in: clean)
-        guard let m = scheme.firstMatch(in: clean, range: whole),
-              let range = Range(m.range, in: clean),
-              let setsRange = Range(m.range(at: 1), in: clean),
-              let repsRange = Range(m.range(at: 2), in: clean) else { return nil }
+        var found: (index: Int, match: NSTextCheckingResult)?
+        for (index, regex) in schemes.enumerated() {
+            if let m = regex.firstMatch(in: clean, range: whole) { found = (index, m); break }
+        }
+        guard let found else { return nil }
+        let m = found.match
+        // The reversed shape, "AMRAP x 3", has its groups the other way round.
+        let reversed = found.index == 2
+        guard let range = Range(m.range, in: clean),
+              let setsRange = Range(m.range(at: reversed ? 2 : 1), in: clean),
+              let repsRange = Range(m.range(at: reversed ? 1 : 2), in: clean) else { return nil }
 
         // `rpt` marks the scheme when it sits with the name or right after the
         // scheme — not anywhere in a note, and not in a sentence that happens
@@ -162,7 +174,7 @@ struct Programme: Equatable {
         guard !name.isEmpty, name.first!.isLetter, name.split(separator: "-").count <= 4 else { return nil }
 
         let reps = clean[repsRange].replacingOccurrences(of: " ", with: "").uppercased()
-        let normalised = "\(clean[setsRange])x\(reps == "MAX" ? "AMRAP" : reps)"
+        let normalised = "\(clean[setsRange])x\(reps == "MAX" || reps == "FAILURE" ? "AMRAP" : reps)"
         let note = tail
             .trimmingCharacters(in: .whitespaces)
             .trimmingCharacters(in: CharacterSet(charactersIn: ":—–-,("))

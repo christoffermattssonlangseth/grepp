@@ -50,6 +50,15 @@ final class ProgrammeTests: XCTestCase {
         XCTAssertEqual([d.name, d.scheme, d.note], ["squat", "3x5", "@ 90 kg"])
         let e = Programme.parseExercise("leg press 2 x max")!
         XCTAssertEqual([e.name, e.scheme], ["leg-press", "2xAMRAP"])
+        // The shapes a coach writes: sets spelled out, failure, reversed.
+        let f = Programme.parseExercise("Chins 3 sets × 6–10 — add load once 3x10")!
+        XCTAssertEqual([f.name, f.scheme, f.note], ["chins", "3x6–10", "add load once 3x10"])
+        let g = Programme.parseExercise("chin-ups: 3 sets of 8")!
+        XCTAssertEqual([g.name, g.scheme], ["chin-ups", "3x8"])
+        let h = Programme.parseExercise("chin-ups 3 sets to failure, bodyweight")!
+        XCTAssertEqual([h.name, h.scheme, h.note], ["chin-ups", "3xAMRAP", "bodyweight"])
+        let i = Programme.parseExercise("dips AMRAP x 2")!
+        XCTAssertEqual([i.name, i.scheme], ["dips", "2xAMRAP"])
     }
 
     func testLenientHeadingsAndLists() {

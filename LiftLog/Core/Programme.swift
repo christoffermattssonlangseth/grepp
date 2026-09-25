@@ -123,12 +123,14 @@ struct Programme: Equatable {
 
     /// The set scheme in a line, in the shapes a coach writes it: `3x5`,
     /// `3 x 8–10`, `4×AMRAP`, `2 x max`, `3 sets × 6–10`, `3 sets of 8`,
-    /// `3 sets to failure`, `AMRAP x 3`. The first is the file's own
-    /// spelling and wins when a line has two.
+    /// `3 sets to failure`, `AMRAP x 3`, and `3 sets` with the reps left to
+    /// the note ("reps only, add a rep a set"). The first is the file's own
+    /// spelling and wins when a line has two; the bare `3 sets` comes last.
     private static let schemes: [NSRegularExpression] = [
         "(\\d+)\\s*(?:sets?\\s*)?(?:[x×]|of)\\s*(\\d+(?:\\s*[-–]\\s*\\d+)?\\+?|amrap|max|failure)",
         "(\\d+)\\s*sets?\\s*(?:to\\s+)?(failure|amrap|max)",
         "(amrap|max)\\s*[x×]\\s*(\\d+)",
+        "(\\d+)\\s*(sets?)\\b",
     ].map { try! NSRegularExpression(pattern: $0, options: [.caseInsensitive]) }
 
     /// `squat 3x5 — add 2.5 kg when all sets hit` → name, scheme, note. Also
@@ -174,7 +176,10 @@ struct Programme: Equatable {
         guard !name.isEmpty, name.first!.isLetter, name.split(separator: "-").count <= 4 else { return nil }
 
         let reps = clean[repsRange].replacingOccurrences(of: " ", with: "").uppercased()
-        let normalised = "\(clean[setsRange])x\(reps == "MAX" || reps == "FAILURE" ? "AMRAP" : reps)"
+        // "3 sets" with the reps in the note stays "3 sets": no rep count is
+        // not an AMRAP, and the scheme is read back as written.
+        let normalised = found.index == 3 ? "\(clean[setsRange]) sets"
+            : "\(clean[setsRange])x\(reps == "MAX" || reps == "FAILURE" ? "AMRAP" : reps)"
         let note = tail
             .trimmingCharacters(in: .whitespaces)
             .trimmingCharacters(in: CharacterSet(charactersIn: ":—–-,("))

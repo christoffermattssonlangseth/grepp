@@ -3,6 +3,8 @@ import SwiftUI
 struct ContentView: View {
     @EnvironmentObject var store: Store
     @State private var showingFirstRun = false
+    @State private var showingIntake = false
+    @AppStorage(Prefs.intakePending) private var intakePending = false
 
     var body: some View {
         TabView(selection: $store.selectedTab) {
@@ -23,11 +25,26 @@ struct ContentView: View {
                 .tag(4)
         }
         .tint(Theme.accent)
-        // A fresh install: ask where the log lives before anything tries to load it.
-        .onAppear { showingFirstRun = store.needsSetup }
-        .fullScreenCover(isPresented: $showingFirstRun) {
+        // A fresh install: ask where the log lives before anything tries to load it,
+        // then, once the log can be written, the setup questions.
+        .onAppear {
+            showingFirstRun = store.needsSetup
+            offerIntake()
+        }
+        .fullScreenCover(isPresented: $showingFirstRun, onDismiss: offerIntake) {
             FirstRunView().environmentObject(store)
         }
+        .sheet(isPresented: $showingIntake) {
+            IntakeView().environmentObject(store)
+        }
+        // GitHub is chosen first and connected later in Settings: the setup
+        // waits for the token rather than asking questions it can't save.
+        .onChange(of: store.canWriteFiles) { _, _ in offerIntake() }
+    }
+
+    private func offerIntake() {
+        guard intakePending, !showingFirstRun, !store.needsSetup, store.canWriteFiles else { return }
+        showingIntake = true
     }
 }
 

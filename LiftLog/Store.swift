@@ -38,6 +38,11 @@ final class Store: ObservableObject {
     /// Nothing chosen and nothing configured: show the first-run choice.
     var needsSetup: Bool { storageRaw.isEmpty && owner.isEmpty && repo.isEmpty && token.isEmpty }
 
+    /// The brief files can be written: iCloud, or a GitHub repo with its token.
+    var canWriteFiles: Bool {
+        storage == .icloud || (!owner.isEmpty && !repo.isEmpty && !token.isEmpty)
+    }
+
     // Config (token lives in Keychain, everything else in UserDefaults).
     @AppStorage("gh_owner") var owner = ""
     @AppStorage("gh_repo") var repo = ""
@@ -116,6 +121,15 @@ final class Store: ObservableObject {
 
     func requestBrief() {
         briefRequest = true
+        selectedTab = 3
+    }
+
+    /// An "open the Programme screen" request, from the setup once a
+    /// starter programme is saved.
+    @Published var programmeRequest = false
+
+    func requestProgramme() {
+        programmeRequest = true
         selectedTab = 3
     }
 

@@ -32,6 +32,11 @@ nonisolated enum Prefs {
     static let restTarget = "rest_target"
     static let stravaEnabled = "strava_enabled"
     static let healthEnabled = "health_enabled"
+    /// A fresh install chose where the log lives and has not been through
+    /// the setup questions yet.
+    static let intakePending = "intake_pending"
+    /// The setup answers, kept so Set up again starts from them.
+    static let intake = "intake"
     static let coachModel = "coach_model"
     static let coachShowCost = "coach_show_cost"
     static let coachFableOK = "coach_fable_ok"

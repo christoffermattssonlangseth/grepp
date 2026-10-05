@@ -15,6 +15,7 @@ struct SettingsView: View {
     @AppStorage(Prefs.healthEnabled) private var healthEnabled = false
     /// Bumped after Health answers, so the caption below the switch follows.
     @State private var healthAsked = 0
+    @State private var showingIntake = false
     @State private var stravaError: String?
     @State private var stravaID = ""
     @State private var stravaSecret = ""
@@ -151,6 +152,12 @@ struct SettingsView: View {
                     } label: {
                         Label("Your brief — goals & how you train", systemImage: "person.text.rectangle")
                     }
+                    Button {
+                        showingIntake = true
+                    } label: {
+                        Label("Set up again — experience, goal, equipment", systemImage: "list.bullet.clipboard")
+                    }
+                    .disabled(!store.canWriteFiles)
 
                     labeled("workspace id", text: $store.anthropicWorkspace, placeholder: "wrkspc_… (optional)")
                     Text("""
@@ -364,6 +371,9 @@ struct SettingsView: View {
             .scrollContentBackground(.hidden)
             .background(Theme.backgroundView)
             .navigationTitle("Settings")
+            .sheet(isPresented: $showingIntake) {
+                IntakeView().environmentObject(store)
+            }
         }
     }
 

@@ -287,7 +287,12 @@ final class CoachService: ObservableObject {
                 return dose.summary
             })
         }
-        let system = CoachContext.systemPrompt(for: excerpt, brief: brief, mode: mode, digest: digest)
+        // The rack as Settings has it, so loads come out makeable.
+        let defaults = UserDefaults.standard
+        let bar = defaults.object(forKey: Prefs.barWeight) as? Double ?? 20
+        let inventory = defaults.string(forKey: Prefs.plateInventory).flatMap { PlateInventory(rawValue: $0) } ?? .standard
+        let system = CoachContext.systemPrompt(for: excerpt, brief: brief, mode: mode, digest: digest,
+                                               gym: CoachContext.gymLine(bar: bar, inventory: inventory))
         // What entered the log since the last answer in this chat — lines the
         // model has not been told about, whatever it said before them.
         let lines = Set(WorkoutParser.serialize(sessions).split(separator: "\n").map(String.init).filter { !$0.isEmpty })

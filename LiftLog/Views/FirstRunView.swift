@@ -9,6 +9,8 @@ struct FirstRunView: View {
     /// Whether iCloud Drive can be used from here; checked properly, not just
     /// the cheap identity test, and re-checked on a tap of the greyed card.
     @State private var icloudReady = ICloudBackend.isAvailable
+    /// The setup questions follow once the log can be written.
+    @AppStorage(Prefs.intakePending) private var intakePending = false
     @State private var checkingICloud = false
 
     var body: some View {
@@ -33,6 +35,7 @@ struct FirstRunView: View {
                        icon: "icloud") {
                     if icloudReady {
                         store.storage = .icloud
+                        intakePending = true
                         dismiss()
                         Task { await store.load() }
                     } else {
@@ -45,6 +48,7 @@ struct FirstRunView: View {
                        icon: "chevron.left.forwardslash.chevron.right") {
                     store.storage = .github
                     store.selectedTab = 4
+                    intakePending = true
                     dismiss()
                 }
             }

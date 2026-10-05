@@ -56,6 +56,7 @@ struct CoachView: View {
             // on screen, onAppear catches one that arrives before the tab has ever
             // been built — TabView makes its pages lazily.
             .onChange(of: store.briefRequest) { _, _ in consumeBriefRequest() }
+            .onChange(of: store.programmeRequest) { _, _ in consumeProgrammeRequest() }
             .onChange(of: store.coachQuestion) { _, _ in consumeQuestion() }
             .onChange(of: model) { old, new in
                 if new.isPremium, !fableAcknowledged {
@@ -74,6 +75,7 @@ struct CoachView: View {
                 // stored before it was answered, so it is taken back here.
                 if model.isPremium, !fableAcknowledged { model = .sonnet }
                 consumeBriefRequest()
+                consumeProgrammeRequest()
                 consumeQuestion()
             }
             .sheet(isPresented: $showingEvidence) {
@@ -279,6 +281,12 @@ struct CoachView: View {
         guard store.briefRequest else { return }
         store.briefRequest = false
         showingBrief = true
+    }
+
+    private func consumeProgrammeRequest() {
+        guard store.programmeRequest else { return }
+        store.programmeRequest = false
+        showingProgramme = true
     }
 
     /// A question from another tab: sent straight away when the coach can

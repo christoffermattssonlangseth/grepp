@@ -111,6 +111,19 @@ and one more rep when it doesn't — and any other line repeats the lift as it
 was last done. A three-day reverse pyramid starter is one tap on an empty
 Programme screen; it is the only programme the app carries.
 
+**Setup.** After choosing where the log lives, a new install asks a few
+questions on its own screens, so it works with or without a coach key: how
+long you've lifted, what for (and, in your words, a goal with a date), days a
+week and session length, where you train and with what, the bar and plates,
+and anything to work around. The answers go into Settings and into the brief
+files the coach already reads: an "About me" section at the top of
+`coaching.md`, replaced in place when the setup is run again, and the goal as
+a line in `goals.md`. Then the hand-off: the coach is asked for a first
+programme fitted to that setup, or, for someone new to lifting, a beginner
+programme of two full-body days, fitted to their equipment, is one tap away.
+The coach is also told the bar and plates, so the loads it prescribes are
+ones the rack can make. Settings ▸ Coach ▸ Set up again runs it any time.
+
 **An empty log.** The first run says what the file is and shows one line of
 it; nothing is faked. Trained before? Tell the coach what you did in any form,
 from notes, another app or memory, and it writes the sessions as log lines with

@@ -137,7 +137,8 @@ enum CoachContext {
                              brief: Brief = .none,
                              mode: Mode = .coaching,
                              today: Date = Date(),
-                             digest: String? = nil) -> String {
+                             digest: String? = nil,
+                             gym: String? = nil) -> String {
         let todayString = Session.dateFormatter.string(from: today)
 
         let coverage: String
@@ -244,6 +245,7 @@ enum CoachContext {
         tables, no numbered lists. Prose and the occasional short list.
 
         \(standingBrief(brief))
+        \(gym.map { $0 + "\n\n" } ?? "")\
         \(digest.map { $0 + "\n\n" + readingHistoryBrief } ?? "")
         <training-log>
         \(excerpt.text)</training-log>
@@ -1299,17 +1301,38 @@ enum CoachContext {
         return note.trimmingCharacters(in: .whitespacesAndNewlines) + "\n\n\(logFence)\n" + lines.joined(separator: "\n") + "\n```"
     }
 
+    /// The bar and the plates, so a prescribed load is one the rack can make.
+    static func gymLine(bar: Double, inventory: PlateInventory) -> String {
+        let plates = PlateMath.sizes.compactMap { size -> String? in
+            guard let n = inventory.counts[size], n > 0 else { return nil }
+            return "\(PlateMath.label(size))×\(n)"
+        }
+        let list = plates.isEmpty ? "none listed" : plates.joined(separator: ", ")
+        return """
+        THEIR RACK. A \(PlateMath.label(bar)) kg bar; plates, both sides together: \(list). \
+        Every barbell load you prescribe must be one these make, bar included — round \
+        down to the nearest that is.
+        """
+    }
+
     /// What to do with a lifter whose log has nothing in it yet.
     static let emptyLogBrief = """
     THE LOG IS EMPTY. This is their first session with the app, and an empty file \
-    looks like a broken one. Two moves, in this order. First: most lifters have \
-    history somewhere — another app, notes, memory. Ask for their last few weeks in \
-    any form, then write it as a `log` block so the file starts full and Trends has \
-    something to draw; ask for what's missing (dates, loads) rather than guessing. \
-    Second: if there is nothing to bring in, or they're new, don't interview them at \
-    length — prescribe a first session of three lifts as a `prescription`, loads \
-    they can certainly make, and say the numbers will be right by the third session. \
-    Either way, one thing at a time; the first answer should end in something to tap.
+    looks like a broken one. If their coaching notes have an "About me" section, that \
+    is the app's setup — experience, goal, days, session length, where they train, \
+    their equipment, what to work around — and it is settled: don't ask it again. \
+    Someone with history: ask for their last few weeks in any form, from another app, \
+    notes or memory, then write it as a `log` block so the file starts full and Trends \
+    has something to draw; ask for what's missing (dates, loads) rather than guessing. \
+    Someone new to lifting: build for them. Ask in one message only what the setup \
+    leaves out and a programme needs; then write a first programme fitted to their \
+    days, time and equipment, never a lift they have no kit for — a `program.md` \
+    block of two or three full-body days of a few compound lifts each, with a simple \
+    rule on every line for when the load goes up — and after it the first session as \
+    a `prescription`, loads they can certainly make, saying the numbers will be right \
+    by the third session. With no setup, don't interview at length: prescribe a first \
+    session of three lifts. Either way, one thing at a time; the first answer should \
+    end in something to tap.
 
     """
 

@@ -303,7 +303,7 @@ final class CoachService: ObservableObject {
         content.title = "Coach answered"
         content.body = prose.isEmpty ? "Your answer is ready." : String(prose.prefix(140))
         content.sound = .default
-        let request = UNNotificationRequest(identifier: "coach-answer", content: content, trigger: nil)
+        let request = UNNotificationRequest(identifier: NotificationRouter.coachAnswer, content: content, trigger: nil)
         let center = UNUserNotificationCenter.current()
         center.getNotificationSettings { settings in
             guard settings.authorizationStatus == .authorized || settings.authorizationStatus == .provisional else { return }

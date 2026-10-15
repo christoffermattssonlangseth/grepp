@@ -1,5 +1,7 @@
 import Foundation
 import Combine
+import UIKit
+import UserNotifications
 
 /// Which Claude answers. Sonnet is the default — fast and cheap enough to ask
 /// "heavy or light today?" between sets; Opus is there when you want it to
@@ -102,12 +104,19 @@ struct CoachMessage: Identifiable, Equatable, Codable {
     /// "pause_turn". Shown under the bubble, never sent back as Claude's words.
     var stop: String?
 
+    /// The app's own stop reason, not the API's: the answer was still coming
+    /// when iOS took the time back. Offers Continue.
+    static let interrupted = "interrupted"
+
+    var wasInterrupted: Bool { stop == Self.interrupted }
+
     /// The sentence for `stop`, in the app's voice.
     var stopNote: String? {
         switch stop {
         case "refusal": return "Claude declined this one: its safety filter stopped the answer. Rephrase it, or ask another model."
         case "max_tokens": return "The answer hit the length limit and was cut off here."
         case "pause_turn": return "The search ran out of rounds before it finished. Ask again to continue."
+        case CoachMessage.interrupted: return "Cut off when you left the app: iOS stopped the answer before it finished."
         default: return nil
         }
     }
@@ -139,6 +148,15 @@ final class CoachService: ObservableObject {
     /// same reply can't count it twice.
     private var recorded = Set<UUID>()
 
+    /// The extra time iOS grants after you switch away, held for as long as an
+    /// answer is coming. Without it the app is suspended within seconds and
+    /// the stream dies with it.
+    private var backgroundTask: UIBackgroundTaskIdentifier = .invalid
+    /// You left the app while this answer was coming. A connection error then
+    /// is iOS cutting it off, not the API failing.
+    private var leftDuringTurn = false
+    private var backgroundObserver: NSObjectProtocol?
+
     // The transcript is persisted so a backgrounded-and-killed app doesn't lose
     // the conversation. Saved when a message lands or finishes, never per
     // streamed chunk.
@@ -157,7 +175,17 @@ final class CoachService: ObservableObject {
         var contextNote: String?
     }
 
-    init() { restore() }
+    init() {
+        restore()
+        backgroundObserver = NotificationCenter.default.addObserver(
+            forName: UIApplication.didEnterBackgroundNotification, object: nil, queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated {
+                guard let self, self.isResponding else { return }
+                self.leftDuringTurn = true
+            }
+        }
+    }
 
     private func persist() {
         let saved = Saved(messages: messages, mode: mode, contextNote: contextNote)
@@ -173,8 +201,14 @@ final class CoachService: ObservableObject {
         for m in saved.messages where m.isStreaming {
             if let usage = m.usage, let model = m.model { CoachSpend.shared.record(model.cost(usage)) }
         }
+        // ...and it says it was cut off, so it can be continued.
         messages = saved.messages
-            .map { var m = $0; m.isStreaming = false; return m }
+            .map { m in
+                var m = m
+                if m.isStreaming, m.role == .coach, m.stop == nil { m.stop = CoachMessage.interrupted }
+                m.isStreaming = false
+                return m
+            }
             .filter { !($0.role == .coach && $0.stop == nil && $0.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty) }
         mode = saved.mode
         contextNote = saved.contextNote
@@ -217,6 +251,7 @@ final class CoachService: ObservableObject {
         isResponding = false
         mode = .coaching
         persist()
+        endBackgroundTime()
     }
 
     /// Stop the answer in flight, keeping whatever streamed in so far.
@@ -227,6 +262,53 @@ final class CoachService: ObservableObject {
         finishStreamingMessage()
         isResponding = false
         persist()
+        endBackgroundTime()
+    }
+
+    /// iOS is taking the time back: stop where the answer stands and say so,
+    /// rather than let the dead connection surface as an error.
+    private func interrupt() {
+        if let idx = messages.lastIndex(where: { $0.isStreaming }) {
+            messages[idx].stop = CoachMessage.interrupted
+        }
+        cancel()
+    }
+
+    /// Ask iOS to keep the app running after you switch away, for as long as it
+    /// will. Usually around half a minute, never promised.
+    private func beginBackgroundTime() {
+        endBackgroundTime()
+        leftDuringTurn = false
+        backgroundTask = UIApplication.shared.beginBackgroundTask(withName: "Coach answer") { [weak self] in
+            MainActor.assumeIsolated { self?.interrupt() }
+        }
+    }
+
+    private func endBackgroundTime() {
+        guard backgroundTask != .invalid else { return }
+        UIApplication.shared.endBackgroundTask(backgroundTask)
+        backgroundTask = .invalid
+    }
+
+    /// An answer that finished while you were in another app gets a
+    /// notification, or you'd never know it arrived. Only if notifications are
+    /// already allowed: the app can't ask from the background.
+    private func announceIfAway(_ id: UUID) {
+        guard UIApplication.shared.applicationState != .active,
+              let message = messages.first(where: { $0.id == id }),
+              !message.wasInterrupted else { return }
+        let prose = CoachContext.parseReply(message.text, final: true).prose
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        let content = UNMutableNotificationContent()
+        content.title = "Coach answered"
+        content.body = prose.isEmpty ? "Your answer is ready." : String(prose.prefix(140))
+        content.sound = .default
+        let request = UNNotificationRequest(identifier: "coach-answer", content: content, trigger: nil)
+        let center = UNUserNotificationCenter.current()
+        center.getNotificationSettings { settings in
+            guard settings.authorizationStatus == .authorized || settings.authorizationStatus == .provisional else { return }
+            center.add(request)
+        }
     }
 
     func send(_ question: String,
@@ -262,9 +344,11 @@ final class CoachService: ObservableObject {
         }
 
         // Every turn carries the whole conversation, so follow-ups have the thread.
-        var turns = messages.map {
-            ClaudeService.Turn(role: $0.role == .you ? .user : .assistant, text: $0.text)
-        }
+        // An empty reply — a refusal, an answer cut off before any text — is
+        // left out: the API rejects empty content.
+        var turns = messages
+            .filter { !$0.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+            .map { ClaudeService.Turn(role: $0.role == .you ? .user : .assistant, text: $0.text) }
         // A paper to look up: the DOI goes in as a link, because the fetch tool
         // may only follow what the lifter's own message contains.
         let lookup = mode == .coaching ? CoachContext.lookupTarget(in: trimmed) : nil
@@ -330,6 +414,7 @@ final class CoachService: ObservableObject {
         let service = ClaudeService(apiKey: key, model: model, workspaceID: workspace)
         let thisTurn = UUID()
         turn = thisTurn
+        beginBackgroundTime()
 
         task = Task { [weak self] in
             do {
@@ -367,6 +452,10 @@ final class CoachService: ObservableObject {
                 // Left the partial answer in place on purpose.
             } catch let error as URLError where error.code == .cancelled {
                 // Stop during a lookup: the request is cancelled, not failed.
+            } catch is URLError where self?.leftDuringTurn == true {
+                // The connection died while you were away: iOS suspended the
+                // app. Said beside the answer, with a way to continue.
+                self?.noteStop(CoachMessage.interrupted, on: reply.id)
             } catch {
                 // Surface the failure, not the request: ClaudeError carries the
                 // status and the API's reason — never the prompt or the log.
@@ -378,6 +467,8 @@ final class CoachService: ObservableObject {
             self.isResponding = false
             self.task = nil
             self.persist()
+            self.announceIfAway(reply.id)
+            self.endBackgroundTime()
         }
     }
 
@@ -403,6 +494,9 @@ final class CoachService: ObservableObject {
         messages.append(reply)
         isResponding = true
         persist()
+        let thisTurn = UUID()
+        turn = thisTurn
+        beginBackgroundTime()
 
         task = Task { [weak self] in
             var budget = CoachContext.onDeviceBudget
@@ -431,11 +525,13 @@ final class CoachService: ObservableObject {
                     break
                 }
             }
-            guard let self else { return }
+            guard let self, self.turn == thisTurn else { return }
             self.finishStreamingMessage()
             self.isResponding = false
             self.task = nil
             self.persist()
+            self.announceIfAway(reply.id)
+            self.endBackgroundTime()
         }
     }
 

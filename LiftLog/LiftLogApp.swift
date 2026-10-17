@@ -8,6 +8,7 @@ struct LiftLogApp: App {
     init() {
         // The lock-screen button lands in the store, whether or not a screen is up.
         SameAgainIntent.handler = { await Store.shared.sameAgain() }
+        OpenLogIntent.handler = { Store.shared.selectedTab = 0 }
     }
 
     var body: some Scene {

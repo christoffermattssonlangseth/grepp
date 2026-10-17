@@ -1,7 +1,9 @@
 import SwiftUI
 import WidgetKit
 
-/// "Last session: Thursday · squat 87.5x5" on the home screen. A tap opens the app.
+/// "Last session: Thursday · squat 87.5x5" on the home screen, and the same in
+/// lock-screen sizes: a round glyph, a two-line card, a line above the clock.
+/// A tap opens the app on the Log tab.
 ///
 /// Reads the snapshot the app leaves in the App Group; never the log itself.
 /// The timeline re-renders at each local midnight so "2 days ago" stays true
@@ -10,16 +12,12 @@ struct LastSessionWidget: Widget {
     var body: some WidgetConfiguration {
         StaticConfiguration(kind: WidgetSnapshot.kind, provider: LastSessionProvider()) { entry in
             LastSessionView(entry: entry)
-                .containerBackground(for: .widget) {
-                    LinearGradient(colors: [Brand.accent.opacity(0.28),
-                                            Color(.systemBackground),
-                                            Brand.accent.opacity(0.14)],
-                                   startPoint: .topLeading, endPoint: .bottomTrailing)
-                }
+                .widgetURL(WidgetSnapshot.logURL)
         }
         .configurationDisplayName("Last session")
         .description("What you lifted last time, and what's loaded to lift next.")
-        .supportedFamilies([.systemSmall, .systemMedium])
+        .supportedFamilies([.systemSmall, .systemMedium,
+                            .accessoryCircular, .accessoryRectangular, .accessoryInline])
     }
 }
 
@@ -58,10 +56,110 @@ struct LastSessionView: View {
     let entry: LastSessionEntry
 
     var body: some View {
+        switch family {
+        case .accessoryCircular:
+            circular.containerBackground(for: .widget) { AccessoryWidgetBackground() }
+        case .accessoryRectangular:
+            rectangular.containerBackground(for: .widget) { Color.clear }
+        case .accessoryInline:
+            inline.containerBackground(for: .widget) { Color.clear }
+        default:
+            home.containerBackground(for: .widget) {
+                LinearGradient(colors: [Brand.accent.opacity(0.28),
+                                        Color(.systemBackground),
+                                        Brand.accent.opacity(0.14)],
+                               startPoint: .topLeading, endPoint: .bottomTrailing)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var home: some View {
         if let snapshot = entry.snapshot, !snapshot.lines.isEmpty || !snapshot.upNext.isEmpty {
             content(snapshot)
         } else {
             empty
+        }
+    }
+
+    // MARK: - Lock screen
+
+    /// The lock screen draws in one tint, so everything here is shape and
+    /// weight, not colour; the bar is the accented part when the wallpaper
+    /// tints widgets.
+    private var hasSessions: Bool { !(entry.snapshot?.lines.isEmpty ?? true) }
+
+    /// The app's glyph, and how long since you lifted: "TODAY", "1D", "4D".
+    private var circular: some View {
+        VStack(spacing: 2) {
+            Barbell(height: hasSessions ? 11 : 15, color: .primary)
+                .widgetAccentable()
+            if let snapshot = entry.snapshot, hasSessions {
+                Text(shortRelative(snapshot))
+                    .font(.system(size: 12, weight: .heavy))
+                    .fontWidth(.condensed)
+                    .minimumScaleFactor(0.7)
+                    .lineLimit(1)
+            }
+        }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(entry.snapshot.map { "Grepp, last session \(relative($0).lowercased())" } ?? "Grepp")
+    }
+
+    /// The plan when one is loaded, else the last session: a heading and two lifts.
+    private var rectangular: some View {
+        let snapshot = entry.snapshot
+        let planned = !(snapshot?.upNext.isEmpty ?? true)
+        let lines = Array((planned ? snapshot?.upNext : snapshot?.lines)?.prefix(2) ?? [])
+        return VStack(alignment: .leading, spacing: 1) {
+            HStack(spacing: 5) {
+                Barbell(height: 8, color: .primary).widgetAccentable()
+                Text(planned ? "UP NEXT" : snapshot.map { relative($0).uppercased() } ?? "GREPP")
+                    .font(.system(size: 11, weight: .heavy)).tracking(1)
+                    .lineLimit(1)
+            }
+            if lines.isEmpty {
+                Text("Nothing logged yet")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+            }
+            ForEach(Array(lines.enumerated()), id: \.offset) { _, line in
+                HStack(alignment: .firstTextBaseline, spacing: 4) {
+                    Text(Brand.readableName(line.name))
+                        .font(.footnote.weight(.semibold))
+                        .lineLimit(1)
+                    Spacer(minLength: 2)
+                    Text(compactSets(line.sets))
+                        .font(.system(.caption2, design: .monospaced))
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.7)
+                }
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    /// Above the clock, one line: "Yesterday · squat" or "Up next · deadlift".
+    private var inline: some View {
+        let snapshot = entry.snapshot
+        let text: String
+        if let next = snapshot?.upNext.first {
+            text = "Up next · \(Brand.readableName(next.name))"
+        } else if let snapshot, let last = snapshot.lines.first {
+            text = "\(relative(snapshot)) · \(Brand.readableName(last.name))"
+        } else {
+            text = "Grepp"
+        }
+        return Label(text, systemImage: "dumbbell.fill")
+    }
+
+    /// The circular widget's few letters.
+    private func shortRelative(_ snapshot: WidgetSnapshot) -> String {
+        switch daysAgo(snapshot) {
+        case .some(let n) where n <= 0: return "TODAY"
+        case .some(let n): return "\(n)D"
+        case .none: return ""
         }
     }
 

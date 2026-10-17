@@ -246,12 +246,36 @@ struct CoachView: View {
     /// SwiftUI renders markdown in a string *literal*, but shows a runtime String
     /// verbatim — so the model's **bold** arrives as asterisks unless it's parsed.
     /// Inline-only preserves the line breaks that `.full` would collapse.
-    private func rendered(_ text: String) -> AttributedString {
-        let markdown = CoachContext.chatMarkdown(text)
-        return (try? AttributedString(
+    /// Paragraphs and list items: a bullet sits in its own column, so a
+    /// wrapped line lines up under the text, not under the dash.
+    private func proseView(_ prose: String) -> some View {
+        let blocks = CoachContext.chatBlocks(CoachContext.chatMarkdown(prose))
+        return VStack(alignment: .leading, spacing: 8) {
+            ForEach(Array(blocks.enumerated()), id: \.offset) { _, block in
+                switch block {
+                case .text(let text):
+                    Text(rendered(text))
+                case .item(let marker, let text, let level):
+                    HStack(alignment: .firstTextBaseline, spacing: 8) {
+                        Text(marker)
+                            .foregroundStyle(marker == "•" ? Theme.accent : .secondary)
+                            .monospacedDigit()
+                            .frame(minWidth: 14, alignment: .trailing)
+                        Text(rendered(text))
+                    }
+                    .padding(.leading, level == 1 ? 22 : 0)
+                }
+            }
+        }
+        .font(.body)
+        .textSelection(.enabled)
+    }
+
+    private func rendered(_ markdown: String) -> AttributedString {
+        (try? AttributedString(
             markdown: markdown,
             options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace)
-        )) ?? AttributedString(text)
+        )) ?? AttributedString(markdown)
     }
 
     /// "2.6k in · 1.9k cached · 1.4k out · ~4¢".
@@ -324,9 +348,7 @@ struct CoachView: View {
 
         VStack(alignment: .leading, spacing: 6) {
             if !reply.prose.isEmpty {
-                Text(rendered(reply.prose))
-                    .font(.body)
-                    .textSelection(.enabled)
+                proseView(reply.prose)
             }
             if message.isStreaming, reply.isWritingGoals {
                 Label("writing your goals…", systemImage: "square.and.pencil")
@@ -407,7 +429,7 @@ struct CoachView: View {
             .tint(Theme.accent)
         }
         ForEach(Array(reply.prescriptions.enumerated()), id: \.offset) { _, rx in
-            prescriptionCard(rx)
+            prescriptionCard(rx, quiet: reply.prescriptions.count >= 2)
         }
     }
 
@@ -419,7 +441,9 @@ struct CoachView: View {
         return store.sessions.contains { $0.dateString == key && !$0.exercises.isEmpty }
     }
 
-    private func prescriptionCard(_ rx: CoachContext.Prescription) -> some View {
+    /// `quiet` when the whole-session button sits above: one filled button per
+    /// screen, the per-lift ones outlined beneath it.
+    private func prescriptionCard(_ rx: CoachContext.Prescription, quiet: Bool) -> some View {
         HStack(spacing: 12) {
             VStack(alignment: .leading, spacing: 3) {
                 Text(Theme.readableName(rx.name))
@@ -429,14 +453,18 @@ struct CoachView: View {
                     .foregroundStyle(.secondary)
             }
             Spacer()
-            Button {
+            let button = Button {
                 store.requestLog([ExerciseEntry(name: rx.name, sets: rx.sets)])
             } label: {
-                Label(trainedToday ? "Load" : "Log", systemImage: "plus.circle.fill")
-                    .font(.subheadline.weight(.bold))
+                Label(trainedToday ? "Load" : "Log", systemImage: quiet ? "plus" : "plus.circle.fill")
+                    .font(.subheadline.weight(quiet ? .semibold : .bold))
             }
-            .buttonStyle(.borderedProminent)
             .tint(Theme.accent)
+            if quiet {
+                button.buttonStyle(.bordered)
+            } else {
+                button.buttonStyle(.borderedProminent)
+            }
         }
         .panel(cornerRadius: 14)
     }

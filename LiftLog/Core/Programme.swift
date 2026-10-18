@@ -12,7 +12,9 @@ import Foundation
 /// each time a day is asked for, which is the whole point of having a coach.
 struct Programme: Equatable {
     struct Exercise: Equatable, Identifiable {
-        var id: String { "\(name) \(scheme)" }
+        /// The line first: a day can hold the same lift and scheme twice
+        /// (a top set and a back-off), and a list needs them apart.
+        var id: String { "\(line) \(name) \(scheme)" }
         let name: String
         /// "3x5", "3x8–10", "3xAMRAP" — as written, not parsed further.
         let scheme: String
@@ -45,7 +47,8 @@ struct Programme: Equatable {
     }
 
     struct Day: Equatable, Identifiable {
-        var id: String { title }
+        /// The heading's line first: two days can share a title.
+        var id: String { "\(line) \(title)" }
         let title: String
         let exercises: [Exercise]
         /// The heading's line, and the line after the day's last: the block
@@ -58,6 +61,10 @@ struct Programme: Equatable {
 
     let title: String
     let days: [Day]
+    /// Headings with nothing under them — a day whose last lift was just
+    /// removed, most often. Not days to train, so not in `days`, but kept
+    /// so the screen can still show them, to fill or to remove.
+    var emptyDays: [Day] = []
 
     var isEmpty: Bool { days.isEmpty }
 
@@ -68,12 +75,23 @@ struct Programme: Equatable {
     static func parse(_ markdown: String) -> Programme {
         var title = ""
         var days: [Day] = []
-        var current: (title: String, exercises: [Exercise], line: Int)?
+        var emptyDays: [Day] = []
+        /// The day being read; `level` is its heading's depth (bold lines
+        /// deepest), `prose` whether anything but lifts sits under it.
+        var current: (title: String, exercises: [Exercise], line: Int, level: Int, prose: Bool)?
         let lines = markdown.split(separator: "\n", omittingEmptySubsequences: false)
 
-        func closeDay(at end: Int) {
-            if let current, !current.exercises.isEmpty {
-                days.append(Day(title: current.title, exercises: current.exercises, line: current.line, end: end))
+        /// `next` is the depth of the heading that ends the day, if one does.
+        func closeDay(at end: Int, next: Int? = nil) {
+            if let current {
+                let day = Day(title: current.title, exercises: current.exercises, line: current.line, end: end)
+                if !current.exercises.isEmpty {
+                    days.append(day)
+                } else if !current.prose, next.map({ $0 <= current.level }) ?? true {
+                    // A bare heading. Not one over a deeper heading, though:
+                    // "## Week 1" above "### Day A" groups days, it isn't one.
+                    emptyDays.append(day)
+                }
             }
             current = nil
         }
@@ -88,26 +106,30 @@ struct Programme: Equatable {
                 if level == 1 && title.isEmpty && days.isEmpty && current == nil {
                     title = text
                 } else if !text.isEmpty {
-                    closeDay(at: index)
-                    current = (text, [], index)
+                    closeDay(at: index, next: level)
+                    current = (text, [], index, level, false)
                 }
                 continue
             }
             // A bold line on its own is a day too: **Day A — Lower**
             if line.hasPrefix("**"), line.hasSuffix("**"), line.count > 4, !line.dropFirst(2).dropLast(2).contains("**") {
-                closeDay(at: index)
-                current = (String(line.dropFirst(2).dropLast(2)).trimmingCharacters(in: .whitespaces), [], index)
+                closeDay(at: index, next: Int.max)
+                current = (String(line.dropFirst(2).dropLast(2)).trimmingCharacters(in: .whitespaces), [], index, Int.max, false)
                 continue
             }
 
             if let body = listItem(line), var exercise = parseExercise(body) {
-                if current == nil { current = ("Session", [], -1) }
+                // Lifts before any heading: a day with no heading line
+                // (-1), which a rename gives one and a removal still finds.
+                if current == nil { current = ("Session", [], -1, 0, false) }
                 exercise.line = index
                 current?.exercises.append(exercise)
+            } else {
+                current?.prose = true
             }
         }
         closeDay(at: lines.count)
-        return Programme(title: title, days: days)
+        return Programme(title: title, days: days, emptyDays: emptyDays)
     }
 
     /// The text of a `- `, `* ` or `1. ` line; nil for anything else.
@@ -173,7 +195,13 @@ struct Programme: Equatable {
             .lowercased()
             .replacingOccurrences(of: " ", with: "-")
         // A lift's name is a few words; a sentence with a scheme in it is prose.
-        guard !name.isEmpty, name.first!.isLetter, name.split(separator: "-").count <= 4 else { return nil }
+        // It may start with a number — "45-degree back extension", "1-arm
+        // row" — as long as it's all words and hyphens, so "4 weeks: squat"
+        // stays prose.
+        guard let first = name.first, name.split(separator: "-").count <= 4,
+              first.isLetter || (first.isNumber && name.contains(where: \.isLetter)
+                                 && name.allSatisfy { $0.isLetter || $0.isNumber || $0 == "-" })
+        else { return nil }
 
         let reps = clean[repsRange].replacingOccurrences(of: " ", with: "").uppercased()
         // "3 sets" with the reps in the note stays "3 sets": no rep count is
@@ -355,11 +383,7 @@ enum ProgrammeText {
     /// A new day at the end of the file, its heading at the level the file
     /// uses, with its first lifts.
     static func appendingDay(_ title: String, exercises: [Programme.Exercise], to md: String) -> String {
-        let level = lines(md).compactMap { raw -> Int? in
-            let t = raw.trimmingCharacters(in: .whitespaces)
-            let hashes = t.prefix { $0 == "#" }.count
-            return hashes >= 2 ? hashes : nil
-        }.first ?? 2
+        let level = headingLevel(md)
         var text = md
         if !text.isEmpty && !text.hasSuffix("\n") { text += "\n" }
         if !text.isEmpty { text += "\n" }
@@ -368,10 +392,24 @@ enum ProgrammeText {
         return text
     }
 
+    /// The depth of the file's first day heading; 2 when it has none.
+    private static func headingLevel(_ md: String) -> Int {
+        lines(md).compactMap { raw -> Int? in
+            let t = raw.trimmingCharacters(in: .whitespaces)
+            let hashes = t.prefix { $0 == "#" }.count
+            return hashes >= 2 ? hashes : nil
+        }.first ?? 2
+    }
+
     /// The heading with a new title, its marks kept: "## Day A" stays a
     /// second-level heading, "**Day A**" stays bold.
     static func renaming(_ day: Programme.Day, to title: String, in md: String) -> String {
         let all = lines(md)
+        // Lifts with no heading over them get one, at the level the file's
+        // other days use.
+        if day.line < 0, let first = day.exercises.first?.line {
+            return inserting(String(repeating: "#", count: headingLevel(md)) + " " + title, at: first, in: md)
+        }
         guard all.indices.contains(day.line) else { return md }
         let raw = all[day.line]
         let trimmed = raw.trimmingCharacters(in: .whitespaces)
@@ -388,11 +426,14 @@ enum ProgrammeText {
     /// up to the next heading. The days after it are untouched.
     static func removing(_ day: Programme.Day, from md: String) -> String {
         var all = lines(md)
-        guard all.indices.contains(day.line), day.end > day.line else { return md }
-        all.removeSubrange(day.line..<min(day.end, all.count))
+        // The heading-less day starts at its first lift: the title and
+        // prose above it stay.
+        let start = day.line >= 0 ? day.line : (day.exercises.first?.line ?? -1)
+        guard all.indices.contains(start), day.end > start else { return md }
+        all.removeSubrange(start..<min(day.end, all.count))
         // Not two blank lines where the day was.
-        if day.line > 0, day.line < all.count, all[day.line].isEmpty, all[day.line - 1].isEmpty {
-            all.remove(at: day.line)
+        if start > 0, start < all.count, all[start].isEmpty, all[start - 1].isEmpty {
+            all.remove(at: start)
         }
         return all.joined(separator: "\n")
     }

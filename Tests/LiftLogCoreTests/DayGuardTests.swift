@@ -3,7 +3,9 @@ import XCTest
 
 final class DayGuardTests: XCTestCase {
 
-    private var utc: Calendar { var c = Calendar(identifier: .gregorian); c.timeZone = Session.dateFormatter.timeZone; return c }
+    /// UTC, like the times below: the rules are about days, and the test
+    /// must say the same thing wherever the machine running it is.
+    private var utc: Calendar { var c = Calendar(identifier: .gregorian); c.timeZone = TimeZone(identifier: "UTC")!; return c }
     private func at(_ s: String) -> Date {
         let f = ISO8601DateFormatter(); return f.date(from: s)!
     }

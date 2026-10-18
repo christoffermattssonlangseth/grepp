@@ -22,7 +22,7 @@ struct ProgrammeView: View {
     @State private var draft: String?
     @State private var liftEdit: LiftEdit?
     @State private var addingDay = false
-    @State private var renameIndex: Int?
+    @State private var renaming: Programme.Day?
     @State private var renameText = ""
     @State private var saving = false
     @State private var saveError: String?
@@ -31,9 +31,11 @@ struct ProgrammeView: View {
     private var shown: Programme { draft.map(Programme.parse) ?? store.programme }
 
     /// A lift being added to or changed in a day; nil exercise means new.
+    /// The day as parsed from the draft the sheet opened on, which can't
+    /// change while the sheet is up.
     private struct LiftEdit: Identifiable {
         let id = UUID()
-        let dayIndex: Int
+        let day: Programme.Day
         let exercise: Programme.Exercise?
     }
 
@@ -76,16 +78,16 @@ struct ProgrammeView: View {
                     self.draft = ProgrammeText.appendingDay(title, exercises: [exercise], to: draft)
                 }
             }
-            .alert("Rename day", isPresented: Binding(get: { renameIndex != nil }, set: { if !$0 { renameIndex = nil } })) {
+            .alert("Rename day", isPresented: Binding(get: { renaming != nil }, set: { if !$0 { renaming = nil } })) {
                 TextField("Title", text: $renameText)
                 Button("Rename") {
-                    if let i = renameIndex, let draft, shown.days.indices.contains(i),
+                    if let day = renaming, let draft,
                        !renameText.trimmingCharacters(in: .whitespaces).isEmpty {
-                        self.draft = ProgrammeText.renaming(shown.days[i], to: renameText.trimmingCharacters(in: .whitespaces), in: draft)
+                        self.draft = ProgrammeText.renaming(day, to: renameText.trimmingCharacters(in: .whitespaces), in: draft)
                     }
-                    renameIndex = nil
+                    renaming = nil
                 }
-                Button("Cancel", role: .cancel) { renameIndex = nil }
+                Button("Cancel", role: .cancel) { renaming = nil }
             }
         }
     }
@@ -95,6 +97,10 @@ struct ProgrammeView: View {
     private var days: some View {
         let programme = shown
         let due = programme.dueDayIndex(in: store.sessions)
+        let dueLine = programme.days.indices.contains(due) ? programme.days[due].line : nil
+        // Days with no lifts too, in file order: a heading left bare when its
+        // last lift was removed must still be there to fill or remove.
+        let all = (programme.days + programme.emptyDays).sorted { $0.line < $1.line }
 
         return List {
             if !editing, let a = programme.adherence(in: store.sessions) {
@@ -102,15 +108,16 @@ struct ProgrammeView: View {
             }
             if let saveError {
                 Section {
-                    Text(saveError).font(.footnote).foregroundStyle(Theme.stalled)
+                    Text(saveError).font(.footnote).foregroundStyle(Theme.warning)
                         .listRowBackground(Color.clear)
                 }
             }
             // By position: an upper/lower programme has two days called Upper.
-            ForEach(Array(programme.days.enumerated()), id: \.offset) { index, day in
+            ForEach(Array(all.enumerated()), id: \.offset) { _, day in
+                let isDue = day.line == dueLine && !day.exercises.isEmpty
                 Section {
                     ForEach(Array(day.exercises.enumerated()), id: \.offset) { _, ex in
-                        exerciseRow(ex, in: index)
+                        exerciseRow(ex, in: day)
                     }
                     .onDelete { offsets in
                         guard editing, let draft, let first = offsets.first, day.exercises.indices.contains(first) else { return }
@@ -123,12 +130,17 @@ struct ProgrammeView: View {
                         self.draft = ProgrammeText.reordering(day, to: order, in: draft)
                     }
                     if editing {
-                        editingRows(for: day, at: index)
+                        editingRows(for: day)
+                    } else if day.exercises.isEmpty {
+                        Text("No lifts under this heading. Edit to add some, or to remove the day.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .listRowBackground(Color.clear)
                     } else {
-                        loadRows(for: day, at: index, due: due)
+                        loadRows(for: day, isDue: isDue)
                     }
                 } header: {
-                    dayHeader(day, at: index, due: due)
+                    dayHeader(day, isDue: isDue)
                 }
             }
             if editing {
@@ -186,7 +198,7 @@ struct ProgrammeView: View {
                     Text("Skipped most: " + a.skipped.prefix(3).map {
                         "\(Theme.readableName($0.name)) \($0.missed) of \($0.due)"
                     }.joined(separator: " · "))
-                        .font(.caption).foregroundStyle(Theme.stalled)
+                        .font(.caption).foregroundStyle(Theme.warning)
                         .fixedSize(horizontal: false, vertical: true)
                 }
             }
@@ -199,7 +211,7 @@ struct ProgrammeView: View {
         }
     }
 
-    private func exerciseRow(_ ex: Programme.Exercise, in dayIndex: Int) -> some View {
+    private func exerciseRow(_ ex: Programme.Exercise, in day: Programme.Day) -> some View {
         let content = VStack(alignment: .leading, spacing: 2) {
             HStack(alignment: .firstTextBaseline) {
                 Text(Theme.readableName(ex.name)).font(.body.weight(.semibold))
@@ -233,7 +245,7 @@ struct ProgrammeView: View {
 
         return Group {
             if editing {
-                Button { liftEdit = LiftEdit(dayIndex: dayIndex, exercise: ex) } label: { content }
+                Button { liftEdit = LiftEdit(day: day, exercise: ex) } label: { content }
                     .buttonStyle(.plain)
             } else {
                 content
@@ -250,9 +262,9 @@ struct ProgrammeView: View {
     }
 
     @ViewBuilder
-    private func editingRows(for day: Programme.Day, at index: Int) -> some View {
+    private func editingRows(for day: Programme.Day) -> some View {
         Button {
-            liftEdit = LiftEdit(dayIndex: index, exercise: nil)
+            liftEdit = LiftEdit(day: day, exercise: nil)
         } label: {
             Label("Add lift", systemImage: "plus")
                 .font(.subheadline.weight(.semibold))
@@ -276,7 +288,7 @@ struct ProgrammeView: View {
     }
 
     @ViewBuilder
-    private func loadRows(for day: Programme.Day, at index: Int, due: Int) -> some View {
+    private func loadRows(for day: Programme.Day, isDue: Bool) -> some View {
         // Two ways in: the app's own arithmetic, free and instant —
         // rpt lines from their last session, the rest as last done —
         // or the coach, who reads the log and the rule on each line.
@@ -294,7 +306,7 @@ struct ProgrammeView: View {
         }
         // One prominent button on the screen: the day that is next.
         Group {
-            if index == due { load.buttonStyle(.borderedProminent) } else { load.buttonStyle(.bordered) }
+            if isDue { load.buttonStyle(.borderedProminent) } else { load.buttonStyle(.bordered) }
         }
         .tint(Theme.accent)
         .disabled(plan.entries.isEmpty)
@@ -319,20 +331,20 @@ struct ProgrammeView: View {
         .listRowBackground(Color.clear)
     }
 
-    private func dayHeader(_ day: Programme.Day, at index: Int, due: Int) -> some View {
+    private func dayHeader(_ day: Programme.Day, isDue: Bool) -> some View {
         HStack {
             Text(day.title).textCase(nil)
             if editing {
                 Button {
                     renameText = day.title
-                    renameIndex = index
+                    renaming = day
                 } label: {
                     Image(systemName: "pencil").font(.caption)
                 }
                 .buttonStyle(.plain)
                 .foregroundStyle(Theme.accent)
                 .accessibilityLabel("Rename \(day.title)")
-            } else if index == due {
+            } else if isDue {
                 Text("next")
                     .font(.caption2.weight(.heavy)).tracking(1)
                     .textCase(.uppercase)
@@ -342,14 +354,14 @@ struct ProgrammeView: View {
             }
         }
         .accessibilityElement(children: editing ? .contain : .ignore)
-        .accessibilityLabel(index == due && !editing ? "\(day.title), next" : day.title)
+        .accessibilityLabel(isDue && !editing ? "\(day.title), next" : day.title)
     }
 
     // MARK: - Edits
 
     private func apply(_ exercise: Programme.Exercise, to edit: LiftEdit) {
-        guard let draft, shown.days.indices.contains(edit.dayIndex) else { return }
-        let day = shown.days[edit.dayIndex]
+        guard let draft else { return }
+        let day = edit.day
         if let old = edit.exercise, old.line >= 0 {
             self.draft = ProgrammeText.replacing(line: old.line, with: ProgrammeText.line(for: exercise), in: draft)
         } else {

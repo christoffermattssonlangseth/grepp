@@ -20,6 +20,7 @@ struct IntakeView: View {
     @State private var saveError: String?
     @State private var finished = false
     @State private var startingProgramme = false
+    @State private var askGymPlates = false
 
     static var saved: Intake? {
         UserDefaults.standard.data(forKey: Prefs.intake).flatMap { try? JSONDecoder().decode(Intake.self, from: $0) }
@@ -105,7 +106,15 @@ struct IntakeView: View {
                 .pickerStyle(.segmented)
                 .onChange(of: intake.place) { _, place in
                     intake.equipment = Intake.defaultEquipment(for: place)
-                    if place == .gym { inventory = .standard }
+                    // A gym has the usual rack, but plates counted here or in
+                    // Settings are someone's own: ask before wiping them.
+                    if place == .gym && inventory != .standard { askGymPlates = true }
+                }
+                .confirmationDialog("Use a gym's usual plates?", isPresented: $askGymPlates, titleVisibility: .visible) {
+                    Button("Use gym plates") { inventory = .standard }
+                    Button("Keep my plates", role: .cancel) {}
+                } message: {
+                    Text("Your plate counts would be replaced by a standard gym rack.")
                 }
                 if intake.place != .bodyweight {
                     ForEach(Intake.Equipment.allCases, id: \.self) { item in
@@ -159,7 +168,7 @@ struct IntakeView: View {
 
             if let saveError {
                 Section {
-                    Text(saveError).font(.footnote).foregroundStyle(Theme.stalled)
+                    Text(saveError).font(.footnote).foregroundStyle(Theme.warning)
                 }
                 .listRowBackground(Color.clear)
             }
@@ -228,8 +237,7 @@ struct IntakeView: View {
         if let data = try? JSONEncoder().encode(intake) {
             UserDefaults.standard.set(data, forKey: Prefs.intake)
         }
-        // A fresh install is still loading: the brief must be read before it
-        // is written to, or a coaching file already there would be replaced.
+        // A fresh install may still be loading; a save can't overlap it.
         for _ in 0..<40 where store.isBusy {
             try? await Task.sleep(for: .milliseconds(250))
         }
@@ -237,17 +245,19 @@ struct IntakeView: View {
             saveError = "The log isn't connected yet, so nothing could be written. Finish storage in Settings, then Settings ▸ Set up again — your answers are kept."
             return
         }
-        let coaching = Intake.merging(intake.coachingSection(), into: store.brief.coaching)
-        guard await store.save(coaching, to: .coaching) != .failed else {
+        // Merged into the files as they are now, not the copy in memory: the
+        // brief may not have been loaded yet (a token just pasted, iCloud
+        // still downloading), and a coaching file already there must keep
+        // everything outside the setup section.
+        let section = intake.coachingSection()
+        guard await store.update(.coaching, { Intake.merging(section, into: $0) }) != .failed else {
             saveError = "Couldn't write coaching.md. Check the connection and try again; your answers are kept."
             return
         }
-        if let line = intake.goalsLine() {
-            let goals = Intake.adding(line, to: store.brief.goals)
-            if goals != store.brief.goals, await store.save(goals, to: .goals) == .failed {
-                saveError = "Saved your setup, but couldn't write goals.md. Try Save again."
-                return
-            }
+        if let line = intake.goalsLine(),
+           await store.update(.goals, { Intake.adding(line, to: $0) }) == .failed {
+            saveError = "Saved your setup, but couldn't write goals.md. Try Save again."
+            return
         }
         pending = false
         finished = true
@@ -256,7 +266,10 @@ struct IntakeView: View {
     private func startBeginner() async {
         startingProgramme = true
         defer { startingProgramme = false }
-        if await store.save(intake.starter(), to: .program) != .failed {
+        // Only into an empty programme: one may be on file that this phone
+        // hasn't loaded yet, and a starter must not replace it.
+        let starter = intake.starter()
+        if await store.update(.program, { Programme.parse($0).isEmpty ? starter : $0 }) != .failed {
             dismiss()
             store.requestProgramme()
         }

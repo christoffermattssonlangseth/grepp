@@ -35,12 +35,21 @@ final class StravaService: ObservableObject {
 
     enum StravaError: LocalizedError {
         case notConfigured, notConnected, cancelled, api(status: Int, message: String)
+        /// The sign-in came back without permission to post: Strava lets the
+        /// athlete untick "upload activities" on its consent page.
+        case noWriteScope
+        /// The refresh token was refused — access revoked on Strava's side.
+        /// The dead tokens are cleared; only a new sign-in helps.
+        case revoked
         var errorDescription: String? {
             switch self {
             case .notConfigured:
                 return "Strava isn't set up: paste your API app's client ID and secret in Settings ▸ Strava."
             case .notConnected: return "Connect Strava in Settings first."
             case .cancelled: return "Strava sign-in was cancelled."
+            case .noWriteScope:
+                return "Strava didn't grant permission to upload activities. Connect again and leave that box ticked."
+            case .revoked: return "Strava access was revoked — reconnect in Settings."
             case .api(let status, let message):
                 switch status {
                 case 401: return "Strava rejected the connection — reconnect in Settings."
@@ -99,7 +108,17 @@ final class StravaService: ObservableObject {
         }
     }
 
-    func disconnect() { tokens = nil }
+    /// Forget the tokens here and revoke them at Strava, so the app leaves
+    /// the athlete's connected apps. The local forget doesn't wait on the
+    /// network: offline, disconnecting still disconnects.
+    func disconnect() {
+        guard let current = tokens else { return }
+        tokens = nil
+        Task {
+            _ = try? await call("POST", URL(string: "https://www.strava.com/oauth/deauthorize")!,
+                                form: ["access_token": current.access], token: nil)
+        }
+    }
 
     // MARK: - OAuth
 
@@ -117,10 +136,14 @@ final class StravaService: ObservableObject {
             .init(name: "scope", value: Self.scope),
         ]
         let callback = try await WebAuth.run(url: parts.url!, scheme: "grepp")
-        guard let code = URLComponents(url: callback, resolvingAgainstBaseURL: false)?
-                .queryItems?.first(where: { $0.name == "code" })?.value else {
+        let items = URLComponents(url: callback, resolvingAgainstBaseURL: false)?.queryItems ?? []
+        guard let code = items.first(where: { $0.name == "code" })?.value else {
             throw StravaError.cancelled
         }
+        // The consent page lets the athlete untick the upload permission; a
+        // connection without it would only fail later, at the first post.
+        let granted = items.first(where: { $0.name == "scope" })?.value?.split(separator: ",") ?? []
+        guard granted.contains(Substring(Self.scope)) else { throw StravaError.noWriteScope }
         isBusy = true
         defer { isBusy = false }
         tokens = try await exchange(["grant_type": "authorization_code", "code": code])
@@ -130,7 +153,15 @@ final class StravaService: ObservableObject {
     private func accessToken() async throws -> String {
         guard let current = tokens else { throw StravaError.notConnected }
         if current.expiresAt.timeIntervalSinceNow > 60 { return current.access }
-        var refreshed = try await exchange(["grant_type": "refresh_token", "refresh_token": current.refresh])
+        var refreshed: Tokens
+        do {
+            refreshed = try await exchange(["grant_type": "refresh_token", "refresh_token": current.refresh])
+        } catch StravaError.api(let status, _) where status == 400 || status == 401 {
+            // A refused refresh token means access was revoked on Strava (or
+            // the API app deleted): it won't work again, so drop it and say so.
+            tokens = nil
+            throw StravaError.revoked
+        }
         refreshed.athlete = current.athlete   // a refresh doesn't return the athlete
         tokens = refreshed
         return refreshed.access

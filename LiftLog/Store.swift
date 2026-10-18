@@ -93,12 +93,13 @@ final class Store: ObservableObject {
 
     /// A "edit this past entry" request handed from History to the Log tab. The Log
     /// view consumes it (pre-fills date + exercise) and clears it.
-    struct EditRequest: Equatable { var name: String; var date: Date }
+    /// `line` pins which line, when the day has the lift on more than one.
+    struct EditRequest: Equatable { var name: String; var date: Date; var line: LineRef? = nil }
     @Published var editRequest: EditRequest?
 
     /// Send the user to the Log tab pre-filled to edit a specific past exercise.
-    func requestEdit(exercise name: String, on date: Date) {
-        editRequest = EditRequest(name: name, date: date)
+    func requestEdit(exercise name: String, on date: Date, line: LineRef? = nil) {
+        editRequest = EditRequest(name: name, date: date, line: line)
         selectedTab = 0
     }
 
@@ -483,8 +484,11 @@ final class Store: ObservableObject {
 
     /// Can't reach the backend, or iCloud isn't there: the queue and the cache
     /// carry on, and the lift is not lost.
+    /// A log still downloading from iCloud counts too: the write waits in the
+    /// queue rather than start a second file.
     private func isOffline(_ error: Error) -> Bool {
-        error is URLError || (error as? ICloudBackend.ICloudError) == .unavailable
+        let icloud = error as? ICloudBackend.ICloudError
+        return error is URLError || icloud == .unavailable || icloud == .notReady
     }
 
     private func performLoad() async {
@@ -517,7 +521,11 @@ final class Store: ObservableObject {
         } catch let error where isOffline(error) {
             // Offline: fall back to the cache so the app still shows history.
             sessions = WorkoutParser.applying(pending, to: cachedSessions())
-            status = "Offline — showing cached data.\(pendingSuffix)"
+            if (error as? ICloudBackend.ICloudError) == .notReady {
+                status = "iCloud is still downloading \(path) — showing this phone's copy.\(pendingSuffix)"
+            } else {
+                status = "Offline — showing cached data.\(pendingSuffix)"
+            }
         } catch {
             status = error.localizedDescription
         }
@@ -528,25 +536,29 @@ final class Store: ObservableObject {
     /// Add/replace an exercise entry by merging it into the CURRENT remote file,
     /// never by overwriting with stale in-memory state. If the network is down the
     /// write is queued locally and applied optimistically, then flushed on reconnect.
+    /// `replacing` is the logged line the edit came from, when it came from
+    /// one: that line is replaced and no other of the same lift.
     @discardableResult
-    func commit(_ entry: ExerciseEntry, on date: Date, message: String) async -> CommitResult {
-        await perform(PendingWrite(entry: entry, date: date, message: message))
+    func commit(_ entry: ExerciseEntry, on date: Date, replacing line: LineRef? = nil, message: String) async -> CommitResult {
+        await perform(PendingWrite(entry: entry, date: date, message: message, replacing: line))
     }
 
     /// Remove an exercise from a day's session. Same offline-safe path as `commit`.
+    /// With a `line`, that line only; a day can have the lift twice.
     @discardableResult
-    func delete(exercise name: String, on date: Date, message: String) async -> CommitResult {
-        await perform(PendingWrite(operation: .delete(name: name), date: date, message: message))
+    func delete(exercise name: String, on date: Date, line: LineRef? = nil, message: String) async -> CommitResult {
+        await perform(PendingWrite(operation: .delete(name: name), date: date, message: message, target: line))
     }
 
     /// Move one exercise, or a whole day when `name` is nil, to another date.
-    /// One write, one commit, same offline-safe path.
+    /// One write, one commit, same offline-safe path. With a `line`, only it moves.
     @discardableResult
-    func move(exercise name: String?, on date: Date, to target: Date) async -> CommitResult {
+    func move(exercise name: String?, on date: Date, line: LineRef? = nil, to target: Date) async -> CommitResult {
         let from = Session.dateFormatter.string(from: date)
         let to = Session.dateFormatter.string(from: target)
         let message = name.map { "Move \($0) from \(from) to \(to)" } ?? "Move \(from) to \(to)"
-        let result = await perform(PendingWrite(operation: .move(name: name, to: target), date: date, message: message))
+        let result = await perform(PendingWrite(operation: .move(name: name, to: target), date: date, message: message,
+                                                target: name == nil ? nil : line))
         guard result != .failed else { return result }
         // What the app knows about the day goes with it: the plan verdicts,
         // and for a whole day its clock. The Strava mark does not — the
@@ -641,7 +653,8 @@ final class Store: ObservableObject {
 
                 WorkoutParser.apply(write, to: &base)
 
-                let content = WorkoutParser.serialize(base)
+                // The file's own line endings: a Windows-made file stays one.
+                let content = WorkoutParser.serialize(base, lineEnding: WorkoutParser.lineEnding(of: remote?.content ?? ""))
                 fileSHA = try await service.put(content: content, version: remote?.version, message: write.message)
                 return base
             } catch let error as GitHubService.GitHubError {

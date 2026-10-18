@@ -8,7 +8,9 @@ struct HistoryView: View {
     private struct DeleteTarget: Identifiable {
         let name: String
         let date: Date
-        var id: String { "\(Session.dateFormatter.string(from: date))-\(name)" }
+        /// The very line: the day may have the lift twice.
+        let line: LineRef?
+        var id: String { "\(Session.dateFormatter.string(from: date))-\(name)-\(line?.occurrence ?? 0)" }
     }
     @State private var pendingDelete: DeleteTarget?
 
@@ -16,9 +18,13 @@ struct HistoryView: View {
     private struct MoveTarget: Identifiable {
         let name: String?
         let date: Date
-        var id: String { "\(Session.dateFormatter.string(from: date))-\(name ?? "*")" }
+        var line: LineRef? = nil
+        var id: String { "\(Session.dateFormatter.string(from: date))-\(name ?? "*")-\(line?.occurrence ?? 0)" }
     }
     @State private var pendingMove: MoveTarget?
+    /// Why the last delete or move didn't happen — "Still syncing…", a sync
+    /// error — so a tap that came to nothing says so here, not on another tab.
+    @State private var actionError: String?
     @AppStorage(Prefs.muscleMap) private var muscleMap = MuscleMap()
     @StateObject private var strava = StravaService.shared
     @AppStorage(Prefs.stravaEnabled) private var stravaEnabled = true
@@ -172,13 +178,20 @@ struct HistoryView: View {
     /// lifts still finds its records.
     private var records: [String: [String: Analytics.Record]] { Analytics.records(in: store.sessions) }
 
+    /// The line a row stands for, counted against the whole day — a search
+    /// shows some of a day's lifts, but the file has all of them.
+    private func lineRef(_ ex: ExerciseEntry, _ session: Session) -> LineRef {
+        let day = store.sessions.first { $0.dateString == session.dateString } ?? session
+        return LineRef(ex, in: day)
+    }
+
     private func daySection(_ session: Session) -> some View {
         Section {
             ForEach(session.exercises) { ex in
                 // A button, not a tap gesture: tapping a row to close a swipe
                 // you changed your mind about must not open the lift.
                 Button {
-                    store.requestEdit(exercise: ex.name, on: session.date)
+                    store.requestEdit(exercise: ex.name, on: session.date, line: lineRef(ex, session))
                 } label: {
                     VStack(alignment: .leading, spacing: 2) {
                         HStack(spacing: 8) {
@@ -203,13 +216,13 @@ struct HistoryView: View {
                 )
                 .swipeActions(edge: .leading) {
                     Button {
-                        store.requestEdit(exercise: ex.name, on: session.date)
+                        store.requestEdit(exercise: ex.name, on: session.date, line: lineRef(ex, session))
                     } label: {
                         Label("Edit", systemImage: "pencil")
                     }
                     .tint(Theme.accent)
                     Button {
-                        pendingMove = MoveTarget(name: ex.name, date: session.date)
+                        pendingMove = MoveTarget(name: ex.name, date: session.date, line: lineRef(ex, session))
                     } label: {
                         Label("Move", systemImage: "calendar")
                     }
@@ -217,21 +230,21 @@ struct HistoryView: View {
                 }
                 .contextMenu {
                     Button {
-                        store.requestEdit(exercise: ex.name, on: session.date)
+                        store.requestEdit(exercise: ex.name, on: session.date, line: lineRef(ex, session))
                     } label: { Label("Edit sets", systemImage: "pencil") }
                     Button {
-                        pendingMove = MoveTarget(name: ex.name, date: session.date)
+                        pendingMove = MoveTarget(name: ex.name, date: session.date, line: lineRef(ex, session))
                     } label: { Label("Move to another day", systemImage: "calendar") }
                     Button {
                         pendingMove = MoveTarget(name: nil, date: session.date)
                     } label: { Label("Move the whole day", systemImage: "calendar.badge.clock") }
                     Button(role: .destructive) {
-                        pendingDelete = DeleteTarget(name: ex.name, date: session.date)
+                        pendingDelete = DeleteTarget(name: ex.name, date: session.date, line: lineRef(ex, session))
                     } label: { Label("Delete", systemImage: "trash") }
                 }
                 .swipeActions(edge: .trailing) {
                     Button(role: .destructive) {
-                        pendingDelete = DeleteTarget(name: ex.name, date: session.date)
+                        pendingDelete = DeleteTarget(name: ex.name, date: session.date, line: lineRef(ex, session))
                     } label: {
                         Label("Delete", systemImage: "trash")
                     }
@@ -309,17 +322,27 @@ struct HistoryView: View {
             ) { target in
                 Button("Delete", role: .destructive) {
                     Task {
-                        await store.delete(
-                            exercise: target.name, on: target.date,
+                        let result = await store.delete(
+                            exercise: target.name, on: target.date, line: target.line,
                             message: "Delete \(target.name) \(Session.dateFormatter.string(from: target.date))")
+                        if result == .failed { actionError = store.status }
                     }
                 }
                 Button("Cancel", role: .cancel) {}
             }
             .sheet(item: $pendingMove) { target in
                 MoveSheet(target: target.name.map { Theme.readableName($0) } ?? "the whole day", from: target.date) { newDate in
-                    Task { await store.move(exercise: target.name, on: target.date, to: newDate) }
+                    Task {
+                        let result = await store.move(exercise: target.name, on: target.date, line: target.line, to: newDate)
+                        if result == .failed { actionError = store.status }
+                    }
                 }
+            }
+            .alert("Not changed",
+                   isPresented: Binding(get: { actionError != nil }, set: { if !$0 { actionError = nil } })) {
+                Button("OK", role: .cancel) {}
+            } message: {
+                Text(actionError ?? "")
             }
         }
     }

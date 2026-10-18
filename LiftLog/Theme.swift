@@ -29,6 +29,25 @@ enum Theme {
     /// Strava's own orange, for its button only — their brand rules ask for it.
     static let strava = Color(red: 0.988, green: 0.298, blue: 0.008)   // #FC4C02
 
+    /// Text that warns: a save that failed, a line that won't parse. The
+    /// stall amber and `.orange` both fall under 3:1 on the light ground,
+    /// too faint for a caption, so text gets a deeper amber in light mode
+    /// (#8F5500, 5.4:1) and a lighter one in dark (#F0B04A, 7.3:1). The
+    /// amber still says "act on this"; `stalled` stays for dots and bars.
+    static let warning = dynamic(light: (0.56, 0.33, 0.00), dark: (0.94, 0.69, 0.29))
+
+    /// Strava's orange for small text — a link like "post to Strava". The
+    /// brand orange is 3.4:1 on white; this is the same hue, deep enough for
+    /// 5.2:1 in light mode (#B83800), and lifted to #FF8A50 in dark.
+    static let stravaText = dynamic(light: (0.72, 0.22, 0.00), dark: (1.00, 0.54, 0.31))
+
+    private static func dynamic(light: (Double, Double, Double), dark: (Double, Double, Double)) -> Color {
+        Color(UIColor { traits in
+            let c = traits.userInterfaceStyle == .dark ? dark : light
+            return UIColor(red: c.0, green: c.1, blue: c.2, alpha: 1)
+        })
+    }
+
     static let corner: CGFloat = 20
     static let bigFieldHeight: CGFloat = 76
 

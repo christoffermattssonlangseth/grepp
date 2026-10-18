@@ -117,7 +117,10 @@ struct CoachMessage: Identifiable, Equatable, Codable {
         case "max_tokens": return "The answer hit the length limit and was cut off here."
         case "pause_turn": return "The search ran out of rounds before it finished. Ask again to continue."
         case CoachMessage.interrupted: return "Cut off when you left the app: iOS stopped the answer before it finished."
-        default: return nil
+        case nil: return nil
+        // A reason the app doesn't know yet still says something, or an empty
+        // bubble is left with no explanation at all.
+        case let other?: return "The answer stopped early (\(other)). Ask again to continue."
         }
     }
 }
@@ -155,12 +158,18 @@ final class CoachService: ObservableObject {
     /// You left the app while this answer was coming. A connection error then
     /// is iOS cutting it off, not the API failing.
     private var leftDuringTurn = false
+    /// Clears `leftDuringTurn` a few seconds after you come back: long enough
+    /// for a connection that died while you were away to report it as that,
+    /// short enough that a real network failure afterwards reads as one.
+    private var returnGrace: Task<Void, Never>?
     private var backgroundObserver: NSObjectProtocol?
+    private var activeObserver: NSObjectProtocol?
 
     // The transcript is persisted so a backgrounded-and-killed app doesn't lose
-    // the conversation. Saved when a message lands or finishes, never per
-    // streamed chunk.
+    // the conversation. Saved when a message lands or finishes, and every few
+    // seconds while an answer streams — never per chunk.
     private let chatKey = "coach_chat"
+    private var lastStreamSave = Date.distantPast
     private let seenKey = "coach_seen_log"
 
     /// The log lines as they stood at the last send, so the next send can say
@@ -182,7 +191,21 @@ final class CoachService: ObservableObject {
         ) { [weak self] _ in
             MainActor.assumeIsolated {
                 guard let self, self.isResponding else { return }
+                self.returnGrace?.cancel()
                 self.leftDuringTurn = true
+            }
+        }
+        activeObserver = NotificationCenter.default.addObserver(
+            forName: UIApplication.didBecomeActiveNotification, object: nil, queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated {
+                guard let self, self.leftDuringTurn else { return }
+                self.returnGrace?.cancel()
+                self.returnGrace = Task { [weak self] in
+                    try? await Task.sleep(for: .seconds(5))
+                    guard !Task.isCancelled else { return }
+                    self?.leftDuringTurn = false
+                }
             }
         }
     }
@@ -192,26 +215,42 @@ final class CoachService: ObservableObject {
         UserDefaults.standard.set(try? JSONEncoder().encode(saved), forKey: chatKey)
     }
 
+    /// While an answer streams, a save at most every few seconds: a killed app
+    /// then keeps most of what arrived, without encoding the chat per chunk.
+    private func persistWhileStreaming() {
+        guard Date().timeIntervalSince(lastStreamSave) >= 3 else { return }
+        lastStreamSave = Date()
+        persist()
+    }
+
     private func restore() {
         guard let data = UserDefaults.standard.data(forKey: chatKey),
               let saved = try? JSONDecoder().decode(Saved.self, from: data) else { return }
         // A reply cut off by a kill is kept as it stood, like a cancel — and an
         // empty bubble the kill left behind is dropped. What it cost was billed
-        // all the same, so it goes to the month here.
-        for m in saved.messages where m.isStreaming {
-            if let usage = m.usage, let model = m.model { CoachSpend.shared.record(model.cost(usage)) }
-        }
-        // ...and it says it was cut off, so it can be continued.
+        // all the same, so it goes to the month here, the output estimated from
+        // what arrived as `finishStreamingMessage` does. And it says it was cut
+        // off, so it can be continued.
+        let killed = saved.messages.contains(where: \.isStreaming)
         messages = saved.messages
             .map { m in
                 var m = m
-                if m.isStreaming, m.role == .coach, m.stop == nil { m.stop = CoachMessage.interrupted }
+                guard m.isStreaming else { return m }
+                if var usage = m.usage, let model = m.model {
+                    if usage.output == 0, !m.text.isEmpty { usage.output = m.text.count / 4 }
+                    m.usage = usage
+                    CoachSpend.shared.record(model.cost(usage))
+                }
+                if m.role == .coach, m.stop == nil { m.stop = CoachMessage.interrupted }
                 m.isStreaming = false
                 return m
             }
             .filter { !($0.role == .coach && $0.stop == nil && $0.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty) }
         mode = saved.mode
         contextNote = saved.contextNote
+        // Saved settled at once, or the next launch finds it still streaming
+        // and bills it again.
+        if killed { persist() }
     }
 
     var isEmpty: Bool { messages.isEmpty }
@@ -244,6 +283,11 @@ final class CoachService: ObservableObject {
     func reset() {
         task?.cancel()
         task = nil
+        // The cancelled turn may still unwind normally; with no turn it owns
+        // nothing here, so it can't mark the log as seen or tidy the new chat.
+        turn = nil
+        // An answer in flight was billed for what it got: counted before it goes.
+        finishStreamingMessage()
         messages = []
         seenLines = []
         errorText = nil
@@ -278,6 +322,7 @@ final class CoachService: ObservableObject {
     /// will. Usually around half a minute, never promised.
     private func beginBackgroundTime() {
         endBackgroundTime()
+        returnGrace?.cancel()
         leftDuringTurn = false
         backgroundTask = UIApplication.shared.beginBackgroundTask(withName: "Coach answer") { [weak self] in
             MainActor.assumeIsolated { self?.interrupt() }
@@ -405,8 +450,15 @@ final class CoachService: ObservableObject {
         contextNote = note
 
         messages.append(CoachMessage(role: .you, text: trimmed))
-        let reply = CoachMessage(role: .coach, text: "", isStreaming: true, model: model,
+        var reply = CoachMessage(role: .coach, text: "", isStreaming: true, model: model,
                                  isLookup: lookup != nil)
+        // A lookup's usage only comes with the whole answer, so one stopped or
+        // cut off would never reach the month. It starts with the prompt's size
+        // at about four characters a token, which the real count replaces.
+        if lookup != nil {
+            let chars = system.count + (live?.count ?? 0) + turns.reduce(0) { $0 + $1.text.count }
+            reply.usage = ClaudeService.Usage(input: chars / 4, searches: 0)
+        }
         messages.append(reply)
         isResponding = true
         persist()   // the question survives even if the answer doesn't
@@ -438,7 +490,9 @@ final class CoachService: ObservableObject {
                 for try await event in service.stream(system: system, live: live, turns: turns) {
                     guard let self, !Task.isCancelled else { return }
                     switch event {
-                    case .text(let chunk): self.append(chunk, to: reply.id)
+                    case .text(let chunk):
+                        self.append(chunk, to: reply.id)
+                        self.persistWhileStreaming()
                     case .usage(let usage):
                         // Saved at once: a kill mid-stream must not lose what was billed.
                         self.setUsage(usage, on: reply.id)
@@ -447,7 +501,9 @@ final class CoachService: ObservableObject {
                     }
                 }
                 }
-                self?.seenLines = seenAfterReply
+                // Only for the turn still on screen: a reset or a newer send
+                // owns the log's "seen" state now.
+                if let self, self.turn == thisTurn { self.seenLines = seenAfterReply }
             } catch is CancellationError {
                 // Left the partial answer in place on purpose.
             } catch let error as URLError where error.code == .cancelled {
@@ -460,6 +516,8 @@ final class CoachService: ObservableObject {
                 // Surface the failure, not the request: ClaudeError carries the
                 // status and the API's reason — never the prompt or the log.
                 self?.errorText = error.localizedDescription
+                // A lookup the API turned down cost nothing: drop its estimate.
+                if lookup != nil, error is ClaudeService.ClaudeError { self?.setUsage(nil, on: reply.id) }
             }
             // A stopped turn unwinding after the next began: nothing here is its.
             guard let self, self.turn == thisTurn else { return }
@@ -511,6 +569,7 @@ final class CoachService: ObservableObject {
                                                               sessions: sessions, muscleMap: muscleMap) {
                         guard let self, !Task.isCancelled else { return }
                         self.replace(whole, on: reply.id)
+                        self.persistWhileStreaming()
                     }
                     break
                 } catch is CancellationError {
@@ -546,7 +605,7 @@ final class CoachService: ObservableObject {
         messages[idx].text += chunk
     }
 
-    private func setUsage(_ usage: ClaudeService.Usage, on id: UUID) {
+    private func setUsage(_ usage: ClaudeService.Usage?, on id: UUID) {
         guard let idx = messages.firstIndex(where: { $0.id == id }) else { return }
         messages[idx].usage = usage
     }

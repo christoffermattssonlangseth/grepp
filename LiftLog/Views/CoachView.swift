@@ -94,7 +94,7 @@ struct CoachView: View {
                 return .handled
             })
             .sheet(isPresented: $showingBrief) {
-                BriefView {
+                BriefView(interviewDiscardsChat: !coach.isEmpty) {
                     // The sheet is already dismissing; start the interview behind it.
                     beginGoalsInterview()
                 }

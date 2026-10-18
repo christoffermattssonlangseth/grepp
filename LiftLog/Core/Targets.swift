@@ -7,24 +7,28 @@ import Foundation
 /// after "by" is optional. Nothing is written back for it to work.
 struct Target: Equatable {
     /// What the number is a number of: a top set in kg, an estimated one-rep
-    /// max in kg, or reps. "1RM" anywhere on the line, or in the heading
-    /// over it, makes it a max; a count of reps is a count of reps.
+    /// max in kg, load hung on a bodyweight lift in kg, or reps. "1RM"
+    /// anywhere on the line, or in the heading over it, makes it a max;
+    /// "added", "weighted" or "bw+" makes it added load; a count of reps is a
+    /// count of reps.
     enum Kind: Equatable {
-        case topSet, oneRepMax, reps
+        case topSet, oneRepMax, addedLoad, reps
 
         var metric: Analytics.Metric {
             switch self {
             case .topSet: return .topSet
             case .oneRepMax: return .oneRepMax
+            case .addedLoad: return .addedLoad
             case .reps: return .maxReps
             }
         }
         var unit: String { self == .reps ? "reps" : "kg" }
-        /// "top set", "est. 1RM", "reps" — how the card names the number.
+        /// "top set", "est. 1RM", "added load", "reps" — how the card names the number.
         var label: String {
             switch self {
             case .topSet: return "top set"
             case .oneRepMax: return "est. 1RM"
+            case .addedLoad: return "added load"
             case .reps: return "reps"
             }
         }
@@ -108,6 +112,7 @@ enum Targets {
                 // not; one without borrows the sentence's.
                 let ownDate = clause.range(of: #"\b(by|before|until|till)\b"#, options: .regularExpression) != nil
                 let kind: Target.Kind = number.isReps ? .reps
+                    : isAddedLoad(clause) ? .addedLoad
                     : (sectionIsMax || isMax(clause) || isMax(text)) ? .oneRepMax : .topSet
                 out.append(Target(lift: name, value: number.value, kind: kind,
                                   by: ownDate ? date(in: clause, today: today, calendar: calendar) : lineDate,
@@ -120,6 +125,28 @@ enum Targets {
     /// "1RM", "1 RM", "e1RM", "one rep max", "1-rep max", "one-rep maximum".
     static func isMax(_ text: String) -> Bool {
         text.range(of: #"\b(e?1\s*-?\s*rm|(one|1)[\s-]*rep[\s-]*max(imum)?)\b"#, options: [.regularExpression, .caseInsensitive]) != nil
+    }
+
+    /// "20 kg added", "weighted 20 kg", "bw+20 kg": load hung on a bodyweight lift.
+    static func isAddedLoad(_ text: String) -> Bool {
+        text.range(of: #"\b(added|weighted)\b|\bbw\s*\+"#, options: [.regularExpression, .caseInsensitive]) != nil
+    }
+
+    /// The target Trends shows for a lift, read for the kind of lift it is.
+    /// A bodyweight lift's top set is its added load, so "chin-ups 20 kg" is
+    /// bw+20 — read as top set it had no series to sit on. A bodyweight lift
+    /// takes reps or added load; a weighted one, a top set or a max.
+    static func target(for name: String, in targets: [Target], sessions: [Session]) -> Target? {
+        let key = MuscleMap.canonical(name)
+        guard let target = targets.first(where: { $0.lift == key }) else { return nil }
+        guard Analytics.isBodyweight(name, in: sessions) else {
+            return target.kind == .topSet || target.kind == .oneRepMax ? target : nil
+        }
+        switch target.kind {
+        case .reps, .addedLoad: return target
+        case .topSet: return Target(lift: target.lift, value: target.value, kind: .addedLoad, by: target.by, line: target.line)
+        case .oneRepMax: return nil
+        }
     }
 
     private static let clauseBreak = try! NSRegularExpression(pattern: #"\s*(?:[;,]|\band\b|&|\.\s|\.$)\s*"#)
@@ -148,7 +175,8 @@ enum Targets {
         for m in unitNumber.matches(in: text, range: NSRange(location: 0, length: ns.length)) {
             let before = ns.substring(to: m.range.location).lowercased()
             let after = ns.substring(from: m.range.location + m.range.length).lowercased()
-            if before.range(of: #"(\+|\b(add|adding|another|plus|up|increase|increasing)\s*)\s*$"#, options: .regularExpression) != nil { continue }
+            // "bw+20 kg" is a load on the lifter, not an increment.
+            if before.range(of: #"((?<!bw)(?<!bw )\+|\b(add|adding|another|plus|up|increase|increasing)\s*)\s*$"#, options: .regularExpression) != nil { continue }
             if after.range(of: #"^\s*(more|(per|a|an|each|every)\s+(week|month|session|workout|fortnight))\b"#, options: .regularExpression) != nil { continue }
             let digits = ns.substring(with: m.range(at: 1)).replacingOccurrences(of: ",", with: ".")
             guard let value = Double(digits) else { continue }
@@ -237,12 +265,18 @@ enum Targets {
         return calendar.date(from: c) ?? thisYear
     }
 
-    /// "- bench press 100 kg by 1 Dec 2026", "- squat 1RM 140 kg by …" — the
-    /// line the app writes when a target is set from Trends, in the shape it reads.
+    /// "- bench press 100 kg by 1 Dec 2026", "- squat 1RM 140 kg by …",
+    /// "- chin ups 20 kg added" — the line the app writes when a target is
+    /// set from Trends, in the shape it reads.
     static func line(lift: String, value: Double, kind: Target.Kind, by: Date?) -> String {
         let name = lift.replacingOccurrences(of: "-", with: " ")
         let amount = kind == .reps ? "\(Int(value)) reps" : "\(WorkSet.formatWeight(value)) kg"
-        var text = kind == .oneRepMax ? "- \(name) 1RM \(amount)" : "- \(name) \(amount)"
+        var text: String
+        switch kind {
+        case .oneRepMax: text = "- \(name) 1RM \(amount)"
+        case .addedLoad: text = "- \(name) \(amount) added"
+        case .topSet, .reps: text = "- \(name) \(amount)"
+        }
         if let by {
             let f = DateFormatter()
             f.locale = Locale(identifier: "en_US_POSIX")

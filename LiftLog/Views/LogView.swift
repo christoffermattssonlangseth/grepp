@@ -35,6 +35,8 @@ struct LogView: View {
     @Environment(\.scenePhase) private var scenePhase
     @State private var name = ""
     @State private var sets: [WorkSet] = []
+    /// The calendar under the date pill is open.
+    @State private var pickingDate = false
 
     @State private var isBodyweight = false
     @State private var weightText = ""
@@ -180,25 +182,26 @@ struct LogView: View {
                 // The date as a compact pill up here, not a whole card under the
                 // title: on a gym screen that card-height belongs to the number pad.
                 ToolbarItem(placement: .topBarTrailing) {
-                    // The system picker writes "18 Oct 2026" however it's asked;
-                    // the pill says "sun 18 oct" like the rest of the app, and the
-                    // picker sits on top, all but invisible, to take the tap.
-                    Text(pillLabel)
-                        .font(.subheadline.weight(.semibold))
-                        .foregroundStyle(isToday ? Color.primary : Theme.warning)
-                        .pill()
-                        .overlay {
-                            DatePicker("Date",
-                                       selection: Binding(get: { date },
-                                                          set: { date = $0; dateChosen = true }),
-                                       displayedComponents: .date)
-                                .labelsHidden()
-                                .tint(isToday ? Theme.accent : .orange)
-                                // Just above SwiftUI's floor for taking taps.
-                                .opacity(0.011)
-                        }
-                        .accessibilityElement(children: .contain)
-                        .accessibilityLabel("Logging for \(dayLabel)")
+                    // Our own pill, not the system picker's: that one writes
+                    // "18 Oct 2026" however it's asked. A tap opens the calendar.
+                    Button { pickingDate = true } label: {
+                        Text(pillLabel)
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundStyle(isToday ? Color.primary : Theme.warning)
+                    }
+                    .accessibilityLabel("Logging for \(dayLabel), change day")
+                    .popover(isPresented: $pickingDate) {
+                        DatePicker("Day",
+                                   selection: Binding(get: { date },
+                                                      set: { date = $0; dateChosen = true; pickingDate = false }),
+                                   displayedComponents: .date)
+                            .datePickerStyle(.graphical)
+                            .labelsHidden()
+                            .tint(Theme.accent)
+                            .padding()
+                            .frame(minWidth: 320)
+                            .presentationCompactAdaptation(.popover)
+                    }
                 }
                 ToolbarItemGroup(placement: .keyboard) {
                     Spacer()

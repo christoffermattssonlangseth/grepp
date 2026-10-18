@@ -92,7 +92,7 @@ struct LastSessionView: View {
     /// The app's glyph, and how long since you lifted: "TODAY", "1D", "4D".
     private var circular: some View {
         VStack(spacing: 2) {
-            Barbell(height: hasSessions ? 11 : 15, color: .primary)
+            Barbell(height: hasSessions ? 20 : 26, color: .primary)
                 .widgetAccentable()
             if let snapshot = entry.snapshot, hasSessions {
                 Text(shortRelative(snapshot))

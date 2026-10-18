@@ -185,6 +185,15 @@ struct HistoryView: View {
         return LineRef(ex, in: day)
     }
 
+    /// "wed 14 oct": the day as you'd say it, lowercase like the app's other
+    /// labels. The year only when it isn't this one.
+    private func dayTitle(_ session: Session) -> String {
+        let sameYear = Calendar.current.isDate(session.date, equalTo: Date(), toGranularity: .year)
+        let style = sameYear ? Date.FormatStyle().weekday(.abbreviated).day().month(.abbreviated)
+                             : Date.FormatStyle().weekday(.abbreviated).day().month(.abbreviated).year()
+        return session.date.formatted(style.locale(Locale(identifier: "en_GB"))).replacingOccurrences(of: ",", with: "").lowercased()
+    }
+
     private func daySection(_ session: Session) -> some View {
         Section {
             ForEach(session.exercises) { ex in
@@ -195,7 +204,7 @@ struct HistoryView: View {
                 } label: {
                     VStack(alignment: .leading, spacing: 2) {
                         HStack(spacing: 8) {
-                            Text(ex.name).font(.headline)
+                            Text(Theme.readableName(ex.name)).font(.headline)
                             if let record = records[session.dateString]?[MuscleMap.canonical(ex.name)] {
                                 RecordBadge(record: record)
                             }
@@ -209,11 +218,9 @@ struct HistoryView: View {
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
-                .listRowBackground(
-                    RoundedRectangle(cornerRadius: 12, style: .continuous)
-                        .fill(.regularMaterial)
-                        .padding(.vertical, 2)
-                )
+                // One panel per day: the section rounds the outer corners and
+                // draws the hairlines between lifts, so a row is just a fill.
+                .listRowBackground(Rectangle().fill(.regularMaterial))
                 .swipeActions(edge: .leading) {
                     Button {
                         store.requestEdit(exercise: ex.name, on: session.date, line: lineRef(ex, session))
@@ -262,7 +269,7 @@ struct HistoryView: View {
                         } label: { Label("Move the whole day", systemImage: "calendar") }
                     } label: {
                         HStack(spacing: 4) {
-                            Text(session.dateString)
+                            Text(dayTitle(session))
                             Image(systemName: "chevron.up.chevron.down")
                                 .font(.caption2.weight(.bold))
                                 .foregroundStyle(.tertiary)
@@ -279,7 +286,7 @@ struct HistoryView: View {
                         Text(sets)
                             .font(.caption2)
                             .textCase(nil)
-                            .foregroundStyle(.tertiary)
+                            .foregroundStyle(.secondary)
                     }
                     if let postError, postError.day == session.dateString {
                         Text(postError.text)

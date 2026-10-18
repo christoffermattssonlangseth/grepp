@@ -283,9 +283,9 @@ struct TrendsView: View {
         ForEach(series) { point in
             LineMark(x: .value("Date", point.date),
                      y: .value(metric.rawValue, point.value))
-                // Monotone, not Catmull-Rom: on sparse training data the
-                // latter overshoots and draws a peak that was never lifted.
-                .interpolationMethod(.monotone)
+                // Straight segments: each point is a session that happened,
+                // and nothing between them is drawn as if it were.
+                .interpolationMethod(.linear)
                 .foregroundStyle(.tint)
             PointMark(x: .value("Date", point.date),
                       y: .value(metric.rawValue, point.value))

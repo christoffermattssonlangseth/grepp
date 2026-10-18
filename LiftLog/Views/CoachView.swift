@@ -358,6 +358,18 @@ struct CoachView: View {
                     .foregroundStyle(.orange)
                     .fixedSize(horizontal: false, vertical: true)
             }
+            // Only on the last answer: further up, the chat has moved on.
+            if message.wasInterrupted, message.id == coach.messages.last?.id, !coach.isResponding {
+                Button {
+                    ask(message.text.isEmpty ? "You were cut off before answering. Please answer my last question."
+                                             : "You were cut off. Continue from where you stopped.")
+                } label: {
+                    Label("Continue", systemImage: "arrow.clockwise")
+                        .font(.subheadline.weight(.semibold))
+                }
+                .buttonStyle(.bordered)
+                .tint(Theme.accent)
+            }
             // The API's own token counts, priced — not an estimate of them.
             if showCost, !message.isStreaming, let usage = message.usage, let model = message.model {
                 Text(costLine(usage, model))

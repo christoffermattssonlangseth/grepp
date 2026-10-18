@@ -93,10 +93,12 @@ enum CoachContext {
         return shortFormatter.string(from: date)
     }
 
+    /// In the log's own zone: the date was parsed as local midnight, and read
+    /// back in UTC it lands on the day before anywhere east of Greenwich.
     private static let shortFormatter: DateFormatter = {
         let f = DateFormatter()
         f.locale = Locale(identifier: "en_US_POSIX")
-        f.timeZone = TimeZone(identifier: "UTC")
+        f.timeZone = Session.dateFormatter.timeZone
         f.dateFormat = "d MMM"
         return f
     }()
@@ -1072,8 +1074,9 @@ enum CoachContext {
     /// own marker and a hanging indent.
     enum ChatBlock: Equatable {
         case text(String)
-        /// `marker` is "•" for a bullet, the number as written ("2.") for a
-        /// numbered item. `level` is 0 or 1: deeper nesting reads as one indent.
+        /// `marker` is "•" for a bullet, the number ("2.") for a numbered item,
+        /// counted on from the first of a run as markdown does, so "1." on every
+        /// line still reads 1, 2, 3. `level` is 0 or 1: deeper nesting reads as one indent.
         case item(marker: String, text: String, level: Int)
     }
 
@@ -1082,20 +1085,43 @@ enum CoachContext {
     /// back under the dash; drawn as items, it reads as a list.
     static func chatBlocks(_ markdown: String) -> [ChatBlock] {
         let item = try! NSRegularExpression(pattern: "^(\\s*)([-*•]|\\d{1,2}[.)])\\s+(.*)$")
+        // "---", "- - -", "* * *", "___": a rule, not a list item. A bubble has
+        // no use for one, so it's dropped.
+        let rule = try! NSRegularExpression(pattern: "^ {0,3}([-*_])(\\s*\\1){2,}\\s*$")
         var blocks: [ChatBlock] = []
         var paragraph: [String] = []
+        // Where the numbered run at each level is up to. A paragraph or a rule
+        // ends every run; a bullet ends the run at its own level.
+        var counts: [Int: Int] = [:]
         func flush() {
-            if !paragraph.isEmpty { blocks.append(.text(paragraph.joined(separator: "\n"))) }
+            if !paragraph.isEmpty {
+                blocks.append(.text(paragraph.joined(separator: "\n")))
+                counts = [:]
+            }
             paragraph = []
         }
         for line in markdown.split(separator: "\n", omittingEmptySubsequences: false).map(String.init) {
             let ns = line as NSString
-            if let m = item.firstMatch(in: line, range: NSRange(location: 0, length: ns.length)) {
+            let whole = NSRange(location: 0, length: ns.length)
+            if rule.firstMatch(in: line, range: whole) != nil {
+                flush()
+                counts = [:]
+            } else if let m = item.firstMatch(in: line, range: whole) {
                 flush()
                 let indent = ns.substring(with: m.range(at: 1)).replacingOccurrences(of: "\t", with: "  ").count
+                let level = indent >= 2 ? 1 : 0
+                if level == 0 { counts[1] = nil }
                 let raw = ns.substring(with: m.range(at: 2))
-                let marker = raw.first?.isNumber == true ? raw.replacingOccurrences(of: ")", with: ".") : "•"
-                blocks.append(.item(marker: marker, text: ns.substring(with: m.range(at: 3)), level: indent >= 2 ? 1 : 0))
+                let marker: String
+                if let written = Int(raw.dropLast()) {
+                    let number = counts[level].map { $0 + 1 } ?? written
+                    counts[level] = number
+                    marker = "\(number)."
+                } else {
+                    counts[level] = nil
+                    marker = "•"
+                }
+                blocks.append(.item(marker: marker, text: ns.substring(with: m.range(at: 3)), level: level))
             } else if line.trimmingCharacters(in: .whitespaces).isEmpty {
                 flush()
             } else if paragraph.isEmpty, line.first?.isWhitespace == true,

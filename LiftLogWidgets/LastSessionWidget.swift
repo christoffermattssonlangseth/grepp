@@ -64,12 +64,18 @@ struct LastSessionView: View {
         case .accessoryInline:
             inline.containerBackground(for: .widget) { Color.clear }
         default:
-            home.containerBackground(for: .widget) {
-                LinearGradient(colors: [Brand.accent.opacity(0.28),
-                                        Color(.systemBackground),
-                                        Brand.accent.opacity(0.14)],
-                               startPoint: .topLeading, endPoint: .bottomTrailing)
-            }
+            // Black with a hairline edge, like the Log tab's readout windows.
+            // Dark text styles whatever the phone's mode: the plate is black
+            // in light mode too.
+            home
+                .environment(\.colorScheme, .dark)
+                .containerBackground(for: .widget) {
+                    ZStack {
+                        Color.black
+                        ContainerRelativeShape()
+                            .strokeBorder(.white.opacity(0.22), lineWidth: 1)
+                    }
+                }
         }
     }
 

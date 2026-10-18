@@ -17,7 +17,7 @@ struct TrendsView: View {
     private enum Mode: String, CaseIterable, Identifiable {
         case lift, volume
         var id: String { rawValue }
-        var title: String { self == .lift ? "Lift" : "Volume" }
+        var title: String { self == .lift ? "lift" : "volume" }
     }
     @AppStorage(Prefs.trendsMode) private var mode: Mode = .lift
     @AppStorage(Prefs.muscleMap) private var muscleMap = MuscleMap()
@@ -175,7 +175,7 @@ struct TrendsView: View {
 
     private var metricPicker: some View {
         Picker("Metric", selection: $metric) {
-            ForEach(figures.metrics) { Text($0.rawValue).tag($0) }
+            ForEach(figures.metrics) { Text($0.rawValue.lowercased().replacingOccurrences(of: "1rm", with: "1RM")).tag($0) }
         }
         .pickerStyle(.segmented)
     }

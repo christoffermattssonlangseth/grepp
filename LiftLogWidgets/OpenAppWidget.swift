@@ -6,8 +6,14 @@ import WidgetKit
 struct OpenAppWidget: Widget {
     var body: some WidgetConfiguration {
         StaticConfiguration(kind: "OpenApp", provider: OpenAppProvider()) { _ in
-            Barbell(height: 15, color: .primary)
-                .widgetAccentable()
+            // Sized to the circle, not in points: the circle is 68–76pt
+            // depending on the phone. At 0.36 of it the outer plates stay
+            // clear of the rim; a fixed 15pt left half the circle empty.
+            GeometryReader { geo in
+                Barbell(height: min(geo.size.width, geo.size.height) * 0.36, color: .primary)
+                    .widgetAccentable()
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            }
                 .accessibilityLabel("Open Grepp")
                 .containerBackground(for: .widget) { AccessoryWidgetBackground() }
                 .widgetURL(WidgetSnapshot.logURL)

@@ -9,6 +9,8 @@ struct BriefView: View {
     @EnvironmentObject var store: Store
     @Environment(\.dismiss) private var dismiss
 
+    /// The interview starts a new chat, so there's one to lose: asked about first.
+    var interviewDiscardsChat = false
     /// Hand back to Coach to run the goals interview, once this screen is closed.
     let onInterview: () -> Void
 
@@ -19,6 +21,7 @@ struct BriefView: View {
     /// Keyed by file: a failure saving one must not surface under the other.
     @State private var saveErrors: [Store.BriefFile: String] = [:]
     @State private var confirmingDiscard = false
+    @State private var confirmingInterview = false
 
     private func draft(_ file: Store.BriefFile) -> String { drafts[file] ?? "" }
 
@@ -28,6 +31,22 @@ struct BriefView: View {
     }
 
     private var hasUnsavedChanges: Bool { Store.BriefFile.allCases.contains(where: isDirty) }
+
+    /// What starting the interview would throw away, if anything — said before
+    /// it goes, the way Done asks about unsaved edits.
+    private var interviewLoses: String? {
+        switch (hasUnsavedChanges, interviewDiscardsChat) {
+        case (true, true): return "Your unsaved changes here and the current chat will be discarded."
+        case (true, false): return "Your unsaved changes here will be discarded."
+        case (false, true): return "The interview starts a new chat; the current one will be discarded."
+        case (false, false): return nil
+        }
+    }
+
+    private func startInterview() {
+        dismiss()
+        onInterview()
+    }
 
     var body: some View {
         NavigationStack {
@@ -110,12 +129,21 @@ struct BriefView: View {
             }
 
             if file == .goals {
-                Button(action: { dismiss(); onInterview() }) {
+                Button {
+                    if interviewLoses == nil { startInterview() } else { confirmingInterview = true }
+                } label: {
                     Label("Let the coach interview me", systemImage: "bubble.left.and.text.bubble.right")
                         .font(.footnote.weight(.semibold))
                 }
                 .buttonStyle(.bordered)
                 .tint(Theme.accent)
+                .confirmationDialog("Start the goals interview?",
+                                    isPresented: $confirmingInterview, titleVisibility: .visible) {
+                    Button("Discard and start", role: .destructive, action: startInterview)
+                    Button("Cancel", role: .cancel) {}
+                } message: {
+                    Text(interviewLoses ?? "")
+                }
             }
 
             HStack {

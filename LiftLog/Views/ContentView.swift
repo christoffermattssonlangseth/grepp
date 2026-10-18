@@ -9,19 +9,19 @@ struct ContentView: View {
     var body: some View {
         TabView(selection: $store.selectedTab) {
             LogView()
-                .tabItem { Label("Log", systemImage: "plus.circle.fill") }
+                .tabItem { Label("log", systemImage: "plus.circle.fill") }
                 .tag(0)
             HistoryView()
-                .tabItem { Label("History", systemImage: "list.bullet") }
+                .tabItem { Label("history", systemImage: "list.bullet") }
                 .tag(1)
             TrendsView()
-                .tabItem { Label("Trends", systemImage: "chart.line.uptrend.xyaxis") }
+                .tabItem { Label("trends", systemImage: "chart.line.uptrend.xyaxis") }
                 .tag(2)
             CoachView()
-                .tabItem { Label("Coach", systemImage: "bubble.left.and.bubble.right.fill") }
+                .tabItem { Label("coach", systemImage: "bubble.left.and.bubble.right.fill") }
                 .tag(3)
             SettingsView()
-                .tabItem { Label("Settings", systemImage: "gearshape") }
+                .tabItem { Label("settings", systemImage: "gearshape") }
                 .tag(4)
         }
         .tint(Theme.accent)

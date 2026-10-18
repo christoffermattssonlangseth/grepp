@@ -538,7 +538,7 @@ private struct DaySheet: View {
             }
             .scrollContentBackground(.hidden)
             .background(Theme.backgroundView)
-            .navigationTitle("Add day")
+            .navigationTitle("add day")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }

@@ -51,7 +51,7 @@ struct CoachView: View {
                 if hasKey || model.isOnDevice { chat } else { needsKey }
             }
             .background(Theme.backgroundView)
-            .navigationTitle("Coach")
+            .navigationTitle("coach")
             // Both, deliberately: onChange catches a request while Coach is already
             // on screen, onAppear catches one that arrives before the tab has ever
             // been built — TabView makes its pages lazily.

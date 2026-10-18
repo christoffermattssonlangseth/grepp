@@ -47,7 +47,7 @@ struct MuscleMapView: View {
         .searchable(text: $query, prompt: "Lift")
         .scrollContentBackground(.hidden)
         .background(Theme.backgroundView)
-        .navigationTitle("Muscle shares")
+        .navigationTitle("muscle shares")
         .navigationBarTitleDisplayMode(.inline)
     }
 

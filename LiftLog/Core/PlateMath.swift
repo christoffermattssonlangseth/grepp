@@ -47,7 +47,12 @@ enum PlateMath {
 
     static func load(_ target: Double, bar: Double = 20, inventory: PlateInventory = .standard) -> Load? {
         guard target >= bar, target <= heaviest else { return nil }
-        let want = Int(((target - bar) / 2 / unit).rounded())
+        // Down, not to the nearest: the rule is the heaviest load below a
+        // target that can't be made, and 20.4 must not come out as 20.5.
+        // The epsilon keeps 87.5's 135 units from flooring to 134.
+        let exact = (target - bar) / 2 / unit
+        let want = Int((exact + 1e-9).rounded(.down))
+        let between = exact - Double(want) > 1e-9
 
         // Per-side stock: a pair per side, so an odd plate out can't be used.
         // A plain loop, deliberately: a multi-statement closure returning a tuple
@@ -80,7 +85,7 @@ enum PlateMath {
         let reached = (0...want).reversed().first { best[$0] != nil } ?? 0
         let perSide = (best[reached] ?? []).map { Double($0) * unit }
         return Load(perSide: perSide,
-                    isApproximate: reached != want,
+                    isApproximate: reached != want || between,
                     total: bar + 2 * Double(reached) * unit)
     }
 

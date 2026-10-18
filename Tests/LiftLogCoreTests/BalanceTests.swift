@@ -20,6 +20,22 @@ final class BalanceTests: XCTestCase {
         XCTAssertEqual(pairs[1].verdict, "even")
     }
 
+    func testASetCountsOnceASideHoweverManyMusclesItTrains() {
+        var utc = Calendar(identifier: .gregorian)
+        utc.timeZone = Session.dateFormatter.timeZone
+        let day = Session.dateFormatter.date(from: "2026-09-08")!
+        let four = Array(repeating: WorkSet(weight: 50, added: nil, reps: 5), count: 4)
+        let sessions = [Session(date: day, exercises: [ExerciseEntry(name: "ohp", sets: four),
+                                                       ExerciseEntry(name: "chin-ups", sets: four)])]
+        let weeks = Balance.weeklySets(weeks: 1, endingOn: day, calendar: utc, in: sessions, map: MuscleMap())
+        let pair = Balance.pairs(over: weeks)[0]
+        XCTAssertEqual(pair.a.sets, 4, "four presses are four sets of pushing, not ten")
+        XCTAssertEqual(pair.b.sets, 4)
+        XCTAssertEqual(pair.verdict, "even")
+        XCTAssertEqual(Balance.counted([.frontDelts: 1, .sideDelts: 1, .triceps: 0.5, .quads: 1]).values.reduce(0, +), 2,
+                       "one push share kept; quads untouched")
+    }
+
     func testTooFewSetsIsNotAVerdict() {
         let pairs = Balance.pairs(over: [[.chest: 2, .back: 0.5]])
         XCTAssertNil(pairs[0].short)

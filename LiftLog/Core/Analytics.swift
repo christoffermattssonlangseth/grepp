@@ -153,7 +153,7 @@ enum Analytics {
     /// A personal record, if a set is one.
     enum Record: Equatable {
         case load   // heavier than anything logged for the lift
-        case reps   // more reps than ever at this load
+        case reps   // more reps than ever at this load or heavier
     }
 
     /// The load a set is judged by: the bar, or what's hung on the lifter.
@@ -162,6 +162,11 @@ enum Analytics {
     /// Judge one set against the lift's history. Weighted lifts compare weight;
     /// bodyweight lifts compare added load, so bw+5 beats bw and bwx9 beats bwx8.
     /// The very first set of a new lift is not a record — there's nothing to beat.
+    ///
+    /// A rep record is more reps than any set at this load or heavier, so with
+    /// 100x5 and 105x1 logged, 102.5x5 is one: no set that heavy ever went five.
+    /// It has to beat an earlier set outright — level with it or heavier, and
+    /// as many reps or more — so a first light set is not a record of anything.
     ///
     /// `extra` is for sets landed but not yet committed: the second 90x5 today is
     /// not a record just because the first was.
@@ -172,9 +177,9 @@ enum Analytics {
 
         let mine = load(of: set)
         if mine > (history.map { load(of: $0) }.max() ?? 0) { return .load }
-        if let bestReps = history.filter({ load(of: $0) == mine }).map(\.reps).max(),
-           set.reps > bestReps { return .reps }
-        return nil
+        let beatsOne = history.contains { load(of: $0) <= mine && $0.reps <= set.reps }
+        let beaten = history.contains { load(of: $0) >= mine && $0.reps >= set.reps }
+        return beatsOne && !beaten ? .reps : nil
     }
 
     /// A lift done on the lifter's own weight (pull-ups, dips): most of its
@@ -236,11 +241,18 @@ enum Analytics {
 
     /// Every day a lift set a record, keyed by day then canonical name: a
     /// heavier set than anything before it, or more reps than ever at that
-    /// load, judged the way the Log badge judges a set as it lands — every
+    /// load or heavier (see `record(for:)`), judged the way the Log badge
+    /// judges a set as it lands — every
     /// earlier day and the sets before it that day. The first day of a lift
     /// is not a record. Heavier wins over more reps when a day has both.
     static func records(in sessions: [Session]) -> [String: [String: Record]] {
-        struct Standing { var maxLoad = -Double.infinity; var bestReps: [Double: Int] = [:]; var any = false }
+        // Per load: the most reps (to be beaten) and the fewest (to beat).
+        struct Standing {
+            var maxLoad = -Double.infinity
+            var bestReps: [Double: Int] = [:]
+            var leastReps: [Double: Int] = [:]
+            var any = false
+        }
         var standing: [String: Standing] = [:]
         var out: [String: [String: Record]] = [:]
         for session in sessions.sorted(by: { $0.date < $1.date }) {
@@ -252,7 +264,8 @@ enum Analytics {
                     if s.any {
                         var record: Record?
                         if mine > s.maxLoad { record = .load }
-                        else if let best = s.bestReps[mine], set.reps > best { record = .reps }
+                        else if s.leastReps.contains(where: { $0.key <= mine && $0.value <= set.reps }),
+                                !s.bestReps.contains(where: { $0.key >= mine && $0.value >= set.reps }) { record = .reps }
                         if let record, out[session.dateString, default: [:]][key] != .load {
                             out[session.dateString, default: [:]][key] = record
                         }
@@ -260,6 +273,7 @@ enum Analytics {
                     s.any = true
                     s.maxLoad = max(s.maxLoad, mine)
                     s.bestReps[mine] = max(s.bestReps[mine] ?? 0, set.reps)
+                    s.leastReps[mine] = min(s.leastReps[mine] ?? .max, set.reps)
                 }
                 standing[key] = s
             }

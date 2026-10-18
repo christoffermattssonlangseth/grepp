@@ -48,6 +48,25 @@ final class MuscleMapTests: XCTestCase {
         XCTAssertEqual(MuscleMap(rawValue: "junk;x=;y=nothing")?.overrides, [:])
     }
 
+    func testATableLiftTakenOffEveryMuscleCountsNowhere() {
+        var map = MuscleMap()
+        // Every share set to "–" in Settings: an empty share, not a reset.
+        map.set(MuscleMap.Share(weights: [:]), for: "plank")
+        XCTAssertTrue(map.isOverridden("plank"))
+        XCTAssertEqual(map.credits(for: "plank"), [:])
+        XCTAssertNil(map.share(for: "plank")?.primary)
+        XCTAssertEqual(map.share(for: "plank")?.summary, "counts nowhere")
+        XCTAssertEqual(map.rawValue, "plank=")
+        XCTAssertEqual(MuscleMap(rawValue: map.rawValue), map, "survives a relaunch")
+        XCTAssertEqual(map.unmapped(in: [Session(date: Date(), exercises: [ExerciseEntry(name: "plank", sets: [])])]), [],
+                       "a choice, not a lift waiting to be assigned")
+
+        map.set(nil as MuscleMap.Share?, for: "plank")
+        XCTAssertEqual(map.credits(for: "plank"), [.core: 1], "back to the table")
+        map.set(MuscleMap.Share(weights: [:]), for: "sled-push")
+        XCTAssertFalse(map.isOverridden("sled-push"), "an unknown lift counts nowhere already")
+    }
+
     func testAnyShareCanBeSetAndTheTableDefaultIsForgotten() {
         var map = MuscleMap()
         map.set(MuscleMap.Share(weights: [.chest: 1, .triceps: 0.75, .frontDelts: 0.25, .core: 0]), for: "bench-press")

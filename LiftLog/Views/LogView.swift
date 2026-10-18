@@ -158,7 +158,7 @@ struct LogView: View {
             }
             .animation(.snappy, value: restStart != nil)
             .background(Theme.backgroundView)
-            .navigationTitle("Session")
+            .navigationTitle("log")
             .sheet(isPresented: $showingPicker) {
                 ExercisePickerView(history: store.knownExercises) { picked in
                     // Switching exercise starts a fresh set list for the new

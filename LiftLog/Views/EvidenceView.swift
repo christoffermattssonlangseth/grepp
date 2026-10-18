@@ -23,7 +23,7 @@ struct EvidenceView: View {
                 }
             }
             .background(Theme.backgroundView)
-            .navigationTitle("Evidence")
+            .navigationTitle("evidence")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {

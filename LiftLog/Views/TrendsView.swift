@@ -110,7 +110,7 @@ struct TrendsView: View {
                 }
             }
             .background(Theme.backgroundView)
-            .navigationTitle("Trends")
+            .navigationTitle("trends")
             .refreshable { await store.load() }
             .onAppear {
                 ensureSelection()
@@ -1241,7 +1241,7 @@ private struct TargetSheet: View {
             }
             .scrollContentBackground(.hidden)
             .background(Theme.backgroundView)
-            .navigationTitle("Set a target")
+            .navigationTitle("set a target")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }

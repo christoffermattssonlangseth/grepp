@@ -392,7 +392,7 @@ struct SettingsView: View {
             }
             .scrollContentBackground(.hidden)
             .background(Theme.backgroundView)
-            .navigationTitle("Settings")
+            .navigationTitle("settings")
             .sheet(isPresented: $showingIntake) {
                 IntakeView().environmentObject(store)
             }

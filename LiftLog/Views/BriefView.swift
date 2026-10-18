@@ -61,7 +61,7 @@ struct BriefView: View {
             }
             .dismissesKeyboardOnTap()
             .background(Theme.backgroundView)
-            .navigationTitle("Your brief")
+            .navigationTitle("your brief")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {

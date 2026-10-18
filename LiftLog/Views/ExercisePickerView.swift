@@ -69,7 +69,7 @@ struct ExercisePickerView: View {
                 }
             }
             .searchable(text: $query, prompt: library ? "Search or type a new lift" : "Search your lifts")
-            .navigationTitle("Choose a lift")
+            .navigationTitle("choose a lift")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {

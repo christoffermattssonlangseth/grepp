@@ -319,7 +319,7 @@ struct HistoryView: View {
             .scrollContentBackground(.hidden)
             .background(Theme.backgroundView)
             .refreshable { await store.load() }
-            .navigationTitle("History")
+            .navigationTitle("history")
             .confirmationDialog(
                 pendingDelete.map { "Delete \(Theme.readableName($0.name)) on \(Session.dateFormatter.string(from: $0.date))?" } ?? "",
                 isPresented: Binding(get: { pendingDelete != nil },
@@ -398,7 +398,7 @@ private struct MoveSheet: View {
             }
             .padding()
             .background(Theme.backgroundView)
-            .navigationTitle("Move \(target)")
+            .navigationTitle("move \(target)")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {

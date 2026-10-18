@@ -285,7 +285,7 @@ struct HistoryView: View {
                         Text(postError.text)
                             .font(.caption2)
                             .textCase(nil)
-                            .foregroundStyle(.orange)
+                            .foregroundStyle(Theme.warning)
                     }
                 }
                 Spacer()

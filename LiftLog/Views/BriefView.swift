@@ -167,7 +167,7 @@ struct BriefView: View {
             }
 
             if let message = saveErrors[file], saving != file {
-                Text(message).font(.caption2).foregroundStyle(.orange)
+                Text(message).font(.caption2).foregroundStyle(Theme.warning)
             }
         }
         .glassCard(cornerRadius: 16)

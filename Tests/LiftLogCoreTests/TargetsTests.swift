@@ -115,6 +115,41 @@ final class TargetsTests: XCTestCase {
         XCTAssertEqual(back.first?.by, day("2026-12-01"))
     }
 
+    func testBodyweightLiftsTakeAddedLoadAndRepsTargets() {
+        let chins = { (sets: [WorkSet]) in
+            Session(date: self.day("2026-09-01"), exercises: [ExerciseEntry(name: "chin-ups", sets: sets)])
+        }
+        let loaded = [chins([WorkSet(weight: nil, added: 10, reps: 5), WorkSet(weight: nil, added: nil, reps: 8)])]
+
+        // "chin-ups 20 kg" on a bodyweight lift is load hung on the lifter.
+        let plain = Targets.parse("- chin-ups 20 kg", lifts: ["chin-ups"], today: day("2026-09-21"), calendar: utc)
+        XCTAssertEqual(plain.first?.kind, .topSet)
+        let resolved = Targets.target(for: "chin-ups", in: plain, sessions: loaded)
+        XCTAssertEqual(resolved?.kind, .addedLoad)
+        XCTAssertEqual(resolved?.kind.metric, .addedLoad)
+        XCTAssertEqual(Analytics.series("chin-ups", metric: resolved!.kind.metric, in: loaded).last?.value, 10,
+                       "a series to project from")
+
+        // A reps target still shows once bw+X sets exist.
+        let reps = Targets.parse("- chin-ups 15 reps", lifts: ["chin-ups"], today: day("2026-09-21"), calendar: utc)
+        XCTAssertEqual(Targets.target(for: "chin-ups", in: reps, sessions: loaded)?.kind, .reps)
+        XCTAssertNil(Targets.target(for: "chin-ups", in: reps, sessions: [Session(date: day("2026-09-01"), exercises: [
+            ExerciseEntry(name: "chin-ups", sets: [WorkSet(weight: 20, added: nil, reps: 5)])])]),
+            "a weighted lift's target is a load")
+
+        // The line the app writes reads back as added load, small plates too.
+        let line = Targets.line(lift: "chin-ups", value: 2.5, kind: .addedLoad, by: day("2026-12-01"))
+        XCTAssertEqual(line, "- chin ups 2.5 kg added by 1 Dec 2026")
+        let back = Targets.parse(line, lifts: ["chin-ups"], today: day("2026-09-21"), calendar: utc).first
+        XCTAssertEqual(back?.kind, .addedLoad)
+        XCTAssertEqual(back?.value, 2.5)
+        XCTAssertEqual(back?.by, day("2026-12-01"))
+        XCTAssertEqual(Targets.parse("- weighted chin-ups 20 kg; dips bw+5 kg", lifts: ["chin-ups", "dips"],
+                                     today: day("2026-09-21"), calendar: utc).map(\.kind), [.addedLoad, .addedLoad])
+        XCTAssertEqual(Targets.parse("- dips bw+5 kg", lifts: ["dips"], today: day("2026-09-21"), calendar: utc).first?.value, 5,
+                       "bw+ is a load, not an increment")
+    }
+
     func testProjectionCarriesTheRecentSlopeForward() {
         // 2.5 kg a week for four weeks: 100 → 107.5, so 120 is five more weeks out.
         let series = [("2026-08-24", 100.0), ("2026-08-31", 102.5), ("2026-09-07", 105.0), ("2026-09-14", 107.5)]

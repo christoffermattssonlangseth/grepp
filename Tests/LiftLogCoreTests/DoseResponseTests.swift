@@ -35,6 +35,31 @@ final class DoseResponseTests: XCTestCase {
         XCTAssertTrue(dose.summary.contains("3 squat sets a week (3 for quads in all)"), dose.summary)
     }
 
+    func testMoreRepsAtTheSameLoadIsProgress() {
+        // The reverse pyramid's own way up: 80x5 to 80x8 before the load moves.
+        let sessions = zip(["2026-08-04", "2026-08-11", "2026-08-18", "2026-08-25"], 5...8).map { d, reps in
+            Session(date: date(d), exercises: [
+                ExerciseEntry(name: "squat", sets: [WorkSet(weight: 80, added: nil, reps: reps),
+                                                    WorkSet(weight: 72.5, added: nil, reps: reps + 2)]),
+            ])
+        }
+        let dose = DoseResponse.make(for: "squat", in: sessions, map: MuscleMap(), endingOn: date("2026-09-06"), calendar: utc)!
+        XCTAssertEqual(dose.metric, .topSet)
+        guard case .progressing = dose.verdict else { return XCTFail("\(dose.verdict)") }
+        XCTAssertEqual(dose.short, "more reps")
+        XCTAssertTrue(dose.summary.hasPrefix("Progressing: more reps at the same loads"), dose.summary)
+        XCTAssertNil(dose.nextStep(in: sessions), "progressing: nothing to change")
+
+        // And when the reps stop, it is flat from the last record.
+        let stalled = sessions + [
+            Session(date: date("2026-09-01"), exercises: [ExerciseEntry(name: "squat", sets: [WorkSet(weight: 80, added: nil, reps: 8)])]),
+            Session(date: date("2026-09-08"), exercises: [ExerciseEntry(name: "squat", sets: [WorkSet(weight: 80, added: nil, reps: 7)])]),
+        ]
+        let flat = DoseResponse.make(for: "squat", in: stalled, map: MuscleMap(), endingOn: date("2026-09-13"), calendar: utc)!
+        guard case .stalledLow(let weeks, _, _) = flat.verdict else { return XCTFail("\(flat.verdict)") }
+        XCTAssertEqual(weeks, 2, "since 80x8 on 25 Aug")
+    }
+
     func testFlatAtLowVolumeNamesVolumeAsTheLever() {
         let sessions = [
             day("2026-08-04", squat: 100), day("2026-08-11", squat: 100),

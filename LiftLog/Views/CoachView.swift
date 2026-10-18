@@ -377,7 +377,7 @@ struct CoachView: View {
             if !message.isStreaming, let note = message.stopNote {
                 Text(note)
                     .font(.footnote)
-                    .foregroundStyle(.orange)
+                    .foregroundStyle(Theme.warning)
                     .fixedSize(horizontal: false, vertical: true)
             }
             // Only on the last answer: further up, the chat has moved on.
@@ -541,7 +541,7 @@ struct CoachView: View {
             .disabled(savingProgram || saved)
 
             if let programError {
-                Text(programError).font(.caption2).foregroundStyle(.orange)
+                Text(programError).font(.caption2).foregroundStyle(Theme.warning)
             }
         }
         .glassCard(cornerRadius: 16)
@@ -591,7 +591,7 @@ struct CoachView: View {
             .disabled(addingLog || added)
 
             if let logError {
-                Text(logError).font(.caption2).foregroundStyle(.orange)
+                Text(logError).font(.caption2).foregroundStyle(Theme.warning)
             }
         }
         .glassCard(cornerRadius: 16)
@@ -640,7 +640,7 @@ struct CoachView: View {
             .disabled(savingResearch || saved)
 
             if let researchError {
-                Text(researchError).font(.caption2).foregroundStyle(.orange)
+                Text(researchError).font(.caption2).foregroundStyle(Theme.warning)
             }
         }
         .glassCard(cornerRadius: 16)
@@ -686,7 +686,7 @@ struct CoachView: View {
             .disabled(savingMemory || saved)
 
             if let memoryError {
-                Text(memoryError).font(.caption2).foregroundStyle(.orange)
+                Text(memoryError).font(.caption2).foregroundStyle(Theme.warning)
             }
         }
         .glassCard(cornerRadius: 16)
@@ -733,7 +733,7 @@ struct CoachView: View {
             // Only this save's own failure — never whatever the last load happened
             // to leave in store.status.
             if let saveError {
-                Text(saveError).font(.caption2).foregroundStyle(.orange)
+                Text(saveError).font(.caption2).foregroundStyle(Theme.warning)
             }
         }
         .glassCard(cornerRadius: 16)
@@ -768,7 +768,7 @@ struct CoachView: View {
     private func errorCard(_ text: String) -> some View {
         Label(text, systemImage: "exclamationmark.triangle.fill")
             .font(.footnote)
-            .foregroundStyle(.orange)
+            .foregroundStyle(Theme.warning)
             .glassCard(cornerRadius: 14)
     }
 

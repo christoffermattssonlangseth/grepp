@@ -505,7 +505,7 @@ struct LogView: View {
                 Text(stravaStatus).font(.caption2).foregroundStyle(.secondary)
             }
             if let stravaError {
-                Text(stravaError).font(.caption2).foregroundStyle(.orange)
+                Text(stravaError).font(.caption2).foregroundStyle(Theme.warning)
             }
         }
     }

@@ -1235,7 +1235,7 @@ private struct TargetSheet: View {
                 .listRowBackground(Rectangle().fill(.regularMaterial))
                 if failed {
                     Text("Couldn't save goals.md. Check the connection and try again.")
-                        .font(.footnote).foregroundStyle(Theme.stalled)
+                        .font(.footnote).foregroundStyle(Theme.warning)
                         .listRowBackground(Rectangle().fill(.regularMaterial))
                 }
             }

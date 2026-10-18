@@ -2,7 +2,8 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-	<!-- Only TLS to services the lifter chose: exempt, so no export questionnaire per upload. -->
+	<!-- Only TLS to services the lifter chose: exempt. Written here by hand
+	     because the INFOPLIST_KEY_ build setting is on the app target only. -->
 	<key>ITSAppUsesNonExemptEncryption</key>
 	<false/>
 	<key>NSExtension</key>

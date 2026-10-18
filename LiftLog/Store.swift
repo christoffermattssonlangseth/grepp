@@ -795,6 +795,9 @@ final class Store: ObservableObject {
         d.restStart = Date()
         noteSetLanded(on: d.date)
         saveDraft(d)
+        // Now, not after the usual two seconds: the app may be suspended the
+        // moment the intent returns, and the widget's "N done" with it.
+        publishWidgetSnapshot(force: true)
         draftRevision += 1
         // Awaited: the system may suspend the process the moment the intent
         // returns, and the lock screen must have its new clock by then.

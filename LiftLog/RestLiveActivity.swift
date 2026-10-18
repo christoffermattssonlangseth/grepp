@@ -12,14 +12,12 @@ import Foundation
 /// Anything left over from a session that ended without the app noticing —
 /// the phone died, the draft aged out — is ended on the next launch, because
 /// the Log screen syncs on appear whether or not a rest is running.
+///
+/// Callers go through `RestSignals`, which runs these one at a time.
 @MainActor
 enum RestLiveActivity {
-    static func sync(start: Date?, target: Int, exercise: String, nextUp: String?, landLabel: String?) {
-        Task { await syncAndWait(start: start, target: target, exercise: exercise, nextUp: nextUp, landLabel: landLabel) }
-    }
-
-    /// The same, finished before it returns — for the intent, which must not
-    /// return before the lock screen has its clock.
+    /// Finished before it returns — for the intent, which must not return
+    /// before the lock screen has its clock.
     static func syncAndWait(start: Date?, target: Int, exercise: String, nextUp: String?, landLabel: String?) async {
         guard let start else { await endAndWait(); return }
         let end = max(start.addingTimeInterval(TimeInterval(target)), start)
@@ -46,10 +44,6 @@ enum RestLiveActivity {
                                                           content: content, pushType: nil)
     }
 
-    static func end() {
-        Task { await endAndWait() }
-    }
-
     static func endAndWait() async {
         for activity in Activity<RestActivityAttributes>.activities {
             await activity.end(nil, dismissalPolicy: .immediate)
@@ -70,13 +64,41 @@ enum RestSignals {
         return stored > 0 ? stored : 90
     }
 
+    /// A rest clock this old is not a rest any more — the lifter stopped
+    /// without finishing. The Log screen and the lock-screen button drop one
+    /// too; here it takes the READY card off the lock screen at the next sync
+    /// rather than leaving it up until the system's own limit, hours later.
+    nonisolated static let abandonedAfter: TimeInterval = 30 * 60
+
     static func sync(_ draft: SessionDraft?, target: Int = RestSignals.target) {
-        Task { await syncAndWait(draft, target: target) }
+        _ = enqueue(draft, target: target)
     }
 
     /// Finished before it returns; the intent needs that.
     static func syncAndWait(_ draft: SessionDraft?, target: Int = RestSignals.target) async {
-        guard let draft, let start = draft.restStart else {
+        await enqueue(draft, target: target).value
+    }
+
+    /// The last sync in line. Each waits for the one before it: ending an
+    /// activity and asking for one both suspend, so two loose Tasks — a draft
+    /// cleared, then a new rest straight after — could finish in either order
+    /// and leave no clock on the lock screen, or cancel the notification
+    /// after it was set.
+    private static var queue: Task<Void, Never>?
+
+    private static func enqueue(_ draft: SessionDraft?, target: Int) -> Task<Void, Never> {
+        let previous = queue
+        let task = Task { @MainActor in
+            await previous?.value
+            await apply(draft, target: target)
+        }
+        queue = task
+        return task
+    }
+
+    private static func apply(_ draft: SessionDraft?, target: Int) async {
+        guard let draft, let start = draft.restStart,
+              Date().timeIntervalSince(start) < abandonedAfter else {
             await RestLiveActivity.endAndWait()
             RestNotifier.cancel()
             return

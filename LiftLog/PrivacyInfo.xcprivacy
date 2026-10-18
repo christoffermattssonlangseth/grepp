@@ -24,7 +24,10 @@
 			</array>
 		</dict>
 		<dict>
-			<!-- The iCloud log's modification date, as its version for the stale check. -->
+			<!-- The iCloud log's modification date, as its version for the stale check.
+			     C617.1: the file is in the app's own iCloud container (iCloud.CML.LiftLog),
+			     not one the lifter picked, so 3B52.1 doesn't fit; the date is never
+			     shown, so neither does DDA9.1. -->
 			<key>NSPrivacyAccessedAPIType</key>
 			<string>NSPrivacyAccessedAPICategoryFileTimestamp</string>
 			<key>NSPrivacyAccessedAPITypeReasons</key>

@@ -31,8 +31,14 @@ enum StravaPoster {
         let description = StravaPost.description(for: session, elapsed: end != nil ? elapsed : nil)
 
         if let id = store.stravaActivity(on: session.date) {
-            try await strava.update(id: id, name: name, description: description)
-            return .updated
+            do {
+                try await strava.update(id: id, name: name, description: description)
+                return .updated
+            } catch StravaService.StravaError.api(let status, _) where status == 404 {
+                // Deleted on Strava: the mark points at nothing, and every
+                // update would 404 for good. Forget it and post the day afresh.
+                store.clearStravaActivity(on: session.date)
+            }
         }
 
         // Strava refuses a second activity over the same time (409). A clocked

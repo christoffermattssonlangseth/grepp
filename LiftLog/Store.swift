@@ -292,6 +292,24 @@ final class Store: ObservableObject {
     /// looking at it, so a plain failure you can retry beats a silent queue.
     @discardableResult
     func save(_ text: String, to file: BriefFile) async -> CommitResult {
+        await write(file, merging: false) { _ in text }
+    }
+
+    /// Change one brief file by merging into what it holds *now*: fetch it,
+    /// apply `change` to that content, and write with that version. For an
+    /// edit that adds to a file (setup answers, a note, a target) rather than
+    /// replacing it — the copy in memory may not be loaded yet, or may be a
+    /// cached one from before another device wrote. When the file can't be
+    /// read the write doesn't happen: a failure beats writing over it blind.
+    @discardableResult
+    func update(_ file: BriefFile, _ change: (String) -> String) async -> CommitResult {
+        await write(file, merging: true, change)
+    }
+
+    /// The one write path for brief files. `merging` retries on a version
+    /// conflict, re-reading first — safe only because `make` is applied to
+    /// the fresh content; a plain replace is refused instead.
+    private func write(_ file: BriefFile, merging: Bool, _ make: (String) -> String) async -> CommitResult {
         guard !isBusy else { briefStatus = "Still syncing — try again in a moment."; return .failed }
         let path = self.path(for: file).trimmingCharacters(in: .whitespacesAndNewlines)
         guard !path.isEmpty else {
@@ -303,11 +321,21 @@ final class Store: ObservableObject {
         defer { isBusy = false }
 
         let remote = backend(for: path)
-        let content = text.hasSuffix("\n") ? text : text + "\n"
         do {
-            // Fetch first for the version: nil creates the file, a stale one is refused.
-            let existing = try await remote.fetch()
-            _ = try await remote.put(content: content, version: existing?.version, message: "Update \(path) from Grepp")
+            var content = ""
+            for attempt in 1...(merging ? 3 : 1) {
+                // Fetch first for the version: nil creates the file, a stale one is refused.
+                let existing = try await remote.fetch()
+                let text = make(existing?.content ?? "")
+                content = text.hasSuffix("\n") ? text : text + "\n"
+                if merging, let existing, existing.content == content { break }   // nothing to add
+                do {
+                    _ = try await remote.put(content: content, version: existing?.version, message: "Update \(path) from Grepp")
+                    break
+                } catch let error where merging && attempt < 3 && Self.isConflict(error) {
+                    try? await Task.sleep(nanoseconds: 700_000_000)
+                }
+            }
             switch file {
             case .coaching: brief.coaching = content
             case .goals: brief.goals = content
@@ -326,16 +354,24 @@ final class Store: ObservableObject {
         }
     }
 
+    /// Someone else wrote the file between the read and the write: a GitHub
+    /// 409 (or 422, a create over a file the read didn't see yet), or a
+    /// newer file in iCloud.
+    private static func isConflict(_ error: Error) -> Bool {
+        if case GitHubService.GitHubError.badResponse(let code, _) = error { return code == 409 || code == 422 }
+        return (error as? ICloudBackend.ICloudError) == .stale
+    }
+
     /// Keep a note from the coach: coaching.md with the note appended under the
     /// coach's heading, pushed like any other brief edit.
     func remember(_ note: String) async -> CommitResult {
-        await save(CoachContext.appendingNote(note, to: brief.coaching), to: .coaching)
+        await update(.coaching) { CoachContext.appendingNote(note, to: $0) }
     }
 
     /// Keep evidence the coach has written: research.md with the entries added
     /// and numbered, pushed like any other brief edit.
     func addResearch(_ entries: String) async -> CommitResult {
-        await save(CoachContext.appendingResearch(entries, to: brief.research), to: .research)
+        await update(.research) { CoachContext.appendingResearch(entries, to: $0) }
     }
 
     /// The evidence brief, parsed.
@@ -350,9 +386,10 @@ final class Store: ObservableObject {
     /// Add one target line to the goals file, under a heading when the file
     /// is empty. The rest of the file is kept as written.
     func addTarget(_ line: String) async -> CommitResult {
-        let current = brief.goals.trimmingCharacters(in: .whitespacesAndNewlines)
-        let text = current.isEmpty ? "# Goals\n\n\(line)\n" : current + "\n" + line + "\n"
-        return await save(text, to: .goals)
+        await update(.goals) { goals in
+            let current = goals.trimmingCharacters(in: .whitespacesAndNewlines)
+            return current.isEmpty ? "# Goals\n\n\(line)\n" : current + "\n" + line + "\n"
+        }
     }
 
     private func cacheKey(for file: BriefFile) -> String {
@@ -536,7 +573,10 @@ final class Store: ObservableObject {
     /// Remove an exercise from a day's session. Same offline-safe path as `commit`.
     @discardableResult
     func delete(exercise name: String, on date: Date, message: String) async -> CommitResult {
-        await perform(PendingWrite(operation: .delete(name: name), date: date, message: message))
+        let result = await perform(PendingWrite(operation: .delete(name: name), date: date, message: message))
+        // The last lift of a day deleted is the day deleted.
+        if result != .failed { dropHealthWorkoutIfDayGone(date) }
+        return result
     }
 
     /// Move one exercise, or a whole day when `name` is nil, to another date.
@@ -560,6 +600,13 @@ final class Store: ObservableObject {
             if stravaPosts.removeValue(forKey: from) != nil {
                 defaults.set(try? JSONEncoder().encode(stravaPosts), forKey: stravaPostsKey)
             }
+            // The Health workout does go: it's this app's own, so it can be
+            // saved again on the new date rather than left on the old one.
+            if healthWorkouts[from] != nil {
+                Task { await HealthWriter.move(from: date, to: target, store: self) }
+            }
+        } else {
+            dropHealthWorkoutIfDayGone(date)
         }
         return result
     }
@@ -744,6 +791,12 @@ final class Store: ObservableObject {
         defaults.set(try? JSONEncoder().encode(stravaPosts), forKey: stravaPostsKey)
     }
 
+    /// The activity is gone from Strava: the day counts as unposted again.
+    func clearStravaActivity(on date: Date) {
+        stravaPosts.removeValue(forKey: Session.dateFormatter.string(from: date))
+        defaults.set(try? JSONEncoder().encode(stravaPosts), forKey: stravaPostsKey)
+    }
+
     /// Apple Health workout ids for days saved there, keyed by the log's
     /// date, so a day that grows replaces its workout rather than adding one.
     @Published private(set) var healthWorkouts: [String: String] = [:]
@@ -755,6 +808,18 @@ final class Store: ObservableObject {
     func setHealthWorkout(_ id: String, on date: Date) {
         healthWorkouts[Session.dateFormatter.string(from: date)] = id
         defaults.set(try? JSONEncoder().encode(healthWorkouts), forKey: healthWorkoutsKey)
+    }
+
+    func clearHealthWorkout(on date: Date) {
+        healthWorkouts.removeValue(forKey: Session.dateFormatter.string(from: date))
+        defaults.set(try? JSONEncoder().encode(healthWorkouts), forKey: healthWorkoutsKey)
+    }
+
+    /// The log no longer has a day at `date`: its Health workout goes too.
+    private func dropHealthWorkoutIfDayGone(_ date: Date) {
+        let key = Session.dateFormatter.string(from: date)
+        guard healthWorkouts[key] != nil, !sessions.contains(where: { $0.dateString == key }) else { return }
+        Task { await HealthWriter.remove(on: date, store: self) }
     }
 
     /// A prescription was loaded into the Log tab.

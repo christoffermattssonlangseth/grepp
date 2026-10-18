@@ -85,4 +85,66 @@ final class ProgrammeTextTests: XCTestCase {
         let bold = "**Day A**\n- squat 3x5\n"
         XCTAssertEqual(ProgrammeText.renaming(Programme.parse(bold).days[0], to: "Day One", in: bold), "**Day One**\n- squat 3x5\n")
     }
+
+    func testIdsStayApartWhenTitlesAndLiftsRepeat() {
+        let p = Programme.parse("""
+        ## Upper
+        - bench-press 3x5
+        - bench-press 3x5 — back-off
+
+        ## Upper
+        - row 3x8
+        """)
+        XCTAssertEqual(p.days.map(\.title), ["Upper", "Upper"])
+        XCTAssertNotEqual(p.days[0].id, p.days[1].id)
+        XCTAssertNotEqual(p.days[0].exercises[0].id, p.days[0].exercises[1].id)
+    }
+
+    func testADayWithItsLastLiftRemovedCanStillBeRemoved() {
+        let md = "# Plan\n\n## Day A\n- squat 3x5\n\n## Day B\n- bench 3x5\n"
+        let p = Programme.parse(md)
+        let bare = ProgrammeText.removing(line: p.days[0].exercises[0].line, in: md)
+        let left = Programme.parse(bare)
+        XCTAssertEqual(left.days.map(\.title), ["Day B"])
+        XCTAssertEqual(left.emptyDays.map(\.title), ["Day A"], "the bare heading is still on screen")
+        XCTAssertEqual(ProgrammeText.removing(left.emptyDays[0], from: bare), "# Plan\n\n## Day B\n- bench 3x5\n")
+        // And it can be filled again, under its heading.
+        let refilled = ProgrammeText.adding(Programme.Exercise(name: "deadlift", scheme: "1x5", note: "", rpt: false),
+                                            to: left.emptyDays[0], in: bare)
+        XCTAssertEqual(Programme.parse(refilled).days.map(\.title), ["Day A", "Day B"])
+    }
+
+    func testOnlyBareHeadingsAreEmptyDays() {
+        let p = Programme.parse("""
+        # Plan
+
+        ## Week 1
+        ### Day A
+        - squat 3x5
+
+        ## Notes
+        Deload every fourth week.
+        """)
+        XCTAssertEqual(p.days.map(\.title), ["Day A"])
+        XCTAssertTrue(p.emptyDays.isEmpty, "a group heading and a prose section are not days")
+    }
+
+    func testALiftMayStartWithANumber() {
+        let a = Programme.parseExercise("45-degree back extension 3x10")
+        XCTAssertEqual(a?.name, "45-degree-back-extension")
+        XCTAssertEqual(a?.scheme, "3x10")
+        XCTAssertEqual(Programme.parseExercise("1-arm row 3x8")?.name, "1-arm-row")
+        XCTAssertNil(Programme.parseExercise("4 weeks: squat 3x5"), "a sentence with a number first is still prose")
+    }
+
+    func testTheHeadinglessDayCanBeRenamedAndRemoved() {
+        let md = "# Plan\n\n- squat 3x5\n- bench 3x5\n\n## Day B\n- row 3x8\n"
+        let p = Programme.parse(md)
+        XCTAssertEqual(p.days[0].title, "Session")
+        let renamed = ProgrammeText.renaming(p.days[0], to: "Day A", in: md)
+        XCTAssertEqual(renamed, "# Plan\n\n## Day A\n- squat 3x5\n- bench 3x5\n\n## Day B\n- row 3x8\n")
+        XCTAssertEqual(Programme.parse(renamed).days.map(\.title), ["Day A", "Day B"])
+        let removed = ProgrammeText.removing(p.days[0], from: md)
+        XCTAssertEqual(removed, "# Plan\n\n## Day B\n- row 3x8\n")
+    }
 }

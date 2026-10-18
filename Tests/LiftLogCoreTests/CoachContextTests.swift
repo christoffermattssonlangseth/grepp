@@ -218,6 +218,33 @@ final class CoachContextTests: XCTestCase {
         ])
     }
 
+    func testRuleLinesAreDroppedNotListed() {
+        for rule in ["---", "- - -", "* * *", "___", "  ***  "] {
+            XCTAssertEqual(CoachContext.chatBlocks("Squat day.\n\(rule)\nBench day."),
+                           [.text("Squat day."), .text("Bench day.")], rule)
+        }
+        // Two dashes are not a rule, and a dash with words is still an item.
+        XCTAssertEqual(CoachContext.chatBlocks("- - done"), [.item(marker: "•", text: "- done", level: 0)])
+    }
+
+    func testAutoNumberedListCountsOn() {
+        // Markdown's "1." on every line reads 1, 2, 3 — through a blank line and a
+        // nested bullet, but not across a paragraph.
+        let blocks = CoachContext.chatBlocks("1. Squat\n  - top set\n1. Bench\n\n1. Row\nThen rest.\n1. Curl")
+        XCTAssertEqual(blocks, [
+            .item(marker: "1.", text: "Squat", level: 0),
+            .item(marker: "•", text: "top set", level: 1),
+            .item(marker: "2.", text: "Bench", level: 0),
+            .item(marker: "3.", text: "Row", level: 0),
+            .text("Then rest."),
+            .item(marker: "1.", text: "Curl", level: 0),
+        ])
+        // A list that starts further on keeps its start.
+        XCTAssertEqual(CoachContext.chatBlocks("4. Lunge\n4. Press").map { block -> String in
+            if case let .item(marker, _, _) = block { return marker } else { return "" }
+        }, ["4.", "5."])
+    }
+
     func testBoldAtLineStartIsNotABullet() {
         // "**Why**" starts with an asterisk but is bold, not a list.
         XCTAssertEqual(CoachContext.chatBlocks("**Why**\nYou hit 85x5."), [.text("**Why**\nYou hit 85x5.")])

@@ -28,7 +28,6 @@ enum WorkoutParser {
             .sorted { $0.date < $1.date }
     }
 
-    /// Parse a single token like "46.5x8", "bwx3" or "bw+5x8".
     /// The file's lines, trimmed, with a Windows line ending or a byte-order
     /// mark stripped rather than left to poison the last token of every line.
     static func lines(of text: String) -> [String] {
@@ -56,8 +55,15 @@ enum WorkoutParser {
         // didn't mean to touch.
         let name = tokens[1..<firstSet].joined(separator: "-")
         let sets = tokens[firstSet...].compactMap { parseSet($0) }
+        // Words among or after the sets are the lifter's note; kept so an
+        // edit of the sets writes them back.
+        let words = tokens[firstSet...].filter { parseSet($0) == nil }
         guard !name.isEmpty, !sets.isEmpty else { return nil }
-        return (tokens[0], date, ExerciseEntry(name: name, sets: sets, raw: line))
+        // Keyed by the day the text names, not the text: "2026-8-3" and
+        // "2026-08-03" are one day, one session.
+        let key = Session.dateFormatter.string(from: date)
+        return (key, date, ExerciseEntry(name: name, sets: sets, raw: line,
+                                         note: words.isEmpty ? nil : words.joined(separator: " ")))
     }
 
     /// Non-blank lines the parser would drop, with their 1-based numbers. A
@@ -70,6 +76,7 @@ enum WorkoutParser {
         }
     }
 
+    /// Parse a single token like "46.5x8", "bwx3" or "bw+5x8".
     static func parseSet(_ token: String) -> WorkSet? {
         let parts = token.lowercased().split(separator: "x")
         guard parts.count == 2, let reps = Int(parts[1]) else { return nil }
@@ -85,16 +92,41 @@ enum WorkoutParser {
         return WorkSet(weight: weight, added: nil, reps: reps)
     }
 
-    /// Serialize sessions back to the file format (ascending date, blank line between dates).
-    static func serialize(_ sessions: [Session]) -> String {
+    /// Serialize sessions back to the file format (ascending date, blank line
+    /// between dates), with the line ending the file already uses.
+    static func serialize(_ sessions: [Session], lineEnding: String = "\n") -> String {
         sessions
             .sorted { $0.date < $1.date }
             .map { session in
                 session.exercises
                     .map { $0.line(date: session.dateString) }
-                    .joined(separator: "\n")
+                    .joined(separator: lineEnding)
             }
-            .joined(separator: "\n\n") + "\n"
+            .joined(separator: lineEnding + lineEnding) + lineEnding
+    }
+
+    /// "\r\n" for a file written on Windows, else "\n": a save keeps the
+    /// file's endings rather than flipping every line in its diff.
+    static func lineEnding(of text: String) -> String {
+        text.contains("\r\n") ? "\r\n" : "\n"
+    }
+
+    /// `base` with every line of `other` it lacks appended — two copies of
+    /// the file iCloud couldn't reconcile, made one that keeps both devices'
+    /// sets. A line both have is kept once; a line one of them changed comes
+    /// out twice, which a lifter can tidy, where a lost line can't be found.
+    static func union(_ base: String, _ other: String) -> String {
+        var counts: [String: Int] = [:]
+        for line in lines(of: base) where !line.isEmpty { counts[line, default: 0] += 1 }
+        var extra: [String] = []
+        for line in lines(of: other) where !line.isEmpty {
+            if let n = counts[line], n > 0 { counts[line] = n - 1 } else { extra.append(line) }
+        }
+        guard !extra.isEmpty else { return base }
+        let ending = lineEnding(of: base.isEmpty ? other : base)
+        var out = base
+        if !out.isEmpty, !out.hasSuffix("\n"), !out.hasSuffix("\r\n") { out += ending }
+        return out + extra.joined(separator: ending) + ending
     }
 
     /// Most recent prior entry for an exercise, for "last time" suggestions.

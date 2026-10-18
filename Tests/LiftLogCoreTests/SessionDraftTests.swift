@@ -29,7 +29,7 @@ final class SessionDraftTests: XCTestCase {
     private let set = WorkSet(weight: 87.5, added: nil, reps: 5)
 
     func testRoundTripsThroughJSON() throws {
-        let draft = SessionDraft(date: Date(timeIntervalSince1970: 1_800_000_000),
+        let draft = SessionDraft(date: Session.dateFormatter.date(from: "2027-01-15")!,   // a day: that is what is kept
                                  name: "squat", sets: [set, set], isBodyweight: false,
                                  weightText: "87.5", addedText: "", repsText: "5",
                                  plan: [set, set, set],
@@ -49,5 +49,28 @@ final class SessionDraftTests: XCTestCase {
         draft.name = ""
         draft.queue = [ExerciseEntry(name: "bench-press", sets: [set])]
         XCTAssertFalse(draft.isEmpty, "so is a queue still to do")
+    }
+
+    func testADraftKeepsItsDayAndWhetherItWasChosen() throws {
+        var draft = SessionDraft(date: Session.dateFormatter.date(from: "2026-08-03")!, name: "squat", sets: [set],
+                                 isBodyweight: false, weightText: "", addedText: "", repsText: "",
+                                 plan: nil, queue: [], restStart: nil)
+        draft.dateChosen = true
+        let data = try JSONEncoder().encode(draft)
+        XCTAssertTrue(String(data: data, encoding: .utf8)!.contains("\"date\":\"2026-08-03\""), "the day, not an instant")
+        let back = try JSONDecoder().decode(SessionDraft.self, from: data)
+        XCTAssertEqual(back.dateChosen, true)
+        XCTAssertEqual(Session.dateFormatter.string(from: back.date), "2026-08-03")
+    }
+
+    func testADraftSavedBeforeTheseFieldsStillLoads() throws {
+        let legacy = """
+        {"date":\(Date().timeIntervalSinceReferenceDate),"name":"squat","sets":[],"isBodyweight":false,
+         "weightText":"","addedText":"","repsText":"","queue":[]}
+        """
+        let draft = try JSONDecoder().decode(SessionDraft.self, from: Data(legacy.utf8))
+        XCTAssertNil(draft.dateChosen)
+        XCTAssertNil(draft.target)
+        XCTAssertEqual(draft.name, "squat")
     }
 }

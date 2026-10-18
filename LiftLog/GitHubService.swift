@@ -20,6 +20,9 @@ struct GitHubService {
         case notHTTP
         case missingConfig
         case decoding
+        /// The file's bytes aren't UTF-8 text. Read as empty, the next save
+        /// would have replaced the whole log with one line.
+        case notText(String)
 
         var errorDescription: String? {
             switch self {
@@ -27,6 +30,7 @@ struct GitHubService {
             case .notHTTP: return "Unexpected non-HTTP response from GitHub."
             case .missingConfig: return "Fill in owner, repo, path and token in Settings."
             case .decoding: return "Couldn't read GitHub's response."
+            case .notText(let path): return "\(path) on GitHub isn't UTF-8 text, so it wasn't read and nothing will be saved over it. Re-save it as UTF-8."
             }
         }
     }
@@ -65,13 +69,38 @@ struct GitHubService {
             throw GitHubError.badResponse(http.statusCode, String(data: data, encoding: .utf8) ?? "")
         }
         guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-              let sha = json["sha"] as? String,
-              let base64 = json["content"] as? String else {
+              let sha = json["sha"] as? String else {
             throw GitHubError.decoding
         }
-        let cleaned = base64.replacingOccurrences(of: "\n", with: "")
-        let content = Data(base64Encoded: cleaned).flatMap { String(data: $0, encoding: .utf8) } ?? ""
+        // Never read an unreadable file as an empty one: a save merges onto
+        // what was read, and onto "" it writes a log of one line.
+        let size = json["size"] as? Int ?? 0
+        let base64 = (json["content"] as? String ?? "").replacingOccurrences(of: "\n", with: "")
+        let bytes: Data
+        if base64.isEmpty && size > 0 {
+            // Over 1 MB the contents API sends no content; the blob has it.
+            bytes = try await blob(sha)
+        } else {
+            guard let decoded = Data(base64Encoded: base64) else { throw GitHubError.decoding }
+            bytes = decoded
+        }
+        guard size == 0 || bytes.count == size else { throw GitHubError.decoding }
+        guard let content = String(data: bytes, encoding: .utf8) else { throw GitHubError.notText(path) }
         return FileState(content: content, sha: sha)
+    }
+
+    /// A file's raw bytes by its blob sha, for a file too big for the contents API.
+    private func blob(_ sha: String) async throws -> Data {
+        var request = URLRequest(url: URL(string: "https://api.github.com/repos/\(owner)/\(repo)/git/blobs/\(sha)")!)
+        authorized(&request)
+        request.setValue("application/vnd.github.raw+json", forHTTPHeaderField: "Accept")
+        request.cachePolicy = .reloadIgnoringLocalAndRemoteCacheData
+        let (data, response) = try await URLSession.shared.data(for: request)
+        guard let http = response as? HTTPURLResponse else { throw GitHubError.notHTTP }
+        guard (200..<300).contains(http.statusCode) else {
+            throw GitHubError.badResponse(http.statusCode, String(data: data, encoding: .utf8) ?? "")
+        }
+        return data
     }
 
     /// Create or update the file. Pass the sha from a prior fetch to update; nil to

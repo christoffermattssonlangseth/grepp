@@ -21,11 +21,15 @@ struct LogView: View {
         var id: String { if case .finish = self { return "finish" } else { return "set" } }
     }
     @State private var dayCheck: DayCheck?
+    /// The logged line the lift in the fields came from — opened from
+    /// History or the day's card, or picked when already logged. Finishing
+    /// replaces that line and no other: a day can have the lift twice.
+    @State private var editing: LineRef?
     /// Something wants the input area — a prescription, a lift opened to edit
     /// — while sets are landed in it. Held until the lifter says which wins.
     private enum Replace: Identifiable {
-        case prescription, edit(ExerciseEntry, Date)
-        var id: String { if case .edit(let ex, _) = self { return "edit-\(ex.name)" } else { return "rx" } }
+        case prescription, edit(ExerciseEntry, Date, LineRef?)
+        var id: String { if case .edit(let ex, _, _) = self { return "edit-\(ex.name)" } else { return "rx" } }
     }
     @State private var pendingReplace: Replace?
     @Environment(\.scenePhase) private var scenePhase
@@ -68,15 +72,32 @@ struct LogView: View {
     @FocusState private var focus: Field?
     private enum Field { case weight, reps }
 
-    /// Exercises already saved for the selected day.
-    private var todayExercises: [ExerciseEntry] {
+    /// The big numbers follow Dynamic Type: sized to read at a glance
+    /// mid-set, and larger for whoever has asked for larger. The field and
+    /// its font are capped where two of them would no longer fit side by side.
+    @ScaledMetric(relativeTo: .title2) private var liftNameSize: CGFloat = 22
+    @ScaledMetric(relativeTo: .largeTitle) private var restClockSize: CGFloat = 34
+    @ScaledMetric(relativeTo: .largeTitle) private var fieldNumberSize: CGFloat = 40
+    @ScaledMetric(relativeTo: .largeTitle) private var fieldHeight: CGFloat = Theme.bigFieldHeight
+
+    /// The selected day's session, if anything is logged on it.
+    private var todaySession: Session? {
         let key = Session.dateFormatter.string(from: date)
-        return store.sessions.first { $0.dateString == key }?.exercises ?? []
+        return store.sessions.first { $0.dateString == key }
     }
+
+    /// Exercises already saved for the selected day.
+    private var todayExercises: [ExerciseEntry] { todaySession?.exercises ?? [] }
 
     /// The lift as already logged on the day in hand, under any spelling.
     private func loggedToday(_ lift: String) -> ExerciseEntry? {
         todayExercises.first { Analytics.matches($0.name, lift) }
+    }
+
+    /// The line `ex` is on the day in hand.
+    private func lineRef(_ ex: ExerciseEntry?) -> LineRef? {
+        guard let ex, let session = todaySession else { return nil }
+        return LineRef(ex, in: session)
     }
 
     private var lastEntry: ExerciseEntry? {
@@ -137,6 +158,7 @@ struct LogView: View {
                     // they stand: finishing updates that line, never replaces it blind.
                     if picked.caseInsensitiveCompare(name) != .orderedSame {
                         let done = loggedToday(picked)
+                        editing = lineRef(done)
                         sets = done?.sets ?? []
                         if let first = done?.sets.first { isBodyweight = first.isBodyweight }
                         plan = nil
@@ -214,7 +236,8 @@ struct LogView: View {
     private var currentDraft: SessionDraft? {
         let draft = SessionDraft(date: date, name: name, sets: sets, isBodyweight: isBodyweight,
                                  weightText: weightText, addedText: addedText, repsText: repsText,
-                                 plan: plan, queue: queue, restStart: restStart)
+                                 plan: plan, queue: queue, restStart: restStart,
+                                 dateChosen: dateChosen, target: editing)
         return draft.isEmpty ? nil : draft
     }
 
@@ -226,6 +249,9 @@ struct LogView: View {
         restored = true
         guard let d = store.draft, name.isEmpty, sets.isEmpty, queue.isEmpty else { return }
         date = d.date
+        // A backfill on a chosen day stays chosen: no second "that isn't today".
+        dateChosen = d.dateChosen ?? false
+        editing = d.target
         name = d.name
         sets = d.sets
         isBodyweight = d.isBodyweight
@@ -244,6 +270,8 @@ struct LogView: View {
         guard let d = store.draft else { return }
         let grew = d.sets.count > sets.count
         date = d.date
+        dateChosen = d.dateChosen ?? dateChosen
+        editing = d.target
         name = d.name
         sets = d.sets
         isBodyweight = d.isBodyweight
@@ -286,7 +314,9 @@ struct LogView: View {
         name = rx.name
         // Already done today: the plan adds to what's logged rather than
         // replacing it, so the sets on file come along and the plan follows them.
-        let done = loggedToday(rx.name)?.sets ?? []
+        let logged = loggedToday(rx.name)
+        editing = lineRef(logged)
+        let done = logged?.sets ?? []
         sets = done
         plan = done + rx.sets
         isBodyweight = rx.sets.first?.isBodyweight ?? false
@@ -309,9 +339,13 @@ struct LogView: View {
     private func applyEditRequest() {
         guard let req = store.editRequest else { return }
         let key = Session.dateFormatter.string(from: req.date)
-        if let ex = store.sessions.first(where: { $0.dateString == key })?
-            .exercises.first(where: { $0.name.caseInsensitiveCompare(req.name) == .orderedSame }) {
-            edit(ex, on: req.date)
+        if let session = store.sessions.first(where: { $0.dateString == key }) {
+            // The very line History opened — the back-off line, not the
+            // first squat of the day — else the lift by name as before.
+            let exercises = session.exercises
+            let ex = req.line.flatMap { $0.index(in: exercises) }.map { exercises[$0] }
+                ?? exercises.first(where: { $0.name.caseInsensitiveCompare(req.name) == .orderedSame })
+            if let ex { edit(ex, on: req.date, line: LineRef(ex, in: session)) }
         }
         store.editRequest = nil
     }
@@ -436,7 +470,7 @@ struct LogView: View {
                             .frame(width: 4)
                             .padding(.vertical, 8)
                     }
-                    .onTapGesture { edit(ex, on: date) }
+                    .onTapGesture { edit(ex, on: date, line: lineRef(ex)) }
                 }
                 if stravaEnabled, strava.isConnected { stravaRow }
             }
@@ -500,7 +534,7 @@ struct LogView: View {
                 } label: {
                     HStack(spacing: 10) {
                         Text(name.isEmpty ? "choose lift" : Theme.readableName(name))
-                            .font(.system(size: 22, weight: .bold))
+                            .font(.system(size: liftNameSize, weight: .bold))
                             .foregroundStyle(name.isEmpty ? .secondary : .primary)
                             .lineLimit(1)
                             .minimumScaleFactor(0.6)
@@ -628,7 +662,7 @@ struct LogView: View {
                             .font(.caption.weight(.heavy)).tracking(2)
                             .foregroundStyle(due ? Theme.onAccent : Color.secondary)
                         Text(clock(elapsed))
-                            .font(.system(size: 34, weight: .heavy))
+                            .font(.system(size: restClockSize, weight: .heavy))
                             .fontWidth(.condensed)
                             .monospacedDigit()
                             .lineLimit(1)
@@ -837,11 +871,11 @@ struct LogView: View {
                 .keyboardType(keyboard)
                 .focused($focus, equals: focusValue)
                 .multilineTextAlignment(.center)
-                .font(.system(size: 40, weight: .heavy))
+                .font(.system(size: min(fieldNumberSize, 64), weight: .heavy))
                 .fontWidth(.condensed)
                 .monospacedDigit()
                 .frame(maxWidth: .infinity)
-                .frame(height: Theme.bigFieldHeight)
+                .frame(height: min(fieldHeight, Theme.bigFieldHeight * 1.6))
                 .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
                 .overlay(
                     RoundedRectangle(cornerRadius: 14, style: .continuous)
@@ -983,9 +1017,9 @@ struct LogView: View {
 
     /// Open a logged lift for editing — unless sets for another lift are
     /// landed and unfinished, in which case ask before they go.
-    private func edit(_ ex: ExerciseEntry, on day: Date) {
+    private func edit(_ ex: ExerciseEntry, on day: Date, line: LineRef?) {
         if !sets.isEmpty, ex.name.caseInsensitiveCompare(name) != .orderedSame {
-            pendingReplace = .edit(ex, day)
+            pendingReplace = .edit(ex, day, line)
             return
         }
         // A planned lift with nothing landed yet isn't lost to the edit: it
@@ -996,6 +1030,7 @@ struct LogView: View {
         date = day
         dateChosen = true   // opened from that day on purpose
         loadForEditing(ex)
+        editing = line
     }
 
     /// The lifter chose: what was held goes ahead, over the landed sets.
@@ -1004,9 +1039,9 @@ struct LogView: View {
         case .prescription:
             sets = []
             applyPrescription()
-        case .edit(let ex, let day):
+        case .edit(let ex, let day, let line):
             sets = []
-            edit(ex, on: day)
+            edit(ex, on: day, line: line)
         }
     }
 
@@ -1030,8 +1065,12 @@ struct LogView: View {
         }
         let entry = ExerciseEntry(name: MuscleMap.key(name), sets: sets)
         let committed = sets
-        let result = await store.commit(entry, on: date,
-                           message: "Log \(entry.name) \(Session.dateFormatter.string(from: date))")
+        let key = Session.dateFormatter.string(from: date)
+        // The line it was opened from, if that was on this day; moved to
+        // another day since, it's a fresh log there.
+        let line = editing?.day == key ? editing : nil
+        let result = await store.commit(entry, on: date, replacing: line,
+                           message: "Log \(entry.name) \(key)")
         // Reset on a push OR an offline queue — both keep the entry; only a hard
         // failure leaves the input so the user can retry. Today's session card
         // keeps the record either way.
@@ -1049,6 +1088,14 @@ struct LogView: View {
             // The day stays for the next lift — a backfill is several — but it
             // has to be confirmed again: one lift on purpose isn't the next.
             dateChosen = false
+            // The line now reads as just written: the next update of this
+            // lift replaces it, wherever on the day it sits.
+            editing = todaySession.flatMap { s in
+                let same = s.exercises.filter { Analytics.matches($0.name, entry.name) }
+                let hits = same.indices.filter { same[$0].sets == entry.sets }
+                let pick = hits.first { $0 == (line?.occurrence ?? 0) } ?? hits.last
+                return pick.map { LineRef(same[$0], in: s) }
+            }
             // A set landed while the save was in flight — from the pad or the
             // lock screen — is not thrown away: the lift stays in hand with
             // every set shown, one more update away.
@@ -1059,6 +1106,7 @@ struct LogView: View {
             } else {
                 name = ""; sets = []; weightText = ""; addedText = ""; repsText = ""; isBodyweight = false
                 plan = nil
+                editing = nil
                 restStart = nil
                 refreshDay()
             }

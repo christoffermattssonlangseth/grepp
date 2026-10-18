@@ -44,9 +44,14 @@ struct WorkSet: Identifiable, Equatable, Codable {
 
     static func formatWeight(_ w: Double) -> String {
         if w == w.rounded() { return String(Int(w)) }
-        // Gym plates step in fractions of a kg; one decimal is plenty and keeps the
-        // token clean (no "82.50000001"). Always "." — never a locale comma.
-        return String(format: "%.1f", w)
+        // Change plates go down to 1.25 kg, so two decimals: 81.25 must stay
+        // 81.25, not round to 81.2. Rounded there and trailing zeros trimmed,
+        // which keeps the token clean (no "82.50000001", no "82.50"). Always
+        // "." — `String(format:)` takes no locale, so never a comma.
+        var s = String(format: "%.2f", w)
+        while s.hasSuffix("0") { s.removeLast() }
+        if s.hasSuffix(".") { s.removeLast() }
+        return s
     }
 }
 
@@ -59,10 +64,14 @@ struct ExerciseEntry: Identifiable, Equatable, Codable {
     /// file rather than made in the app. Written back untouched: a save never
     /// re-spells, re-cases or re-spaces a line it didn't mean to change.
     var raw: String? = nil
+    /// Words after the sets on the line — "felt heavy", "belt" — kept so a
+    /// rewrite of the sets doesn't throw the lifter's note away.
+    var note: String? = nil
 
     func line(date: String) -> String {
         if let raw { return raw }
         let setStr = sets.map(\.token).joined(separator: " ")
+        if let note, !note.isEmpty { return "\(date) \(name) \(setStr) \(note)" }
         return "\(date) \(name) \(setStr)"
     }
 
@@ -70,14 +79,15 @@ struct ExerciseEntry: Identifiable, Equatable, Codable {
     var rewritten: ExerciseEntry { var e = self; e.raw = nil; return e }
 
     static func == (a: ExerciseEntry, b: ExerciseEntry) -> Bool {
-        a.name == b.name && a.sets == b.sets && a.raw == b.raw
+        a.name == b.name && a.sets == b.sets && a.raw == b.raw && a.note == b.note
     }
 }
 
 /// All the exercises logged on one calendar date.
 struct Session: Identifiable, Equatable, Codable {
     var id = UUID()
-    var date: Date
+    /// Saved as its day, not an instant: see `DayCoded`.
+    @DayCoded var date: Date
     var exercises: [ExerciseEntry]
 
     /// The log's date, `yyyy-MM-dd`, in the phone's own time zone — so a set
@@ -104,5 +114,31 @@ struct Session: Identifiable, Equatable, Codable {
 
     static func == (a: Session, b: Session) -> Bool {
         a.date == b.date && a.exercises == b.exercises
+    }
+}
+
+/// A date that stands for a calendar day, saved as the day ("2026-08-03")
+/// rather than as an instant. An instant read back after a flight across
+/// time zones names a different day — a queued lift or a session draft would
+/// land on the wrong date. Reads the old instant form too, so anything saved
+/// before this still loads.
+@propertyWrapper
+struct DayCoded: Codable, Equatable {
+    var wrappedValue: Date
+
+    init(wrappedValue: Date) { self.wrappedValue = wrappedValue }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.singleValueContainer()
+        if let day = try? c.decode(String.self), let date = Session.dateFormatter.date(from: day) {
+            wrappedValue = date
+        } else {
+            wrappedValue = try c.decode(Date.self)
+        }
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var c = encoder.singleValueContainer()
+        try c.encode(Session.dateFormatter.string(from: wrappedValue))
     }
 }

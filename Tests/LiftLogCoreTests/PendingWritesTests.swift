@@ -169,4 +169,97 @@ final class PendingWritesTests: XCTestCase {
         let decoded = try JSONDecoder().decode([PendingWrite].self, from: data)
         XCTAssertEqual(decoded, original)
     }
+
+    // MARK: - two lines of one lift on a day
+
+    private let backOff = "2026-09-07 squat 100x5 100x5\n2026-09-07 bench 60x8\n2026-09-07 squat 80x8 80x8\n"
+
+    private func ref(_ base: [Session], _ index: Int) -> LineRef {
+        LineRef(base[0].exercises[index], in: base[0])
+    }
+
+    func testEditingTheSecondLineReplacesOnlyIt() {
+        var base = WorkoutParser.parse(backOff)
+        let target = ref(base, 2)
+        XCTAssertEqual(target.occurrence, 1)
+        WorkoutParser.merge(entry("squat", [WorkSet(weight: 80, added: nil, reps: 10)]), on: date("2026-09-07"),
+                            replacing: target, into: &base)
+        XCTAssertEqual(WorkoutParser.serialize(base),
+                       "2026-09-07 squat 100x5 100x5\n2026-09-07 bench 60x8\n2026-09-07 squat 80x10\n")
+    }
+
+    func testDeletingOneLineLeavesTheOther() {
+        var base = WorkoutParser.parse(backOff)
+        WorkoutParser.apply(PendingWrite(operation: .delete(name: "squat"), date: date("2026-09-07"), message: "d",
+                                         target: ref(base, 0)), to: &base)
+        XCTAssertEqual(WorkoutParser.serialize(base), "2026-09-07 bench 60x8\n2026-09-07 squat 80x8 80x8\n")
+    }
+
+    func testMovingOneLineMovesOnlyIt() {
+        var base = WorkoutParser.parse(backOff)
+        WorkoutParser.apply(PendingWrite(operation: .move(name: "squat", to: date("2026-09-08")), date: date("2026-09-07"),
+                                         message: "m", target: ref(base, 2)), to: &base)
+        XCTAssertEqual(base.map(\.dateString), ["2026-09-07", "2026-09-08"])
+        XCTAssertEqual(base[0].exercises.map(\.name), ["squat", "bench"])
+        XCTAssertEqual(base[0].exercises[0].sets.first?.weight, 100)
+        XCTAssertEqual(base[1].exercises.map { $0.sets.first?.weight }, [80])
+    }
+
+    func testMovingADayKeepsBothLinesOfALift() {
+        var base = WorkoutParser.parse(backOff)
+        WorkoutParser.move(nil, on: date("2026-09-07"), to: date("2026-09-09"), in: &base)
+        XCTAssertEqual(base.count, 1)
+        XCTAssertEqual(base[0].exercises.map(\.name), ["squat", "bench", "squat"], "two squat lines, not one")
+    }
+
+    func testARefFindsItsLineAfterTheFileShifted() {
+        var base = WorkoutParser.parse(backOff)
+        let target = ref(base, 2)
+        // Another device dropped the first squat line: the back-off line is
+        // now the only one, found by its text.
+        base = WorkoutParser.parse("2026-09-07 bench 60x8\n2026-09-07 squat 80x8 80x8\n")
+        XCTAssertEqual(target.index(in: base[0].exercises), 1)
+    }
+
+    func testAStaleRefAddsRatherThanOverwrites() {
+        var base = WorkoutParser.parse("2026-09-07 squat 100x5\n")
+        let gone = LineRef(day: "2026-09-07", name: "squat", text: "2026-09-07 squat 80x8", occurrence: 1)
+        WorkoutParser.merge(entry("squat", [WorkSet(weight: 80, added: nil, reps: 10)]), on: date("2026-09-07"),
+                            replacing: gone, into: &base)
+        XCTAssertEqual(base[0].exercises.count, 2, "the line the lifter didn't pick is not written over")
+    }
+
+    // MARK: - days, not instants
+
+    func testAQueuedWriteKeepsItsDayAcrossTimeZones() throws {
+        let write = PendingWrite(operation: .move(name: nil, to: date("2026-08-01")), date: date("2026-08-02"), message: "m")
+        let json = String(data: try JSONEncoder().encode(write), encoding: .utf8)!
+        XCTAssertTrue(json.contains("\"day\":\"2026-08-02\""), json)
+        XCTAssertTrue(json.contains("\"toDay\":\"2026-08-01\""), json)
+        XCTAssertEqual(write.day, "2026-08-02")
+    }
+
+    func testAQueueSavedBeforeDaysWereTextStillLoads() throws {
+        let day = date("2026-08-02").timeIntervalSinceReferenceDate
+        let target = date("2026-08-01").timeIntervalSinceReferenceDate
+        let legacy = """
+        [{"id":"\(UUID().uuidString)","operation":{"move":{"name":"squat","to":\(target)}},"date":\(day),"message":"m"},
+         {"id":"\(UUID().uuidString)","operation":{"upsert":{"_0":{"id":"\(UUID().uuidString)","name":"bench","sets":[{"id":"\(UUID().uuidString)","weight":60,"reps":8}]}}},"date":\(day),"message":"u"},
+         {"id":"\(UUID().uuidString)","operation":{"delete":{"name":"row"}},"date":\(day),"message":"d"}]
+        """
+        let decoded = try JSONDecoder().decode([PendingWrite].self, from: Data(legacy.utf8))
+        XCTAssertEqual(decoded.map(\.day), ["2026-08-02", "2026-08-02", "2026-08-02"])
+        XCTAssertEqual(decoded[0].operation, .move(name: "squat", toDay: "2026-08-01"))
+        XCTAssertEqual(decoded[1].exerciseName, "bench")
+        XCTAssertNil(decoded[0].target)
+    }
+
+    func testATargetedWriteRoundTrips() throws {
+        let base = WorkoutParser.parse(backOff)
+        let write = PendingWrite(entry: entry("squat", [WorkSet(weight: 80, added: nil, reps: 10)]),
+                                 date: date("2026-09-07"), message: "e", replacing: ref(base, 2))
+        let decoded = try JSONDecoder().decode(PendingWrite.self, from: try JSONEncoder().encode(write))
+        XCTAssertEqual(decoded, write)
+        XCTAssertEqual(decoded.target?.occurrence, 1)
+    }
 }

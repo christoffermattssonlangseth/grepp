@@ -1068,6 +1068,50 @@ enum CoachContext {
         return linkingEvidence(out.joined(separator: "\n"))
     }
 
+    /// One piece of a chat bubble: running text, or a list item drawn with its
+    /// own marker and a hanging indent.
+    enum ChatBlock: Equatable {
+        case text(String)
+        /// `marker` is "•" for a bullet, the number as written ("2.") for a
+        /// numbered item. `level` is 0 or 1: deeper nesting reads as one indent.
+        case item(marker: String, text: String, level: Int)
+    }
+
+    /// Split `chatMarkdown` output into paragraphs and list items. Inline-only
+    /// markdown would show a list as raw "- " lines with wrapped text running
+    /// back under the dash; drawn as items, it reads as a list.
+    static func chatBlocks(_ markdown: String) -> [ChatBlock] {
+        let item = try! NSRegularExpression(pattern: "^(\\s*)([-*•]|\\d{1,2}[.)])\\s+(.*)$")
+        var blocks: [ChatBlock] = []
+        var paragraph: [String] = []
+        func flush() {
+            if !paragraph.isEmpty { blocks.append(.text(paragraph.joined(separator: "\n"))) }
+            paragraph = []
+        }
+        for line in markdown.split(separator: "\n", omittingEmptySubsequences: false).map(String.init) {
+            let ns = line as NSString
+            if let m = item.firstMatch(in: line, range: NSRange(location: 0, length: ns.length)) {
+                flush()
+                let indent = ns.substring(with: m.range(at: 1)).replacingOccurrences(of: "\t", with: "  ").count
+                let raw = ns.substring(with: m.range(at: 2))
+                let marker = raw.first?.isNumber == true ? raw.replacingOccurrences(of: ")", with: ".") : "•"
+                blocks.append(.item(marker: marker, text: ns.substring(with: m.range(at: 3)), level: indent >= 2 ? 1 : 0))
+            } else if line.trimmingCharacters(in: .whitespaces).isEmpty {
+                flush()
+            } else if paragraph.isEmpty, line.first?.isWhitespace == true,
+                      case let .item(marker, text, level)? = blocks.last {
+                // An indented line straight after an item continues it.
+                blocks[blocks.count - 1] = .item(marker: marker,
+                                                 text: text + " " + line.trimmingCharacters(in: .whitespaces),
+                                                 level: level)
+            } else {
+                paragraph.append(line)
+            }
+        }
+        flush()
+        return blocks
+    }
+
     /// The scheme the app answers for an evidence tag tapped in a bubble.
     static let evidenceScheme = "grepp"
 

@@ -25,6 +25,10 @@ struct ContentView: View {
                 .tag(4)
         }
         .tint(Theme.accent)
+        // The widgets open the app on the Log tab.
+        .onOpenURL { url in
+            if url == WidgetSnapshot.logURL { store.selectedTab = 0 }
+        }
         // A fresh install: ask where the log lives before anything tries to load it,
         // then, once the log can be written, the setup questions.
         .onAppear {

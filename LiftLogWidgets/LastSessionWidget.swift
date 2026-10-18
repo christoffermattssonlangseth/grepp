@@ -64,16 +64,39 @@ struct LastSessionView: View {
         case .accessoryInline:
             inline.containerBackground(for: .widget) { Color.clear }
         default:
-            // A plain plate with a hairline edge: true black in dark mode,
-            // like the Log tab's readout windows, and white in light mode.
+            homePlate(WidgetStyle.current)
+        }
+    }
+
+    /// The home widget on the plate Settings picked. Black and follow-phone
+    /// get a hairline edge, like the Log tab's readout windows; black keeps
+    /// dark text styles in light mode, or the text would vanish on it.
+    @ViewBuilder
+    private func homePlate(_ style: WidgetStyle) -> some View {
+        switch style {
+        case .auto:
+            home.containerBackground(for: .widget) {
+                ZStack {
+                    Color(UIColor { $0.userInterfaceStyle == .dark ? .black : .white })
+                    ContainerRelativeShape().strokeBorder(Color.primary.opacity(0.2), lineWidth: 1)
+                }
+            }
+        case .black:
             home
+                .environment(\.colorScheme, .dark)
                 .containerBackground(for: .widget) {
                     ZStack {
-                        Color(UIColor { $0.userInterfaceStyle == .dark ? .black : .white })
-                        ContainerRelativeShape()
-                            .strokeBorder(Color.primary.opacity(0.2), lineWidth: 1)
+                        Color.black
+                        ContainerRelativeShape().strokeBorder(.white.opacity(0.22), lineWidth: 1)
                     }
                 }
+        case .steel:
+            home.containerBackground(for: .widget) {
+                LinearGradient(colors: [Brand.accent.opacity(0.28),
+                                        Color(.systemBackground),
+                                        Brand.accent.opacity(0.14)],
+                               startPoint: .topLeading, endPoint: .bottomTrailing)
+            }
         }
     }
 

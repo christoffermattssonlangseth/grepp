@@ -1,4 +1,5 @@
 import SwiftUI
+import WidgetKit
 
 /// GitHub connection settings. The token is stored in the Keychain.
 struct SettingsView: View {
@@ -7,6 +8,9 @@ struct SettingsView: View {
     @AppStorage(CoachSpend.capKey) private var monthlyCap: Double = CoachSpend.defaultCap
     @ObservedObject private var spend = CoachSpend.shared
     @AppStorage(Prefs.barWeight) private var barWeight: Double = 20
+    /// In the App Group, not the app's own defaults: the widget reads it.
+    @AppStorage(WidgetStyle.key, store: UserDefaults(suiteName: WidgetSnapshot.appGroup))
+    private var widgetStyle: WidgetStyle = .auto
     @AppStorage(Prefs.muscleMap) private var muscleMap = MuscleMap()
     @StateObject private var strava = StravaService.shared
     /// Strava off means none of it: no post button, no marks in History, no
@@ -100,6 +104,20 @@ struct SettingsView: View {
                         }
                     }
                     Text("The plates you own, both sides together — four 25s is two a side. The calculator never suggests a plate you don't have.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                .listRowBackground(Rectangle().fill(.regularMaterial))
+
+                Section("widget") {
+                    Picker("home screen", selection: $widgetStyle) {
+                        ForEach(WidgetStyle.allCases) { Text($0.label).tag($0) }
+                    }
+                    .pickerStyle(.segmented)
+                    .onChange(of: widgetStyle) { _, _ in
+                        WidgetCenter.shared.reloadTimelines(ofKind: WidgetSnapshot.kind)
+                    }
+                    Text("The Last session widget's plate. Follow phone is black in dark mode and white in light. A home screen set to Tinted in iOS draws its own tint over any widget.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }

@@ -102,7 +102,7 @@ struct HistoryView: View {
                 }
                 .font(.caption2.weight(.bold))
                 .textCase(nil)
-                .foregroundStyle(Theme.strava)
+                .foregroundStyle(Theme.stravaText)
             }
             .buttonStyle(.plain)
             .disabled(posting != nil)

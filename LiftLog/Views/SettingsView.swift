@@ -13,7 +13,9 @@ struct SettingsView: View {
     /// backfill — the connection and keys are kept for when it comes back.
     @AppStorage(Prefs.stravaEnabled) private var stravaEnabled = true
     @AppStorage(Prefs.healthEnabled) private var healthEnabled = false
-    /// Bumped after Health answers, so the caption below the switch follows.
+    /// Bumped after Health answers, and when the app comes back to the front
+    /// — access may have been changed in the Health app meanwhile — so the
+    /// caption below the switch follows.
     @State private var healthAsked = 0
     @State private var showingIntake = false
     @State private var stravaError: String?
@@ -22,6 +24,10 @@ struct SettingsView: View {
     @State private var backfillStatus: String?
     @State private var backfilling = false
     @AppStorage(Prefs.plateInventory) private var inventory = PlateInventory.standard
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @Environment(\.scenePhase) private var scenePhase
+    /// The label column in the field rows, scaled with the text.
+    @ScaledMetric(relativeTo: .body) private var labelWidth: CGFloat = 90
 
     var body: some View {
         NavigationStack {
@@ -262,12 +268,10 @@ struct SettingsView: View {
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
                             labeled("client ID", text: $stravaID, placeholder: "123456")
-                            HStack {
-                                Text("client secret").frame(width: 90, alignment: .leading)
+                            labeledRow("client secret") {
                                 SecureField("paste it here", text: $stravaSecret)
                                     .textInputAutocapitalization(.never)
                                     .autocorrectionDisabled()
-                                    .multilineTextAlignment(.trailing)
                             }
                         }
                         Button {
@@ -301,7 +305,7 @@ struct SettingsView: View {
                         }
                     }
                     if stravaEnabled, let stravaError {
-                        Text(stravaError).font(.caption2).foregroundStyle(.orange)
+                        Text(stravaError).font(.caption2).foregroundStyle(Theme.warning)
                     }
                     if stravaEnabled {
                         Text("Powered by Strava")
@@ -374,6 +378,9 @@ struct SettingsView: View {
             .sheet(isPresented: $showingIntake) {
                 IntakeView().environmentObject(store)
             }
+            .onChange(of: scenePhase) { _, phase in
+                if phase == .active { healthAsked += 1 }
+            }
         }
     }
 
@@ -432,7 +439,7 @@ struct SettingsView: View {
                     .minimumScaleFactor(0.8)
                 Text(muscleMap.share(for: name)?.summary ?? "not counted yet — tap to say what it trains")
                     .font(.caption)
-                    .foregroundStyle(muscleMap.share(for: name) == nil ? .orange : .secondary)
+                    .foregroundStyle(muscleMap.share(for: name) == nil ? Theme.warning : Color.secondary)
             }
         }
     }
@@ -455,12 +462,28 @@ struct SettingsView: View {
     }
 
     private func labeled(_ label: String, text: Binding<String>, placeholder: String) -> some View {
-        HStack {
-            Text(label).frame(width: 90, alignment: .leading)
+        labeledRow(label) {
             TextField(placeholder, text: text)
                 .textInputAutocapitalization(.never)
                 .autocorrectionDisabled()
-                .multilineTextAlignment(.trailing)
+        }
+    }
+
+    /// A label and its field. The label column grows with the text size, and
+    /// at the accessibility sizes the field goes under the label instead: a
+    /// fixed column cut "client secret" to "clie…" there.
+    @ViewBuilder
+    private func labeledRow<Field: View>(_ label: String, @ViewBuilder field: () -> Field) -> some View {
+        if dynamicTypeSize.isAccessibilitySize {
+            VStack(alignment: .leading, spacing: 4) {
+                Text(label)
+                field()
+            }
+        } else {
+            HStack {
+                Text(label).frame(width: labelWidth, alignment: .leading)
+                field().multilineTextAlignment(.trailing)
+            }
         }
     }
 }

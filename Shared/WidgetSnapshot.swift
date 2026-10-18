@@ -24,6 +24,8 @@ struct WidgetSnapshot: Codable, Equatable {
 
     /// Shared between the app and the widget. Must match both entitlements files.
     static let appGroup = "group.CML.LiftLog"
+    /// Where a tap on the widget lands: the Log tab.
+    static let logURL = URL(string: "grepp://log")!
     /// The widget kind, for `WidgetCenter.reloadTimelines(ofKind:)`.
     static let kind = "LastSession"
     private static let key = "widget_snapshot"

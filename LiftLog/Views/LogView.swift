@@ -112,6 +112,12 @@ struct LogView: View {
     private var isToday: Bool { Calendar.current.isDateInToday(date) }
     /// "Tue 9 Sep" — the day in the pill, for the banner and the dialog.
     private var dayLabel: String { date.formatted(.dateTime.weekday(.abbreviated).day().month(.abbreviated)) }
+    /// "sun 18 oct" for the pill: lowercase like the app's labels, the same
+    /// shape as History's day headers.
+    private var pillLabel: String {
+        date.formatted(Date.FormatStyle().weekday(.abbreviated).day().month(.abbreviated)
+            .locale(Locale(identifier: "en_GB"))).replacingOccurrences(of: ",", with: "").lowercased()
+    }
     /// The catch: a day that isn't today, wasn't picked, and isn't a session
     /// that ran past midnight is probably a mistake. Ask before it's a line.
     private var needsDayCheck: Bool {
@@ -174,12 +180,25 @@ struct LogView: View {
                 // The date as a compact pill up here, not a whole card under the
                 // title: on a gym screen that card-height belongs to the number pad.
                 ToolbarItem(placement: .topBarTrailing) {
-                    DatePicker("Date",
-                               selection: Binding(get: { date },
-                                                  set: { date = $0; dateChosen = true }),
-                               displayedComponents: .date)
-                        .labelsHidden()
-                        .tint(isToday ? Theme.accent : .orange)
+                    // The system picker writes "18 Oct 2026" however it's asked;
+                    // the pill says "sun 18 oct" like the rest of the app, and the
+                    // picker sits on top, all but invisible, to take the tap.
+                    Text(pillLabel)
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(isToday ? Color.primary : Theme.warning)
+                        .pill()
+                        .overlay {
+                            DatePicker("Date",
+                                       selection: Binding(get: { date },
+                                                          set: { date = $0; dateChosen = true }),
+                                       displayedComponents: .date)
+                                .labelsHidden()
+                                .tint(isToday ? Theme.accent : .orange)
+                                // Just above SwiftUI's floor for taking taps.
+                                .opacity(0.011)
+                        }
+                        .accessibilityElement(children: .contain)
+                        .accessibilityLabel("Logging for \(dayLabel)")
                 }
                 ToolbarItemGroup(placement: .keyboard) {
                     Spacer()

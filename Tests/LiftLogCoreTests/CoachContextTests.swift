@@ -199,6 +199,31 @@ final class CoachContextTests: XCTestCase {
         XCTAssertEqual(CoachContext.chatMarkdown("a\nb"), "a\nb", "no blank line stays that way")
     }
 
+    func testListsBecomeItemsBetweenParagraphs() {
+        let blocks = CoachContext.chatBlocks("**Session 6.** Deadlift day.\n\n- Deadlift 85\n- Bench: 52.5 gave you **12**\nThat's the plan.")
+        XCTAssertEqual(blocks, [
+            .text("**Session 6.** Deadlift day."),
+            .item(marker: "•", text: "Deadlift 85", level: 0),
+            .item(marker: "•", text: "Bench: 52.5 gave you **12**", level: 0),
+            .text("That's the plan."),
+        ])
+    }
+
+    func testNumberedNestedAndContinuedItems() {
+        let blocks = CoachContext.chatBlocks("1. Squat\n  - top set 90x3\n2) Bench\n   then backoffs")
+        XCTAssertEqual(blocks, [
+            .item(marker: "1.", text: "Squat", level: 0),
+            .item(marker: "•", text: "top set 90x3", level: 1),
+            .item(marker: "2.", text: "Bench then backoffs", level: 0),
+        ])
+    }
+
+    func testBoldAtLineStartIsNotABullet() {
+        // "**Why**" starts with an asterisk but is bold, not a list.
+        XCTAssertEqual(CoachContext.chatBlocks("**Why**\nYou hit 85x5."), [.text("**Why**\nYou hit 85x5.")])
+        XCTAssertEqual(CoachContext.chatBlocks("85x5 - easy"), [.text("85x5 - easy")])
+    }
+
     func testHashesThatArentHeadingsSurvive() {
         // A lone "#" or a mid-line hash isn't a heading and must not be eaten.
         XCTAssertEqual(CoachContext.chatMarkdown("#"), "#")

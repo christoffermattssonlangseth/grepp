@@ -64,16 +64,14 @@ struct LastSessionView: View {
         case .accessoryInline:
             inline.containerBackground(for: .widget) { Color.clear }
         default:
-            // Black with a hairline edge, like the Log tab's readout windows.
-            // Dark text styles whatever the phone's mode: the plate is black
-            // in light mode too.
+            // A plain plate with a hairline edge: true black in dark mode,
+            // like the Log tab's readout windows, and white in light mode.
             home
-                .environment(\.colorScheme, .dark)
                 .containerBackground(for: .widget) {
                     ZStack {
-                        Color.black
+                        Color(UIColor { $0.userInterfaceStyle == .dark ? .black : .white })
                         ContainerRelativeShape()
-                            .strokeBorder(.white.opacity(0.22), lineWidth: 1)
+                            .strokeBorder(Color.primary.opacity(0.2), lineWidth: 1)
                     }
                 }
         }

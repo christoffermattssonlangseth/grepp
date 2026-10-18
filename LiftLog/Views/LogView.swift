@@ -589,13 +589,16 @@ struct LogView: View {
             VStack(spacing: 16) {
                 HStack(spacing: 12) {
                     if isBodyweight {
-                        bigField(title: "+ kg", text: $addedText,
+                        bigField(title: "added", unit: "kg", text: $addedText,
+                                 hint: ghost?.added.map { WorkSet.formatWeight($0) },
                                  keyboard: .decimalPad, focusValue: .weight)
                     } else {
-                        bigField(title: "Weight · kg", text: $weightText,
+                        bigField(title: "weight", unit: "kg", text: $weightText,
+                                 hint: ghost?.weight.map { WorkSet.formatWeight($0) },
                                  keyboard: .decimalPad, focusValue: .weight)
                     }
-                    bigField(title: "Reps", text: $repsText,
+                    bigField(title: "reps", unit: "reps", text: $repsText,
+                             hint: ghost.map { String($0.reps) },
                              keyboard: .numberPad, focusValue: .reps)
                 }
 
@@ -652,7 +655,7 @@ struct LogView: View {
         TimelineView(.periodic(from: restStart ?? Date(), by: 1)) { context in
             let elapsed = restSeconds(at: context.date)
             let due = elapsed >= restTarget
-            let label: String = due ? "READY" : "rest"
+            let label: String = due ? "ready" : "rest"
             VStack(spacing: 8) {
                 HStack(spacing: 10) {
                     // Label and clock on one line: the card is pinned over the
@@ -861,29 +864,63 @@ struct LogView: View {
 
     // MARK: - Helpers
 
-    private func bigField(title: String, text: Binding<String>,
+    /// The set this one would repeat: the same set last time, else its last
+    /// set. Shown faintly in the empty fields as a hint, never entered.
+    private var ghost: WorkSet? {
+        guard let last = lastEntry?.sets, !last.isEmpty else { return nil }
+        return sets.count < last.count ? last[sets.count] : last.last
+    }
+
+    /// A field drawn like a scale's display: a black window, the number big
+    /// and condensed, its unit beside it. Empty, it shows last time's figure
+    /// faintly instead of a "0" that reads as a value. A typed number gets an
+    /// accent bar underneath, so a glance tells typed from hinted.
+    private func bigField(title: String, unit: String, text: Binding<String>, hint: String?,
                           keyboard: UIKeyboardType, focusValue: Field) -> some View {
-        VStack(spacing: 6) {
-            Text(title.lowercased())
+        let focused = focus == focusValue
+        let filled = !text.wrappedValue.isEmpty
+        return VStack(alignment: .leading, spacing: 2) {
+            Text(title)
                 .font(.caption.weight(.heavy)).tracking(1)
                 .foregroundStyle(.secondary)
-            TextField("0", text: text)
+            HStack(alignment: .firstTextBaseline, spacing: 4) {
+                TextField(text: text, prompt: Text(hint ?? "–").foregroundStyle(.white.opacity(0.25))) {
+                    Text(title)
+                }
                 .keyboardType(keyboard)
                 .focused($focus, equals: focusValue)
-                .multilineTextAlignment(.center)
+                // White in light mode too: the window is black either way.
+                .foregroundStyle(.white)
                 .font(.system(size: min(fieldNumberSize, 64), weight: .heavy))
                 .fontWidth(.condensed)
                 .monospacedDigit()
-                .frame(maxWidth: .infinity)
-                .frame(height: min(fieldHeight, Theme.bigFieldHeight * 1.6))
-                .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 14, style: .continuous)
-                        .strokeBorder(focus == focusValue ? Theme.accent : .white.opacity(0.15),
-                                      lineWidth: focus == focusValue ? 2 : 0.8)
-                )
+                .minimumScaleFactor(0.6)
+                .lineLimit(1)
+                // As wide as the number, so the unit sits right after it;
+                // a tap anywhere in the window still focuses it.
+                .fixedSize(horizontal: true, vertical: false)
+                Text(unit)
+                    .font(.subheadline.weight(.bold))
+                    .foregroundStyle(.secondary)
+                    .fixedSize()
+                Spacer(minLength: 0)
+            }
         }
-        .frame(maxWidth: .infinity)
+        .padding(.horizontal, 12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .frame(height: min(fieldHeight, Theme.bigFieldHeight * 1.6) + 20)
+        .background(.black, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .overlay(alignment: .bottom) {
+            Rectangle().fill(Theme.accent).frame(height: 3)
+                .padding(.horizontal, 12).padding(.bottom, 6)
+                .opacity(filled ? 1 : 0)
+        }
+        .overlay(
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .strokeBorder(focused ? Theme.accent : .white.opacity(0.22), lineWidth: focused ? 2 : 1.2)
+        )
+        .contentShape(Rectangle())
+        .onTapGesture { focus = focusValue }
     }
 
     private func addSet() {

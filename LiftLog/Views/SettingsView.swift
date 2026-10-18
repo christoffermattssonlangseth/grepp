@@ -32,7 +32,7 @@ struct SettingsView: View {
     var body: some View {
         NavigationStack {
             Form {
-                Section("Where the log lives") {
+                Section("where the log lives") {
                     Picker("storage", selection: Binding(
                         get: { store.storage },
                         set: { store.storage = $0; Task { await store.load() } }
@@ -54,7 +54,7 @@ struct SettingsView: View {
                 .listRowBackground(Rectangle().fill(.regularMaterial))
 
                 if store.storage == .github {
-                Section("Repository") {
+                Section("repository") {
                     labeled("owner", text: $store.owner, placeholder: "your-username")
                     labeled("repo", text: $store.repo, placeholder: "training")
                     labeled("file path", text: $store.path, placeholder: "training.md")
@@ -76,7 +76,7 @@ struct SettingsView: View {
                 .listRowBackground(Rectangle().fill(.regularMaterial))
                 }
 
-                Section("Gym") {
+                Section("gym") {
                     Picker("bar weight", selection: $barWeight) {
                         ForEach(PlateMath.bars, id: \.self) { kg in
                             Text("\(PlateMath.label(kg)) kg").tag(kg)
@@ -105,7 +105,7 @@ struct SettingsView: View {
                 }
                 .listRowBackground(Rectangle().fill(.regularMaterial))
 
-                Section("Muscles") {
+                Section("muscles") {
                     let unmapped = muscleMap.unmapped(in: store.sessions)
                     let assigned = Array(Set(store.knownExercises.filter { muscleMap.isOverridden($0) }.map { MuscleMap.canonical($0) })).sorted()
                     if unmapped.isEmpty && assigned.isEmpty {
@@ -132,7 +132,7 @@ struct SettingsView: View {
                 }
                 .listRowBackground(Rectangle().fill(.regularMaterial))
 
-                Section("Coach") {
+                Section("coach") {
                     SecureField("sk-ant-… (Claude API key)", text: $store.anthropicKey)
                         .textInputAutocapitalization(.never)
                         .autocorrectionDisabled()
@@ -316,7 +316,7 @@ struct SettingsView: View {
                 .listRowBackground(Rectangle().fill(.regularMaterial))
 
                 if !store.pending.isEmpty {
-                    Section("Waiting to sync") {
+                    Section("waiting to sync") {
                         ForEach(store.pending) { write in
                             HStack {
                                 Text(Theme.readableName(write.exerciseName))

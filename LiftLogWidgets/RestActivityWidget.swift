@@ -20,7 +20,7 @@ struct RestActivityWidget: Widget {
             DynamicIsland {
                 DynamicIslandExpandedRegion(.leading) {
                     VStack(alignment: .leading, spacing: 2) {
-                        Text(context.isStale ? "READY" : "REST")
+                        Text(context.isStale ? "ready" : "rest")
                             .font(.caption2.weight(.heavy)).tracking(1.5)
                             .foregroundStyle(context.isStale ? Brand.accent : .secondary)
                         Text(context.state.exercise)
@@ -100,7 +100,7 @@ private struct RestLockScreenView: View {
                 VStack(alignment: .leading, spacing: 2) {
                     HStack(spacing: 6) {
                         Barbell(height: 10, color: due ? Brand.onAccent : Brand.accent)
-                        Text(due ? "READY" : "REST")
+                        Text(due ? "ready" : "rest")
                             .font(.caption2.weight(.heavy)).tracking(1.5)
                             .foregroundStyle(dim)
                     }

@@ -89,7 +89,7 @@ struct LastSessionView: View {
     /// tints widgets.
     private var hasSessions: Bool { !(entry.snapshot?.lines.isEmpty ?? true) }
 
-    /// The app's glyph, and how long since you lifted: "TODAY", "1D", "4D".
+    /// The app's glyph, and how long since you lifted: "today", "1d", "4d".
     private var circular: some View {
         VStack(spacing: 2) {
             Barbell(height: hasSessions ? 20 : 26, color: .primary)
@@ -114,7 +114,7 @@ struct LastSessionView: View {
         return VStack(alignment: .leading, spacing: 1) {
             HStack(spacing: 5) {
                 Barbell(height: 8, color: .primary).widgetAccentable()
-                Text(planned ? "UP NEXT" : snapshot.map { relative($0).uppercased() } ?? "GREPP")
+                Text(planned ? "up next" : snapshot.map { relative($0).lowercased() } ?? "grepp")
                     .font(.system(size: 11, weight: .heavy)).tracking(1)
                     .lineLimit(1)
             }
@@ -157,8 +157,8 @@ struct LastSessionView: View {
     /// The circular widget's few letters.
     private func shortRelative(_ snapshot: WidgetSnapshot) -> String {
         switch daysAgo(snapshot) {
-        case .some(let n) where n <= 0: return "TODAY"
-        case .some(let n): return "\(n)D"
+        case .some(let n) where n <= 0: return "today"
+        case .some(let n): return "\(n)d"
         case .none: return ""
         }
     }
@@ -191,7 +191,7 @@ struct LastSessionView: View {
                 Image(systemName: "arrow.turn.down.right")
                     .font(.system(size: 10, weight: .heavy))
                     .foregroundStyle(Brand.accent)
-                Text("UP NEXT")
+                Text("up next")
                     .font(.system(size: 10, weight: .heavy)).tracking(1.5)
                     .foregroundStyle(.secondary)
             }
@@ -267,7 +267,7 @@ struct LastSessionView: View {
     private var header: some View {
         HStack(spacing: 6) {
             Barbell(height: 11)
-            Text("LAST SESSION")
+            Text("last session")
                 .font(.system(size: 10, weight: .heavy)).tracking(1.5)
                 .foregroundStyle(.secondary)
         }

@@ -156,7 +156,7 @@ struct HistoryView: View {
                 if toggledMonths.contains(month.key) { toggledMonths.remove(month.key) } else { toggledMonths.insert(month.key) }
             } label: {
                 HStack {
-                    Text(month.title).font(.headline)
+                    Text(month.title.lowercased()).font(.headline)
                     Spacer()
                     Text("\(month.sessions.count) \(month.sessions.count == 1 ? "day" : "days")")
                         .font(.caption.weight(.semibold))

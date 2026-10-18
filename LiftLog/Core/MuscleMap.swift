@@ -117,9 +117,11 @@ struct MuscleMap: Equatable, RawRepresentable {
             }
         }
 
-        /// "chest 1 · triceps ½ · front delts ½"
+        /// "chest 1 · triceps ½ · front delts ½"; "counts nowhere" for a lift
+        /// the lifter has taken off every muscle.
         var summary: String {
-            parts.map { "\($0.group.rawValue) \(Share.label($0.weight))" }.joined(separator: " · ")
+            if parts.isEmpty { return "counts nowhere" }
+            return parts.map { "\($0.group.rawValue) \(Share.label($0.weight))" }.joined(separator: " · ")
         }
     }
 
@@ -132,13 +134,21 @@ struct MuscleMap: Equatable, RawRepresentable {
     //
     // "seal-row=back:1+biceps:0.5;sled-push=quads:1+core:0.25". A muscle with
     // no share written — how earlier versions stored it — is a full set for
-    // the first and half for the rest.
+    // the first and half for the rest. "plank=" is a table lift the lifter
+    // has taken off every muscle.
 
     init?(rawValue: String) {
         var overrides: [String: Share] = [:]
         for entry in rawValue.split(separator: ";") {
-            let kv = entry.split(separator: "=")
-            guard kv.count == 2 else { continue }
+            let kv = entry.split(separator: "=", omittingEmptySubsequences: false)
+            guard kv.count == 2, !kv[0].isEmpty else { continue }
+            if kv[1].isEmpty {
+                // Only a table lift has anywhere to be taken off.
+                if MuscleMap.builtInShare(for: String(kv[0])) != nil {
+                    overrides[MuscleMap.canonical(String(kv[0]))] = Share(parts: [])
+                }
+                continue
+            }
             var parts: [Share.Part] = []
             for (i, item) in kv[1].split(separator: "+").enumerated() {
                 let gw = item.split(separator: ":", maxSplits: 1)
@@ -193,14 +203,18 @@ struct MuscleMap: Equatable, RawRepresentable {
         set(groups.isEmpty ? nil : Share(groups), for: exercise)
     }
 
-    /// Assign any shares, or clear with nil or an empty share. Setting exactly
-    /// what the table says is a clear too: no point remembering the default.
+    /// Assign any shares, or clear with nil. Setting exactly what the table
+    /// says is a clear too: no point remembering the default. An empty share
+    /// is an answer, not a clear: a table lift taken off every muscle counts
+    /// nowhere rather than snapping back to the table. For a lift the table
+    /// doesn't know, nowhere is already where it counts.
     mutating func set(_ share: Share?, for exercise: String) {
         let key = MuscleMap.canonical(exercise)
         guard !key.isEmpty else { return }
         // One lift, one entry: every spelling that names it goes.
         for stale in overrides.keys where MuscleMap.canonical(stale) == key { overrides.removeValue(forKey: stale) }
-        if let share, !share.isEmpty, share != MuscleMap.builtInShare(for: exercise) {
+        let table = MuscleMap.builtInShare(for: exercise)
+        if let share, share != table, !(share.isEmpty && table == nil) {
             overrides[key] = share
         } else {
             overrides.removeValue(forKey: key)

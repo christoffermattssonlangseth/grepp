@@ -25,6 +25,15 @@ final class PlateMathTests: XCTestCase {
         XCTAssertEqual(load?.total, 20)
     }
 
+    func testATargetBetweenPlatesRoundsDownAndSaysSo() {
+        // 0.2 a side: the 0.25s would make 20.5, heavier than asked.
+        let load = PlateMath.load(20.4, inventory: home)
+        XCTAssertEqual(load?.total, 20)
+        XCTAssertEqual(load?.isApproximate, true)
+        XCTAssertEqual(PlateMath.load(20.5, inventory: home)?.isApproximate, false)
+        XCTAssertEqual(PlateMath.load(60.1)?.total, 60)
+    }
+
     func testLighterThanTheBarIsNothing() {
         XCTAssertNil(PlateMath.load(15))
     }

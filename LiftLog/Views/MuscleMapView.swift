@@ -90,6 +90,8 @@ struct ExerciseMuscleView: View {
             set: { weight in
                 var credits = share.credits
                 credits[group] = weight
+                // The last share to "–" leaves an empty share, which `set`
+                // keeps as "counts nowhere" rather than reverting to the table.
                 muscleMap.set(MuscleMap.Share(weights: credits), for: exercise)
             }
         )
@@ -124,7 +126,9 @@ struct ExerciseMuscleView: View {
                     .padding(.vertical, 2)
                 }
             } header: {
-                Text(share.isEmpty ? "not counted yet" : share.summary)
+                // Every share at "–" on a table lift is a choice: it counts
+                // nowhere, and says so.
+                Text(share.isEmpty && !muscleMap.isOverridden(exercise) ? "not counted yet" : share.summary)
                     .textCase(nil)
             } footer: {
                 Text(muscleMap.isOverridden(exercise)

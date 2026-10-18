@@ -45,10 +45,20 @@ struct TrendsView: View {
         var target: Target?
         var projection: Projection?
         var dose: DoseResponse?
+        /// The dose card's next session, worked out here once: it walks the
+        /// log, and the card asked for it twice a pass.
+        var nextStep: DoseResponse.NextStep?
+        /// A lift on the lifter's own weight: its targets are reps or added load.
+        var bodyweight = false
         /// Every lift read at once, for the list and the dots in the picker.
         var all: [String: DoseResponse] = [:]
         var weeks: [Analytics.TrainingWeek] = []
         var weekly: [MuscleMap.Credits] = []
+        /// The same weeks for the balance card, each set once a side.
+        var balance: [MuscleMap.Credits] = []
+        /// Weeks, counting this one, since the week of the first session
+        /// ever: a young log's averages are over the weeks it has.
+        var weeksCovered = 0
         var unmapped: [String] = []
     }
     @State private var figures = Figures()
@@ -128,7 +138,8 @@ struct TrendsView: View {
             .onChange(of: scenePhase) { _, phase in if phase == .active { recompute() } }
             .onReceive(NotificationCenter.default.publisher(for: .NSCalendarDayChanged)) { _ in recompute() }
             .sheet(isPresented: $settingTarget) {
-                TargetSheet(lift: exercise, repsOnly: figures.metrics == [.maxReps],
+                TargetSheet(lift: exercise, bodyweight: figures.bodyweight,
+                            initial: figures.bodyweight ? (figures.metrics.first == .addedLoad ? .addedLoad : .reps) : .topSet,
                             sessions: store.sessions)
             }
             .sheet(isPresented: $showingPicker) {
@@ -506,14 +517,17 @@ struct TrendsView: View {
                 // the sentence and the tap read-out, not drawn: a second bar
                 // behind the first read as an outline. The 10–20 band is a
                 // muscle's number, not a lift's: it is on the Volume tab.
-                // The x value is binned by week so each bar has a band to be a
-                // ratio of: on a bare date axis there is no band and a ratio
-                // width is nothing, which drew no bars at all.
+                // Each bar spans the middle of its own Monday-to-Sunday week,
+                // from the dates themselves: Charts' .weekOfYear bins start on
+                // the locale's first weekday — Sunday in the US — so a bar
+                // straddled two of the model's weeks and a tap on its left
+                // edge picked the week before.
                 Chart {
                     ForEach(dose.weeks) { week in
-                        BarMark(x: .value("Week", week.start, unit: .weekOfYear),
-                                y: .value("Lift sets", Double(week.liftSets)),
-                                width: .ratio(0.6))
+                        let bar = weekBar(week.start)
+                        BarMark(xStart: .value("Week", bar.start),
+                                xEnd: .value("Week", bar.end),
+                                y: .value("Lift sets", Double(week.liftSets)))
                             .foregroundStyle(Theme.accent)
                             .cornerRadius(3)
                             .opacity(pickedWeek == nil || pickedWeek?.start == week.start ? 1 : 0.5)
@@ -521,7 +535,7 @@ struct TrendsView: View {
                         // the bar and never dropped for being near the top;
                         // the domain leaves room for it.
                         if week.liftSets > 0 {
-                            PointMark(x: .value("Week", week.start, unit: .weekOfYear),
+                            PointMark(x: .value("Week", bar.mid),
                                       y: .value("Top", Double(week.liftSets)))
                                 .symbolSize(0)
                                 .annotation(position: .top, spacing: 2,
@@ -534,12 +548,17 @@ struct TrendsView: View {
                     }
                 }
                 .chartYScale(domain: 0...top)
-                // A little air at both ends so the first and last bars don't
-                // touch the frame; labels under their bars, not at their edges.
-                .chartXScale(range: .plotDimension(padding: 6))
+                // The weeks end to end, a little air at both ends so the first
+                // and last bars don't touch the frame.
+                .chartXScale(domain: weeksDomain(dose.weeks), range: .plotDimension(padding: 6))
+                // Every other week, labelled with its Monday under its bar.
                 .chartXAxis {
-                    AxisMarks(values: .stride(by: .weekOfYear, count: 2)) {
-                        AxisValueLabel(format: .dateTime.day().month(.abbreviated), centered: true)
+                    AxisMarks(values: weekLabels(dose.weeks)) { value in
+                        if let mid = value.as(Date.self) {
+                            AxisValueLabel {
+                                Text(weekSpan(mid).start, format: .dateTime.day().month(.abbreviated))
+                            }
+                        }
                     }
                 }
                 .chartYAxis {
@@ -582,7 +601,7 @@ struct TrendsView: View {
                     // The advice as a session: the last one with the one
                     // change the verdict asks for, straight into the Log.
                     HStack(spacing: 8) {
-                        if let step = dose.nextStep(in: store.sessions) {
+                        if let step = figures.nextStep {
                             Button {
                                 store.requestLog([step.entry])
                             } label: {
@@ -605,7 +624,7 @@ struct TrendsView: View {
                         .buttonStyle(.bordered)
                         .controlSize(.small)
                     }
-                    if let step = dose.nextStep(in: store.sessions) {
+                    if let step = figures.nextStep {
                         Text("next: " + step.entry.sets.map(\.token).joined(separator: "  "))
                             .font(.system(.caption2, design: .monospaced))
                             .foregroundStyle(.tertiary)
@@ -681,10 +700,48 @@ struct TrendsView: View {
         }
     }
 
-    /// The week the finger is on, from the dose card's own weeks.
+    /// The week the finger is on, from the dose card's own weeks, by the
+    /// calendar: a week across a clock change is not 7 × 86,400 seconds.
     private var pickedWeek: DoseResponse.Week? {
         guard let weekScrub, let dose = figures.dose else { return nil }
-        return dose.weeks.first { weekScrub >= $0.start && weekScrub < $0.start.addingTimeInterval(7 * 86_400) }
+        return dose.weeks.first { week in
+            let span = weekSpan(week.start)
+            return weekScrub >= span.start && weekScrub < span.end
+        }
+    }
+
+    /// Monday to the next Monday — the model's week, whatever the locale
+    /// calls the first day. Any date in a week gives that week.
+    private func weekSpan(_ date: Date) -> DateInterval {
+        let calendar = Calendar.current
+        let day = calendar.startOfDay(for: date)
+        // Calendar weekdays run Sunday = 1 … Saturday = 7; a gym week starts Monday.
+        let back = (calendar.component(.weekday, from: day) + 5) % 7
+        let monday = calendar.date(byAdding: .day, value: -back, to: day) ?? day
+        let next = calendar.date(byAdding: .day, value: 7, to: monday) ?? monday.addingTimeInterval(7 * 86_400)
+        return DateInterval(start: monday, end: next)
+    }
+
+    /// A bar over the middle six tenths of its week, and the middle for the
+    /// count over it.
+    private func weekBar(_ start: Date) -> (start: Date, end: Date, mid: Date) {
+        let span = weekSpan(start)
+        return (span.start.addingTimeInterval(span.duration * 0.2),
+                span.start.addingTimeInterval(span.duration * 0.8),
+                span.start.addingTimeInterval(span.duration * 0.5))
+    }
+
+    private func weeksDomain(_ weeks: [DoseResponse.Week]) -> ClosedRange<Date> {
+        guard let first = weeks.first, let last = weeks.last else { return Date()...Date() }
+        return weekSpan(first.start).start...weekSpan(last.start).end
+    }
+
+    /// The middle of every other week, newest included, for the axis labels.
+    private func weekLabels(_ weeks: [DoseResponse.Week]) -> [Date] {
+        weeks.reversed().enumerated().filter { $0.offset % 2 == 0 }.map { item in
+            let span = weekSpan(item.element.start)
+            return span.start.addingTimeInterval(span.duration / 2)
+        }
     }
 
     /// "week of 8 Sep · 9 bench press sets · 14 chest in all · best 100 kg"
@@ -707,7 +764,7 @@ struct TrendsView: View {
         let weeks = figures.weeks
         // A Monday with nothing logged yet shows the week just finished — and
         // compares it with the four before it, not with itself.
-        let pick = weekToShow(weeks) { $0.sessions == 0 }
+        let pick = weekToShow(weeks)
         let showingThisWeek = pick.isThisWeek
         let featured = pick.shown
         let lastFour = pick.previous
@@ -747,7 +804,7 @@ struct TrendsView: View {
                     }
                     Spacer()
                     VStack(alignment: .trailing, spacing: 2) {
-                        Text("previous 4 weeks").font(.caption2).foregroundStyle(.tertiary)
+                        Text(previousLabel(lastFour.count)).font(.caption2).foregroundStyle(.tertiary)
                         Text(String(format: "%.1f / week", perWeek))
                             .font(.subheadline.weight(.bold))
                             .monospacedDigit()
@@ -768,7 +825,7 @@ struct TrendsView: View {
     /// done, not a column of dashes.
     private var musclesCard: some View {
         let weekly = figures.weekly
-        let pick = weekToShow(weekly) { $0.values.reduce(0, +) == 0 }
+        let pick = weekToShow(weekly)
         let thisWeekHasSets = pick.isThisWeek
         let shown = pick.shown ?? [:]
         let previous = pick.previous
@@ -801,7 +858,7 @@ struct TrendsView: View {
                     }
                     HStack(spacing: 14) {
                         legendSwatch(Theme.accent.opacity(0.14), "\(Int(DoseResponse.band.lowerBound))–\(Int(DoseResponse.band.upperBound)) sets a week")
-                        legendSwatch(Color.primary.opacity(0.55), "4-week average", thin: true)
+                        legendSwatch(Color.primary.opacity(0.55), "\(max(1, previous.count))-week average", thin: true)
                     }
                     .padding(.top, 2)
                 }
@@ -822,14 +879,14 @@ struct TrendsView: View {
     /// four weeks before the one shown. A split bar and a verdict: even, or
     /// which side is short.
     private var balanceCard: some View {
-        let pick = weekToShow(figures.weekly) { $0.values.reduce(0, +) == 0 }
+        let pick = weekToShow(figures.balance)
         let pairs = Balance.pairs(over: pick.previous)
         return Panel {
             VStack(alignment: .leading, spacing: 12) {
                 HStack(alignment: .firstTextBaseline) {
                     Text("balance").font(.caption).foregroundStyle(.secondary)
                     Spacer()
-                    Text("previous 4 weeks, sets a week").font(.caption2).foregroundStyle(.tertiary)
+                    Text(previousLabel(pick.previous.count) + ", sets a week").font(.caption2).foregroundStyle(.tertiary)
                 }
                 if pairs.isEmpty {
                     Text("A few weeks of sets per muscle first.").font(.footnote).foregroundStyle(.secondary)
@@ -872,15 +929,25 @@ struct TrendsView: View {
         }
     }
 
-    /// This week while it has anything in it, else last week — and the four
-    /// weeks before whichever is shown, never including it. Both Volume cards
-    /// make this choice, and they have to make it the same way.
-    private func weekToShow<T>(_ weeks: [T], isEmpty: (T) -> Bool) -> (shown: T?, previous: [T], isThisWeek: Bool) {
+    /// This week once a session is logged in it, else last week — and up to
+    /// four weeks before whichever is shown, never including it, nor any week
+    /// before the first session: a three-week-old log is averaged over what
+    /// it has, not over four. All three Volume cards make this choice, and
+    /// they have to make it the same way, so it is made from the training
+    /// days for all of them: a week of only unassigned lifts is still this
+    /// week. `weeks` ends on this week, like every array the cards draw.
+    private func weekToShow<T>(_ weeks: [T]) -> (shown: T?, previous: [T], isThisWeek: Bool) {
         guard let last = weeks.last else { return (nil, [], true) }
-        let thisWeek = !isEmpty(last)
+        let thisWeek = (figures.weeks.last?.sessions ?? 0) > 0
         let shown = thisWeek ? last : weeks.dropLast().last
-        let prior = thisWeek ? weeks.dropLast() : weeks.dropLast(2)
+        let covered = weeks.suffix(figures.weeksCovered)
+        let prior = thisWeek ? covered.dropLast() : covered.dropLast(2)
         return (shown, Array(prior.suffix(4)), thisWeek)
+    }
+
+    /// "previous 4 weeks", or as many as a young log has.
+    private func previousLabel(_ count: Int) -> String {
+        count <= 1 ? "previous week" : "previous \(count) weeks"
     }
 
     private func avg(_ group: MuscleGroup, in weeks: [MuscleMap.Credits]) -> Double {
@@ -992,7 +1059,13 @@ struct TrendsView: View {
         var f = Figures()
         f.exercises = knownLifts()
         f.weeks = Analytics.weekGrid(weeks: 26, in: store.sessions)
+        // Day keys sort as dates; a first session before the grid covers it all.
+        if let first = store.sessions.map(\.dateString).min() {
+            let start = f.weeks.firstIndex { $0.days.contains { ($0?.key ?? "") >= first } } ?? f.weeks.count
+            f.weeksCovered = f.weeks.count - start
+        }
         f.weekly = muscleMap.weeklySets(weeks: 6, in: store.sessions)
+        f.balance = Balance.weeklySets(weeks: 6, in: store.sessions, map: muscleMap)
         f.unmapped = muscleMap.unmapped(in: store.sessions)
         f.all = DoseResponse.all(for: f.exercises, in: store.sessions, map: muscleMap)
         if !exercise.isEmpty {
@@ -1007,15 +1080,16 @@ struct TrendsView: View {
             f.recent = Analytics.change(f.series, sinceDays: 21)
             f.allTime = Analytics.change(f.series)
             // The target is judged on its own number — top set, estimated
-            // 1RM, or reps — whatever metric the chart is showing.
-            let canonical = MuscleMap.canonical(exercise)
-            let repsOnly = f.metrics == [.maxReps]
-            if let target = store.targets.first(where: { $0.lift == canonical && $0.isReps == repsOnly }) {
+            // 1RM, added load or reps — whatever metric the chart is showing.
+            f.bodyweight = Analytics.isBodyweight(exercise, in: store.sessions)
+            if let target = Targets.target(for: exercise, in: store.targets, sessions: store.sessions) {
                 f.target = target
                 let line = Analytics.series(exercise, metric: target.kind.metric, in: store.sessions)
                 f.projection = Analytics.projection(line, to: target.value)
             }
-            f.dose = DoseResponse.make(for: exercise, in: store.sessions, map: muscleMap)
+            // Already read with every other lift; reading it again walked the log twice.
+            f.dose = f.all[exercise] ?? f.all.first { Analytics.matches($0.key, exercise) }?.value
+            f.nextStep = f.dose?.nextStep(in: store.sessions)
         }
         figures = f
     }
@@ -1102,7 +1176,11 @@ private struct TargetSheet: View {
     @EnvironmentObject var store: Store
     @Environment(\.dismiss) private var dismiss
     let lift: String
-    let repsOnly: Bool
+    /// A bodyweight lift is offered reps and added load; a weighted one, a
+    /// top set and an estimated max.
+    let bodyweight: Bool
+    /// The kind picked when the sheet opens.
+    let initial: Target.Kind
     let sessions: [Session]
 
     @State private var kind: Target.Kind = .topSet
@@ -1121,13 +1199,16 @@ private struct TargetSheet: View {
         NavigationStack {
             Form {
                 Section {
-                    if !repsOnly {
-                        Picker("Number", selection: $kind) {
+                    Picker("Number", selection: $kind) {
+                        if bodyweight {
+                            Text("reps").tag(Target.Kind.reps)
+                            Text("added load").tag(Target.Kind.addedLoad)
+                        } else {
                             Text("top set").tag(Target.Kind.topSet)
                             Text("est. 1RM").tag(Target.Kind.oneRepMax)
                         }
-                        .pickerStyle(.segmented)
                     }
+                    .pickerStyle(.segmented)
                     HStack {
                         TextField(isReps ? "reps" : "kg", text: $valueText)
                             .keyboardType(isReps ? .numberPad : .decimalPad)
@@ -1142,7 +1223,7 @@ private struct TargetSheet: View {
                     }
                 }
                 .listRowBackground(Rectangle().fill(.regularMaterial))
-                .onAppear { if repsOnly { kind = .reps } }
+                .onAppear { kind = initial }
                 Section {
                     Toggle("By a date", isOn: $hasDate)
                     if hasDate {

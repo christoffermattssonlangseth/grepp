@@ -45,7 +45,7 @@ final class AnalyticsTests: XCTestCase {
         XCTAssertNil(records["2026-08-01"], "the first day of a lift is a start, not a record")
         XCTAssertEqual(records["2026-08-08"]?["squat"], .reps, "one more rep at the same load")
         XCTAssertEqual(records["2026-08-15"]?["squat"], .load, "heavier wins over the 90x8 rep record the same day")
-        XCTAssertNil(records["2026-08-22"]?["squat"], "105 is under 110 and 105x5 has no history to beat")
+        XCTAssertEqual(records["2026-08-22"]?["squat"], .reps, "105x5 beats 100x6's load at five reps, and nothing that heavy went five")
         XCTAssertNil(records["2026-08-22"]?["bench-press"], "a lift's first day")
     }
 
@@ -66,6 +66,19 @@ final class AnalyticsTests: XCTestCase {
         XCTAssertEqual(Analytics.record(for: WorkSet(weight: 100, added: nil, reps: 6), exercise: "squat", in: squat100), .reps)
         XCTAssertNil(Analytics.record(for: WorkSet(weight: 100, added: nil, reps: 5), exercise: "squat", in: squat100),
                      "matching isn't beating")
+    }
+
+    func testMoreRepsThanAnythingAsHeavyIsARepRecordBetweenLoads() {
+        let history = [session("2026-08-01", "squat", [WorkSet(weight: 100, added: nil, reps: 5),
+                                                       WorkSet(weight: 105, added: nil, reps: 1)])]
+        XCTAssertEqual(Analytics.record(for: WorkSet(weight: 102.5, added: nil, reps: 5), exercise: "squat", in: history), .reps,
+                       "nothing at 102.5 or heavier has gone five")
+        XCTAssertNil(Analytics.record(for: WorkSet(weight: 102.5, added: nil, reps: 1), exercise: "squat", in: history),
+                     "105x1 already beats it")
+        XCTAssertNil(Analytics.record(for: WorkSet(weight: 102.5, added: nil, reps: 4), exercise: "squat", in: history),
+                     "it beats no earlier set: 100x5 has more reps")
+        let days = Analytics.records(in: history + [session("2026-08-08", "squat", [WorkSet(weight: 102.5, added: nil, reps: 5)])])
+        XCTAssertEqual(days["2026-08-08"]?["squat"], .reps, "the History badge reads it the same way")
     }
 
     func testSetsLandedTodayCountAsHistory() {

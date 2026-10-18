@@ -21,6 +21,10 @@ struct DoseResponse: Equatable {
         /// The week's best for the lift's own metric (top set, reps…); nil when
         /// the lift wasn't done that week.
         let best: Double?
+        /// A load or rep record that week, judged within the window the way
+        /// `Analytics.records` judges one: 80x5 to 80x8 at the same load is
+        /// progress the top set alone doesn't show.
+        var record: Bool = false
     }
 
     enum Verdict: Equatable {
@@ -92,11 +96,13 @@ struct DoseResponse: Equatable {
     }
 
     /// The verdict in a few characters, for a row in a list: what it moved
-    /// by, or how long it has stood.
+    /// by, or how long it has stood. Progress on reps at the same load moves
+    /// no number the metric shows, so it says so instead.
     var short: String {
         switch verdict {
         case .tooEarly: return "too early"
-        case .progressing(let delta, _, _): return "+\(WorkSet.formatWeight(delta)) \(metric.unit)"
+        case .progressing(let delta, _, _):
+            return delta > 0 ? "+\(WorkSet.formatWeight(delta)) \(metric.unit)" : "more reps"
         case .stalledLow(let weeks, _, _), .stalledMid(let weeks, _, _), .stalledHigh(let weeks, _, _):
             return "flat \(weeks) \(weeks == 1 ? "week" : "weeks")"
         }
@@ -105,15 +111,37 @@ struct DoseResponse: Equatable {
     /// Every lift in the log read at once, for a list that colours each one.
     /// Lifts whose muscle isn't mapped, or that haven't been done in the
     /// window, are left out: nothing to say is not a state.
+    /// The weeks, the muscles' sets and the records are the same for every
+    /// lift, so they are worked out once here, not once a lift.
     static func all(for exercises: [String], in sessions: [Session], map: MuscleMap,
                     endingOn today: Date = Date(), calendar: Calendar = .current) -> [String: DoseResponse] {
+        let shared = Shared(sessions: sessions, map: map, weeks: 8, endingOn: today, calendar: calendar)
         var out: [String: DoseResponse] = [:]
         for exercise in exercises {
-            if let dose = make(for: exercise, in: sessions, map: map, endingOn: today, calendar: calendar) {
+            if let dose = make(for: exercise, in: sessions, map: map, endingOn: today, shared: shared) {
                 out[exercise] = dose
             }
         }
         return out
+    }
+
+    /// What every lift's reading is built on: the week grid, each week's sets
+    /// per muscle, the log by day, and the window's record days.
+    private struct Shared {
+        let grid: [Analytics.TrainingWeek]
+        let dose: [MuscleMap.Credits]
+        let sessionsByDay: [String: [Session]]
+        let records: [String: [String: Analytics.Record]]
+
+        init(sessions: [Session], map: MuscleMap, weeks count: Int, endingOn today: Date, calendar: Calendar) {
+            grid = Analytics.weekGrid(weeks: count, endingOn: today, calendar: calendar, in: sessions)
+            dose = map.weeklySets(weeks: count, endingOn: today, calendar: calendar, in: sessions)
+            sessionsByDay = Dictionary(grouping: sessions, by: \.dateString)
+            // Records within the window: a lift coming back after a layoff is
+            // climbing, whatever it lifted a year ago.
+            let days = Set(grid.flatMap { $0.days.compactMap { $0?.key } })
+            records = Analytics.records(in: sessions.filter { days.contains($0.dateString) })
+        }
     }
 
     /// The band a programme usually aims for, in hard sets a week. One
@@ -125,14 +153,22 @@ struct DoseResponse: Equatable {
     static func make(for exercise: String, in sessions: [Session], map: MuscleMap,
                      weeks count: Int = 8, endingOn today: Date = Date(),
                      calendar: Calendar = .current) -> DoseResponse? {
+        guard map.share(for: exercise)?.primary != nil else { return nil }
+        let shared = Shared(sessions: sessions, map: map, weeks: count, endingOn: today, calendar: calendar)
+        return make(for: exercise, in: sessions, map: map, endingOn: today, shared: shared)
+    }
+
+    private static func make(for exercise: String, in sessions: [Session], map: MuscleMap,
+                             endingOn today: Date, shared: Shared) -> DoseResponse? {
         guard let muscle = map.share(for: exercise)?.primary else { return nil }
         let metric = Analytics.availableMetrics(exercise, in: sessions).first ?? .topSet
-        let grid = Analytics.weekGrid(weeks: count, endingOn: today, calendar: calendar, in: sessions)
-        let dose = map.weeklySets(weeks: count, endingOn: today, calendar: calendar, in: sessions)
+        let grid = shared.grid
+        let dose = shared.dose
         let series = Analytics.series(exercise, metric: metric, in: sessions, through: today)
         let byDay = Dictionary(grouping: series) { Session.dateFormatter.string(from: $0.date) }
+        let lift = MuscleMap.canonical(exercise)
 
-        let sessionsByDay = Dictionary(grouping: sessions, by: \.dateString)
+        let sessionsByDay = shared.sessionsByDay
         // Plain loops, in steps: one chained expression here sent the type
         // checker off for a walk it didn't come back from.
         var weeks: [Week] = []
@@ -141,7 +177,9 @@ struct DoseResponse: Equatable {
             var bests: [Double] = []
             var own = 0
             var days = 0
+            var record = false
             for key in keys {
+                if shared.records[key]?[lift] != nil { record = true }
                 for point in byDay[key] ?? [] { bests.append(point.value) }
                 var doneToday = false
                 for session in sessionsByDay[key] ?? [] {
@@ -153,7 +191,7 @@ struct DoseResponse: Equatable {
                 if doneToday { days += 1 }
             }
             let muscleSets: Double = dose[i][muscle] ?? 0
-            weeks.append(Week(start: week.start, liftSets: own, liftSessions: days, sets: muscleSets, best: bests.max()))
+            weeks.append(Week(start: week.start, liftSets: own, liftSessions: days, sets: muscleSets, best: bests.max(), record: record))
         }
         guard weeks.contains(where: { $0.best != nil }) else { return nil }
         return DoseResponse(exercise: exercise, muscle: muscle, metric: metric,
@@ -161,9 +199,11 @@ struct DoseResponse: Equatable {
     }
 
     /// Progressing if the best of the last two weeks the lift was done beats
-    /// everything before them — one bad session after a record is not a
-    /// stall. Otherwise flat for as many calendar weeks as it's been since
-    /// the standing best was first hit, counted to the last week the lift
+    /// everything before them, or either of them holds a record — more reps
+    /// at a load is progress too, and how the reverse pyramid moves. One bad
+    /// session after a record is not a stall. Otherwise flat for as many
+    /// calendar weeks as it's been since the standing best was first hit or
+    /// the last record, whichever is later, counted to the last week the lift
     /// was done. The dose is the average of the last four completed weeks it
     /// was done in; the week in progress is left out of it.
     static func verdict(for weeks: [Week]) -> Verdict {
@@ -185,7 +225,8 @@ struct DoseResponse: Equatable {
 
         let latest = done.suffix(2).compactMap(\.best).max() ?? 0
         let earlier = done.dropLast(2).compactMap(\.best)
-        if let previousBest = earlier.max(), latest > previousBest {
+        let beatsEarlier = earlier.max().map { latest > $0 } ?? false
+        if beatsEarlier || done.suffix(2).contains(where: \.record) {
             return .progressing(delta: latest - (earlier.first ?? latest), liftSets: own, sets: sets)
         }
         // Calendar weeks from the week the standing best was first hit to the
@@ -193,8 +234,9 @@ struct DoseResponse: Equatable {
         // hasn't moved in three sessions has been flat for six weeks, not two.
         let standing = done.compactMap(\.best).max() ?? 0
         let bestIndex = weeks.firstIndex { ($0.best ?? -.infinity) >= standing } ?? 0
-        let lastDone = weeks.lastIndex { $0.best != nil } ?? bestIndex
-        let stalled = max(0, lastDone - bestIndex)
+        let since = max(bestIndex, weeks.lastIndex(where: \.record) ?? bestIndex)
+        let lastDone = weeks.lastIndex { $0.best != nil } ?? since
+        let stalled = max(0, lastDone - since)
         if sets < band.lowerBound { return .stalledLow(weeks: stalled, liftSets: own, sets: sets) }
         if sets > band.upperBound { return .stalledHigh(weeks: stalled, liftSets: own, sets: sets) }
         return .stalledMid(weeks: stalled, liftSets: own, sets: sets)
@@ -223,7 +265,8 @@ struct DoseResponse: Equatable {
         case .tooEarly:
             return "Too few weeks of \(lift) to read a trend yet."
         case .progressing(let delta, let own, let all):
-            verdictText = "Progressing: +\(WorkSet.formatWeight(delta)) \(metric.unit) over the window at \(dose(own, all))."
+            let moved = delta > 0 ? "+\(WorkSet.formatWeight(delta)) \(metric.unit)" : "more reps at the same loads"
+            verdictText = "Progressing: \(moved) over the window at \(dose(own, all))."
         case .stalledLow(let weeks, let own, let all):
             verdictText = "\(flat(weeks)) at \(dose(own, all)), under the \(band) band. Volume is a lever: another \(lift) set, or a second day."
         case .stalledMid(let weeks, let own, let all):

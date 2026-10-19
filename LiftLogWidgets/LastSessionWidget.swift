@@ -141,12 +141,12 @@ struct LastSessionView: View {
         return VStack(alignment: .leading, spacing: 1) {
             HStack(spacing: 5) {
                 Barbell(height: 8, color: .primary).widgetAccentable()
-                Text(planned ? "up next" : snapshot.map { relative($0).lowercased() } ?? "grepp")
+                Text(planned ? "up next" : snapshot.map { relative($0) } ?? "grepp")
                     .font(.system(size: 11, weight: .heavy)).tracking(1)
                     .lineLimit(1)
             }
             if lines.isEmpty {
-                Text("Nothing logged yet")
+                Text("nothing logged yet")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
             }
@@ -321,10 +321,10 @@ struct LastSessionView: View {
         VStack(alignment: .leading, spacing: 6) {
             header
             Spacer(minLength: 0)
-            Text("Nothing logged yet")
+            Text("nothing logged yet")
                 .font(.headline)
                 .fontWidth(.condensed)
-            Text("Open Grepp and land a set.")
+            Text("open grepp and land a set.")
                 .font(.caption2)
                 .foregroundStyle(.secondary)
         }
@@ -341,8 +341,8 @@ struct LastSessionView: View {
 
     private func relative(_ snapshot: WidgetSnapshot) -> String {
         switch daysAgo(snapshot) {
-        case .some(let n) where n <= 0: return "Today"
-        case .some(1): return "Yesterday"
+        case .some(let n) where n <= 0: return "today"
+        case .some(1): return "yesterday"
         case .some(let n): return "\(n) days ago"
         case .none: return snapshot.day
         }
@@ -350,6 +350,6 @@ struct LastSessionView: View {
 
     private func dayLabel(_ snapshot: WidgetSnapshot) -> String {
         guard let day = snapshot.date else { return "" }
-        return day.formatted(.dateTime.weekday(.wide).day().month(.abbreviated))
+        return day.formatted(.dateTime.weekday(.wide).day().month(.abbreviated)).lowercased()
     }
 }

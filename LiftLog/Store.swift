@@ -32,7 +32,11 @@ final class Store: ObservableObject {
             if let chosen = Storage(rawValue: storageRaw) { return chosen }
             return owner.isEmpty && repo.isEmpty ? .icloud : .github
         }
-        set { storageRaw = newValue.rawValue; objectWillChange.send() }
+        set {
+            storageRaw = newValue.rawValue
+            objectWillChange.send()
+            reloadFromCache()
+        }
     }
 
     /// Nothing chosen and nothing configured: show the first-run choice.
@@ -244,13 +248,20 @@ final class Store: ObservableObject {
     @Published private(set) var plans: [PlanRecord] = []
 
     init() {
-        pending = loadPending()
         draft = loadDraft()
         plans = loadPlans()
         stravaPosts = defaults.data(forKey: stravaPostsKey)
             .flatMap { try? JSONDecoder().decode([String: Int].self, from: $0) } ?? [:]
         healthWorkouts = defaults.data(forKey: healthWorkoutsKey)
             .flatMap { try? JSONDecoder().decode([String: String].self, from: $0) } ?? [:]
+        reloadFromCache()
+    }
+
+    /// The current backend's queue, brief and log as this phone last had
+    /// them. On launch, and on a storage switch: the queue is per backend,
+    /// and the one in memory must not be replayed into the other.
+    private func reloadFromCache() {
+        pending = loadPending()
         brief = CoachContext.Brief(coaching: defaults.string(forKey: coachingCacheKey) ?? "",
                                    goals: defaults.string(forKey: goalsCacheKey) ?? "",
                                    research: defaults.string(forKey: researchCacheKey) ?? "",
@@ -511,12 +522,18 @@ final class Store: ObservableObject {
     private var loadTask: Task<Void, Never>?
 
     func load() async {
-        if let running = loadTask { await running.value }
+        // A loop, not an if: two callers waiting on the same load both wake,
+        // and only the first may start the next one. Main actor, so nothing
+        // runs between this check and `loadTask` being set below.
+        while let running = loadTask { await running.value }
         guard !isBusy, !needsSetup else { return }   // don't overlap with an in-flight save
-        let task = Task { await performLoad() }
+        // The task clears itself, so every waiter wakes to it gone.
+        let task = Task {
+            await performLoad()
+            loadTask = nil
+        }
         loadTask = task
         await task.value
-        loadTask = nil
     }
 
     /// Can't reach the backend, or iCloud isn't there: the queue and the cache
@@ -733,7 +750,8 @@ final class Store: ObservableObject {
             do {
                 let base = try await push(write)
                 cacheContent(WorkoutParser.serialize(base))
-                pending.removeFirst()
+                // By id: the queue may have changed during the push.
+                pending.removeAll { $0.id == write.id }
                 savePending()
             } catch let error where isOffline(error) {
                 return true   // still offline — leave the queue intact

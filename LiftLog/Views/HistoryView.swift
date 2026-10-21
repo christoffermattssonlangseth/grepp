@@ -146,8 +146,6 @@ struct HistoryView: View {
                 }
             }
         }
-        // Grouped, not inset: square day panels edge to edge, like a printout.
-        .listStyle(.grouped)
         .searchable(text: $query, prompt: "lift")
     }
 
@@ -272,15 +270,14 @@ struct HistoryView: View {
                     } label: {
                         HStack(spacing: 4) {
                             Text(dayTitle(session))
-                                .font(.headline.weight(.heavy))
-                                .foregroundStyle(.white)
+                                .font(Theme.serif(.title3, weight: .medium))
+                                .foregroundStyle(.primary)
                             Image(systemName: "chevron.up.chevron.down")
                                 .font(.caption2.weight(.bold))
                                 .foregroundStyle(.tertiary)
                         }
                         .textCase(nil)
-                        .padding(.horizontal, 8).padding(.vertical, 3)
-                        .background(Theme.surface, in: Rectangle())
+                        .padding(.vertical, 3)
                         .fixedSize()
                     }
                     .buttonStyle(.plain)

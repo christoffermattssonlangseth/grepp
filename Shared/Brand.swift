@@ -6,13 +6,12 @@ import SwiftUI
 /// extension as well, and the rest of `Theme` leans on UIKit things (the
 /// keyboard dismisser) that don't exist there. `Theme.accent` is this value.
 enum Brand {
-    /// Safety orange: the one colour on a black control panel, kept for what
-    /// is live — the field being typed in, the set under way, the rest timer.
-    /// 7.3:1 on black, and black on it reads 7.3:1 too.
-    static let accent = Color(red: 1.0, green: 0.420, blue: 0.102)   // #FF6B1A
+    /// Terracotta: warm, calm, and quiet beside the ivory and charcoal grounds.
+    /// Deep enough that white text on it reads 4.3:1.
+    static let accent = Color(red: 0.776, green: 0.380, blue: 0.247)   // #C6613F
 
     /// Anything drawn *on* the accent.
-    static let onAccent = Color.black
+    static let onAccent = Color.white
 
     /// The old steel cyan, kept for the home widget's "steel" look only.
     static let steel = Color(red: 0.122, green: 0.471, blue: 0.600)   // #1F7899

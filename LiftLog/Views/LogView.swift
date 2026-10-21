@@ -28,10 +28,19 @@ struct LogView: View {
     /// Something wants the input area — a prescription, a lift opened to edit
     /// — while sets are landed in it. Held until the lifter says which wins.
     private enum Replace: Identifiable {
-        case prescription, edit(ExerciseEntry, Date, LineRef?)
-        var id: String { if case .edit(let ex, _, _) = self { return "edit-\(ex.name)" } else { return "rx" } }
+        case prescription, edit(ExerciseEntry, Date, LineRef?), pick(String)
+        var id: String {
+            switch self {
+            case .prescription: "rx"
+            case .edit(let ex, _, _): "edit-\(ex.name)"
+            case .pick(let name): "pick-\(name)"
+            }
+        }
     }
     @State private var pendingReplace: Replace?
+    /// Another lift picked while sets are landed: asked about once the
+    /// picker has gone, since a dialog can't rise over a closing sheet.
+    @State private var heldPick: String?
     @Environment(\.scenePhase) private var scenePhase
     @State private var name = ""
     @State private var sets: [WorkSet] = []
@@ -163,23 +172,15 @@ struct LogView: View {
             .animation(.snappy, value: restStart != nil)
             .background(Theme.backgroundView)
             .navigationTitle("log")
-            .sheet(isPresented: $showingPicker) {
+            .sheet(isPresented: $showingPicker, onDismiss: {
+                if let picked = heldPick { heldPick = nil; pendingReplace = .pick(picked) }
+            }) {
                 ExercisePickerView(history: store.knownExercises) { picked in
-                    // Switching exercise starts a fresh set list for the new
-                    // movement — or, for a lift already logged today, its sets as
-                    // they stand: finishing updates that line, never replaces it blind.
-                    if picked.caseInsensitiveCompare(name) != .orderedSame {
-                        let done = loggedToday(picked)
-                        editing = lineRef(done)
-                        sets = done?.sets ?? []
-                        if let first = done?.sets.first { isBodyweight = first.isBodyweight }
-                        plan = nil
-                        restStart = nil
-                        // A day opened for one lift was chosen for that lift;
-                        // another lift has to be confirmed for it again.
-                        dateChosen = false
+                    if !sets.isEmpty, picked.caseInsensitiveCompare(name) != .orderedSame {
+                        heldPick = picked
+                    } else {
+                        switchLift(to: picked)
                     }
-                    name = picked
                 }
                 .navigationTransition(.zoom(sourceID: "lift", in: pickerZoom))
             }
@@ -941,8 +942,10 @@ struct LogView: View {
                 .monospacedDigit()
                 .minimumScaleFactor(0.5)
                 .lineLimit(1)
-                .animation(.snappy(duration: 0.35), value: text.wrappedValue)
-                .animation(.snappy(duration: 0.35), value: hint)
+                // Only the readout rolls. While typing, the field's width
+                // must keep up with each key, or digits clip behind it.
+                .animation(focused ? nil : .smooth(duration: 0.6), value: text.wrappedValue)
+                .animation(focused ? nil : .smooth(duration: 0.6), value: hint)
                 // As wide as the number, so the unit sits right after it;
                 // a tap anywhere in the window still focuses it.
                 .fixedSize(horizontal: true, vertical: false)
@@ -963,7 +966,7 @@ struct LogView: View {
                 .strokeBorder(Theme.accent, lineWidth: 1.5)
                 .opacity(focused ? 1 : 0)
         )
-        .animation(.snappy(duration: 0.2), value: focused)
+        .animation(.smooth(duration: 0.3), value: focused)
         .contentShape(Rectangle())
         .onTapGesture { focus = focusValue }
     }
@@ -993,13 +996,13 @@ struct LogView: View {
             dayCheck = .set(set)
             return
         }
-        withAnimation(.spring(response: 0.38, dampingFraction: 0.62)) {
+        withAnimation(.spring(response: 0.6, dampingFraction: 0.65)) {
             sets.append(set)
             flashedSet = set.id
         }
         Task {
-            try? await Task.sleep(for: .milliseconds(650))
-            withAnimation(.easeOut(duration: 0.5)) {
+            try? await Task.sleep(for: .milliseconds(1000))
+            withAnimation(.easeOut(duration: 0.8)) {
                 if flashedSet == set.id { flashedSet = nil }
             }
         }
@@ -1106,10 +1109,12 @@ struct LogView: View {
         .accessibilityValue("\(PlateMath.label(effectiveBar)) kg")
     }
 
-    /// Open a logged lift for editing — unless sets for another lift are
-    /// landed and unfinished, in which case ask before they go.
+    /// Open a logged lift for editing — unless sets are landed and
+    /// unfinished, in which case ask before they go. The same lift counts:
+    /// last week's bench opened over today's would take today's sets with it.
+    /// Only the line already in hand opens without asking.
     private func edit(_ ex: ExerciseEntry, on day: Date, line: LineRef?) {
-        if !sets.isEmpty, ex.name.caseInsensitiveCompare(name) != .orderedSame {
+        if !sets.isEmpty, line == nil || line != editing {
             pendingReplace = .edit(ex, day, line)
             return
         }
@@ -1124,9 +1129,30 @@ struct LogView: View {
         editing = line
     }
 
+    /// Switching exercise starts a fresh set list for the new movement — or,
+    /// for a lift already logged today, its sets as they stand: finishing
+    /// updates that line, never replaces it blind.
+    private func switchLift(to picked: String) {
+        if picked.caseInsensitiveCompare(name) != .orderedSame {
+            let done = loggedToday(picked)
+            editing = lineRef(done)
+            sets = done?.sets ?? []
+            if let first = done?.sets.first { isBodyweight = first.isBodyweight }
+            plan = nil
+            restStart = nil
+            // A day opened for one lift was chosen for that lift;
+            // another lift has to be confirmed for it again.
+            dateChosen = false
+        }
+        name = picked
+    }
+
     /// The lifter chose: what was held goes ahead, over the landed sets.
     private func resume(_ replace: Replace) {
         switch replace {
+        case .pick(let picked):
+            sets = []
+            switchLift(to: picked)
         case .prescription:
             sets = []
             applyPrescription()
@@ -1199,7 +1225,9 @@ struct LogView: View {
                 plan = nil
                 editing = nil
                 restStart = nil
-                refreshDay()
+                // No refreshDay here: idle and unchosen, it would put the
+                // date back to today under a backfill. The day check asks
+                // at the next lift's first set instead.
             }
         }
     }

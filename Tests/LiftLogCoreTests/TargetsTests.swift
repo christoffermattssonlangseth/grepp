@@ -172,4 +172,32 @@ final class TargetsTests: XCTestCase {
         XCTAssertNil(met.date)
         XCTAssertNil(Analytics.projection([flat[0]], to: 120, now: day("2026-09-21"), calendar: utc))
     }
+
+    func testATargetOfTheWrongKindDoesNotHideOneThatFits() {
+        // A reps line first, then the load target the app appended.
+        let goals = "- bench press 12 reps\n- bench press 100 kg by 1 Dec 2026"
+        let targets = Targets.parse(goals, lifts: ["bench-press"], today: day("2026-09-21"), calendar: utc)
+        let bench = [Session(date: day("2026-09-01"), exercises: [
+            ExerciseEntry(name: "bench-press", sets: [WorkSet(weight: 80, added: nil, reps: 5)])])]
+        let shown = Targets.target(for: "bench-press", in: targets, sessions: bench)
+        XCTAssertEqual(shown?.kind, .topSet)
+        XCTAssertEqual(shown?.value, 100)
+    }
+
+    func testAnOldSeriesHasNoPaceAndNoDateInThePast() {
+        let old = [("2026-02-02", 100.0), ("2026-02-16", 105.0)]
+            .map { TrendPoint(date: day($0.0), value: $0.1) }
+        let p = Analytics.projection(old, to: 120, now: day("2026-09-21"), calendar: utc)!
+        XCTAssertNil(p.date)
+        XCTAssertNil(p.perDay)
+        XCTAssertFalse(p.isMet)
+    }
+
+    func testAMetTargetStaysMetThroughALighterWeek() {
+        let series = [("2026-09-01", 95.0), ("2026-09-08", 100.0), ("2026-09-15", 92.5)]
+            .map { TrendPoint(date: day($0.0), value: $0.1) }
+        let p = Analytics.projection(series, to: 100, now: day("2026-09-21"), calendar: utc)!
+        XCTAssertTrue(p.isMet)
+        XCTAssertEqual(p.current, 92.5)
+    }
 }

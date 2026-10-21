@@ -49,6 +49,14 @@ final class AnalyticsTests: XCTestCase {
         XCTAssertNil(records["2026-08-22"]?["bench-press"], "a lift's first day")
     }
 
+    func testAFailedRepIsNoRecord() {
+        let sessions = [
+            session("2026-08-01", "squat", [WorkSet(weight: 100, added: nil, reps: 5)]),
+            session("2026-08-08", "squat", [WorkSet(weight: 110, added: nil, reps: 0)]),
+        ]
+        XCTAssertNil(Analytics.records(in: sessions)["2026-08-08"], "110x0 was a miss")
+    }
+
     private let squat100 = [Session(date: Session.dateFormatter.date(from: "2026-08-01")!,
                                     exercises: [ExerciseEntry(name: "squat", sets: [WorkSet(weight: 100, added: nil, reps: 5)])])]
 

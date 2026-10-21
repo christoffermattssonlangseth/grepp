@@ -259,7 +259,8 @@ enum Analytics {
             for entry in session.exercises {
                 let key = MuscleMap.canonical(entry.name)
                 var s = standing[key] ?? Standing()
-                for set in entry.sets {
+                // A failed rep (`110x0`) is no record, as it is no point on the chart.
+                for set in entry.sets where set.reps > 0 {
                     let mine = load(of: set)
                     if s.any {
                         var record: Record?
@@ -360,7 +361,7 @@ enum Analytics {
                 row.last = session
                 row.order = i
                 row.lastTokens = (row.lastTokens.isEmpty ? "" : row.lastTokens + " ") + entry.sets.map(\.token).joined(separator: " ")
-                for set in entry.sets {
+                for set in entry.sets where set.reps > 0 {
                     let beats: Bool
                     if let best = row.best {
                         beats = load(of: set) > load(of: best) || (load(of: set) == load(of: best) && set.reps > best.reps)

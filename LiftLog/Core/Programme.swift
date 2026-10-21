@@ -281,7 +281,9 @@ struct Programme: Equatable {
     func adherence(in sessions: [Session], weeks: Int = 4, today: Date = Date(),
                    calendar: Calendar = .current) -> Adherence? {
         guard !isEmpty, weeks > 0 else { return nil }
-        let start = calendar.date(byAdding: .day, value: -7 * weeks, to: calendar.startOfDay(for: today)) ?? today
+        // Today and the days before it: 28 for four weeks, not 29 — the same
+        // weekday four weeks back is the fifth week.
+        let start = calendar.date(byAdding: .day, value: -7 * weeks + 1, to: calendar.startOfDay(for: today)) ?? today
         var daysDone = 0
         var other = 0
         var missed: [String: Int] = [:]

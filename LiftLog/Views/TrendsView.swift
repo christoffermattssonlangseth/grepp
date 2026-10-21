@@ -257,11 +257,15 @@ struct TrendsView: View {
         return last.timeIntervalSince(first) > window
     }
 
-    /// The points in the window on screen, for an axis that follows the scroll.
+    /// The points in the window on screen, for an axis that follows the scroll,
+    /// and one either side: the line runs to them off the edge, and an axis
+    /// fitted without them lets that segment dive under the dates.
     private func visible(_ series: [TrendPoint]) -> [TrendPoint] {
         guard scrolls(series) else { return series }
-        let shown = series.filter { $0.date >= scrollX && $0.date <= scrollX.addingTimeInterval(window) }
-        return shown.count >= 2 ? shown : series
+        let end = scrollX.addingTimeInterval(window)
+        guard let lo = series.firstIndex(where: { $0.date >= scrollX }),
+              let hi = series.lastIndex(where: { $0.date <= end }), lo <= hi, hi > lo else { return series }
+        return Array(series[max(lo - 1, 0)...min(hi + 1, series.count - 1)])
     }
 
     @ViewBuilder
@@ -449,9 +453,9 @@ struct TrendsView: View {
     /// last twelve weeks." / "…14 Nov, past the date asked for."
     private func targetLine(_ target: Target, _ p: Projection?) -> String {
         guard let p else { return "Two sessions of this lift are needed to read a pace." }
-        if p.isMet { return "Met. The log is at or past it." }
+        if p.isMet { return "Met. The log has reached it." }
         guard let date = p.date, let perDay = p.perDay else {
-            return "No pace yet: flat or falling over the last twelve weeks."
+            return "No pace yet: flat, falling or not lifted over the last twelve weeks."
         }
         let unit = target.kind.unit
         let weekly = perDay * 7

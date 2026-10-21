@@ -98,7 +98,7 @@ struct BriefView: View {
                 .font(.caption)
                 .foregroundStyle(.secondary)
         }
-        .glassCard(cornerRadius: 16)
+        .glassCard()
     }
 
     private func card(for file: Store.BriefFile) -> some View {
@@ -116,7 +116,7 @@ struct BriefView: View {
             .scrollContentBackground(.hidden)
             .frame(minHeight: 160)
             .padding(8)
-            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+            .background(Theme.surface, in: RoundedRectangle(cornerRadius: Theme.corner))
             .overlay(alignment: .topLeading) {
                 if draft(file).isEmpty {
                     Text("Nothing here yet — write whatever you'd tell a coach on day one.")
@@ -135,7 +135,7 @@ struct BriefView: View {
                     Label("Let the coach interview me", systemImage: "bubble.left.and.text.bubble.right")
                         .font(.footnote.weight(.semibold))
                 }
-                .buttonStyle(.bordered)
+                .buttonStyle(.panel)
                 .tint(Theme.accent)
                 .confirmationDialog("Start the goals interview?",
                                     isPresented: $confirmingInterview, titleVisibility: .visible) {
@@ -161,7 +161,7 @@ struct BriefView: View {
                     }
                     .padding(.horizontal, 16).padding(.vertical, 6)
                 }
-                .buttonStyle(.borderedProminent)
+                .buttonStyle(.panelProminent)
                 .tint(Theme.accent)
                 .disabled(!isDirty(file) || saving != nil)
             }
@@ -170,7 +170,7 @@ struct BriefView: View {
                 Text(message).font(.caption2).foregroundStyle(Theme.warning)
             }
         }
-        .glassCard(cornerRadius: 16)
+        .glassCard()
     }
 
     private func save(_ file: Store.BriefFile) async {

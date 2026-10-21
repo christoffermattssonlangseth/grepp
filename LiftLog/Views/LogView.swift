@@ -185,10 +185,12 @@ struct LogView: View {
                     // Our own pill, not the system picker's: that one writes
                     // "18 Oct 2026" however it's asked. A tap opens the calendar.
                     Button { pickingDate = true } label: {
-                        Text(pillLabel)
-                            .font(.subheadline.weight(.semibold))
+                        Text("[ \(pillLabel) ]")
+                            .font(.footnote.weight(.semibold))
                             .foregroundStyle(isToday ? Color.primary : Theme.warning)
+                            .pill()
                     }
+                    .buttonStyle(.plain)
                     .accessibilityLabel("Logging for \(dayLabel), change day")
                     .popover(isPresented: $pickingDate) {
                         DatePicker("Day",
@@ -203,6 +205,8 @@ struct LogView: View {
                             .presentationCompactAdaptation(.popover)
                     }
                 }
+                // Our ruled box, not iOS 26's glass bubble round it.
+                .sharedBackgroundVisibility(.hidden)
                 ToolbarItemGroup(placement: .keyboard) {
                     Spacer()
                     Button("Done") { focus = nil }
@@ -402,7 +406,7 @@ struct LogView: View {
                     .font(.system(.footnote, design: .monospaced).weight(.medium))
                     .foregroundStyle(.secondary)
                     .padding(.horizontal, 10).padding(.vertical, 6)
-                    .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                    .background(Theme.surface, in: RoundedRectangle(cornerRadius: Theme.corner))
                 Text("Trained before? The Coach can bring your last few weeks in.")
                     .font(.subheadline)
                 Button {
@@ -411,7 +415,7 @@ struct LogView: View {
                     Label("bring my history in", systemImage: "bubble.left.and.bubble.right")
                         .font(.footnote.weight(.bold))
                 }
-                .buttonStyle(.bordered)
+                .buttonStyle(.panel)
                 .tint(Theme.accent)
             }
         }
@@ -430,11 +434,11 @@ struct LogView: View {
                 dateChosen = false
             }
             .font(.footnote.weight(.bold))
-            .buttonStyle(.bordered)
+            .buttonStyle(.panel)
             .tint(.orange)
         }
         .padding(.horizontal, 12).padding(.vertical, 8)
-        .background(.orange.opacity(0.12), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .background(.orange.opacity(0.12), in: RoundedRectangle(cornerRadius: Theme.corner))
     }
 
     // MARK: - Section label
@@ -485,7 +489,7 @@ struct LogView: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.vertical, 10)
                     .padding(.horizontal, 12)
-                    .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                    .background(Theme.surface, in: RoundedRectangle(cornerRadius: Theme.corner))
                     .overlay(alignment: .leading) {
                         RoundedRectangle(cornerRadius: 2)
                             .fill(Theme.accent)
@@ -520,7 +524,7 @@ struct LogView: View {
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 8)
             }
-            .buttonStyle(.bordered)
+            .buttonStyle(.panel)
             .tint(Theme.strava)
             .disabled(strava.isBusy || todayExercises.isEmpty)
             if let stravaStatus {
@@ -648,9 +652,9 @@ struct LogView: View {
                 .tint(Theme.accent)
                 .disabled(!canAddSet)
                 if canAddSet {
-                    addSetButton.buttonStyle(.glassProminent)
+                    addSetButton.buttonStyle(.panelProminent)
                 } else {
-                    addSetButton.buttonStyle(.bordered)
+                    addSetButton.buttonStyle(.panel)
                 }
 
                 // Muted, secondary control — only relevant for the odd bodyweight lift.
@@ -705,7 +709,8 @@ struct LogView: View {
                         Image(systemName: "arrow.counterclockwise")
                             .font(.subheadline.weight(.bold))
                             .frame(width: 34, height: 34)
-                            .background(.ultraThinMaterial, in: Circle())
+                            .background(Theme.surface, in: Rectangle())
+                            .overlay(Rectangle().strokeBorder(Theme.rule, lineWidth: 1))
                     }
                     .buttonStyle(.plain)
                     .accessibilityLabel("Restart rest")
@@ -714,7 +719,8 @@ struct LogView: View {
                             .font(.caption.weight(.bold))
                             .foregroundStyle(.secondary)
                             .frame(width: 34, height: 34)
-                            .background(.ultraThinMaterial, in: Circle())
+                            .background(Theme.surface, in: Rectangle())
+                            .overlay(Rectangle().strokeBorder(Theme.rule, lineWidth: 1))
                     }
                     .buttonStyle(.plain)
                     .accessibilityLabel("End rest")
@@ -729,13 +735,11 @@ struct LogView: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             // Due, the whole card goes solid accent. That's the "in your face":
             // not a label changing colour but the biggest thing on screen changing.
-            .background(due ? AnyShapeStyle(Theme.accent) : AnyShapeStyle(Material.regularMaterial),
-                        in: RoundedRectangle(cornerRadius: Theme.corner, style: .continuous))
+            .background(due ? AnyShapeStyle(Theme.accent) : AnyShapeStyle(Theme.surface),
+                        in: Rectangle())
             .overlay(
-                RoundedRectangle(cornerRadius: Theme.corner, style: .continuous)
-                    .strokeBorder(.white.opacity(0.18), lineWidth: 0.8)
+                Rectangle().strokeBorder(due ? Theme.accent : Theme.rule, lineWidth: 1)
             )
-            .shadow(color: .black.opacity(due ? 0.22 : 0.12), radius: 12, x: 0, y: 6)
             // A heartbeat while due, driven by the clock's own ticks — nothing
             // repeating forever that has to be babysat.
             .scaleEffect(due && elapsed % 2 == 0 ? 1.015 : 1)
@@ -765,7 +769,7 @@ struct LogView: View {
                 .monospacedDigit()
                 .padding(.horizontal, 10)
                 .frame(height: 34)
-                .background(.ultraThinMaterial, in: Capsule())
+                .background(Theme.surface, in: Rectangle())
         }
         .buttonStyle(.plain)
         .accessibilityLabel("Rest target")
@@ -803,7 +807,8 @@ struct LogView: View {
                             .font(.subheadline.weight(.heavy))
                             .foregroundStyle(Theme.onAccent)
                             .frame(width: 28, height: 28)
-                            .background(Theme.accent, in: Circle())
+                            .background(Theme.accent, in: Rectangle())
+                            .overlay(Rectangle().strokeBorder(Theme.rule, lineWidth: 1))
                         Text(set.loadLabel)
                             .font(.body.weight(.semibold))
                         if let record = record(at: idx) { RecordBadge(record: record) }
@@ -849,7 +854,7 @@ struct LogView: View {
         // Quiet on purpose: it's pressed once a lift, and it sits right under
         // the sets, where a thumb heading for "add set" lands. Add set is the
         // loud one.
-        .buttonStyle(.bordered)
+        .buttonStyle(.panel)
         .tint(Theme.accent)
         .disabled(!canFinish)
     }
@@ -893,37 +898,34 @@ struct LogView: View {
         return sets.count < last.count ? last[sets.count] : last.last
     }
 
-    /// A field drawn like a scale's display: a black window, the number big
-    /// and condensed, its unit beside it. Empty, it shows last time's figure
-    /// faintly instead of a "0" that reads as a value. A typed number gets an
-    /// accent bar underneath, so a glance tells typed from hinted.
+    /// A field drawn like a readout on a control panel: a black window, the
+    /// number big in heavy mono, its unit beside it. Empty, it shows last
+    /// time's figure faintly instead of a "0" that reads as a value. The label
+    /// says which field is live: an orange ● while typing, a dim ○ otherwise.
     private func bigField(title: String, unit: String, text: Binding<String>, hint: String?,
                           keyboard: UIKeyboardType, focusValue: Field) -> some View {
         let focused = focus == focusValue
-        let filled = !text.wrappedValue.isEmpty
         return VStack(alignment: .leading, spacing: 2) {
-            Text(title)
-                .font(.caption.weight(.heavy)).tracking(1)
-                .foregroundStyle(.secondary)
-            HStack(alignment: .firstTextBaseline, spacing: 4) {
+            Text("\(focused ? "●" : "○") \(title)")
+                .font(.caption.weight(.semibold)).tracking(1)
+                .foregroundStyle(focused ? Theme.accent : Theme.dim)
+            HStack(alignment: .firstTextBaseline, spacing: 6) {
                 TextField(text: text, prompt: Text(hint ?? "–").foregroundStyle(.white.opacity(0.25))) {
                     Text(title)
                 }
                 .keyboardType(keyboard)
                 .focused($focus, equals: focusValue)
-                // White in light mode too: the window is black either way.
                 .foregroundStyle(.white)
-                .font(.system(size: min(fieldNumberSize, 64), weight: .heavy))
-                .fontWidth(.condensed)
-                .monospacedDigit()
-                .minimumScaleFactor(0.6)
+                .font(.system(size: min(fieldNumberSize, 56), weight: .heavy, design: .monospaced))
+                .tracking(-3)
+                .minimumScaleFactor(0.5)
                 .lineLimit(1)
                 // As wide as the number, so the unit sits right after it;
                 // a tap anywhere in the window still focuses it.
                 .fixedSize(horizontal: true, vertical: false)
                 Text(unit)
-                    .font(.subheadline.weight(.bold))
-                    .foregroundStyle(.secondary)
+                    .font(.caption)
+                    .foregroundStyle(Theme.dim)
                     .fixedSize()
                 Spacer(minLength: 0)
             }
@@ -931,15 +933,9 @@ struct LogView: View {
         .padding(.horizontal, 12)
         .frame(maxWidth: .infinity, alignment: .leading)
         .frame(height: min(fieldHeight, Theme.bigFieldHeight * 1.6) + 20)
-        .background(.black, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
-        .overlay(alignment: .bottom) {
-            Rectangle().fill(Theme.accent).frame(height: 3)
-                .padding(.horizontal, 12).padding(.bottom, 6)
-                .opacity(filled ? 1 : 0)
-        }
+        .background(focused ? Theme.surface : .black, in: Rectangle())
         .overlay(
-            RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .strokeBorder(focused ? Theme.accent : .white.opacity(0.22), lineWidth: focused ? 2 : 1.2)
+            Rectangle().strokeBorder(focused ? Theme.accent : Theme.rule, lineWidth: 1)
         )
         .contentShape(Rectangle())
         .onTapGesture { focus = focusValue }

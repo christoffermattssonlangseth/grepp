@@ -211,7 +211,7 @@ struct TrendsView: View {
                             Label("open \(picked.date.formatted(.dateTime.day().month(.abbreviated))) in Log", systemImage: "arrow.up.right")
                                 .font(.caption.weight(.semibold))
                         }
-                        .buttonStyle(.bordered)
+                        .buttonStyle(.panel)
                         .controlSize(.small)
                     } else {
                         Text((scrolls(series) ? "press and drag to read a session · swipe for older ones"
@@ -331,8 +331,8 @@ struct TrendsView: View {
             }
         }
         .padding(.horizontal, 8).padding(.vertical, 5)
-        .background(.regularMaterial,
-                    in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .background(Theme.surface,
+                    in: RoundedRectangle(cornerRadius: Theme.corner))
     }
 
     /// The logged point nearest the finger — a drag snaps to real sessions,
@@ -411,7 +411,7 @@ struct TrendsView: View {
                     }
                     Spacer()
                     Button("Set a target") { settingTarget = true }
-                        .buttonStyle(.bordered)
+                        .buttonStyle(.panel)
                         .controlSize(.small)
                         .disabled(exercise.isEmpty)
                 }
@@ -610,7 +610,7 @@ struct TrendsView: View {
                                     .lineLimit(1)
                                     .minimumScaleFactor(0.8)
                             }
-                            .buttonStyle(.borderedProminent)
+                            .buttonStyle(.panelProminent)
                             .controlSize(.small)
                             .tint(Theme.accent)
                             .accessibilityHint(step.entry.sets.map(\.token).joined(separator: " "))
@@ -621,7 +621,7 @@ struct TrendsView: View {
                             Label("Ask the coach", systemImage: "bubble.left.and.text.bubble.right")
                                 .font(.footnote.weight(.semibold))
                         }
-                        .buttonStyle(.bordered)
+                        .buttonStyle(.panel)
                         .controlSize(.small)
                     }
                     if let step = figures.nextStep {
@@ -1222,7 +1222,7 @@ private struct TargetSheet: View {
                         Text("Now \(isReps ? String(Int(current)) : WorkSet.formatWeight(current)) \(kind.unit), \(kind.label).")
                     }
                 }
-                .listRowBackground(Rectangle().fill(.regularMaterial))
+                .listRowBackground(Theme.row)
                 .onAppear { kind = initial }
                 Section {
                     Toggle("By a date", isOn: $hasDate)
@@ -1232,11 +1232,11 @@ private struct TargetSheet: View {
                 } footer: {
                     Text("Written as one line to goals.md, beside whatever is there.")
                 }
-                .listRowBackground(Rectangle().fill(.regularMaterial))
+                .listRowBackground(Theme.row)
                 if failed {
                     Text("Couldn't save goals.md. Check the connection and try again.")
                         .font(.footnote).foregroundStyle(Theme.warning)
-                        .listRowBackground(Rectangle().fill(.regularMaterial))
+                        .listRowBackground(Theme.row)
                 }
             }
             .scrollContentBackground(.hidden)

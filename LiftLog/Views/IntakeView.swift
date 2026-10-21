@@ -73,7 +73,7 @@ struct IntakeView: View {
                 }
                 .pickerStyle(.segmented)
             }
-            .listRowBackground(Rectangle().fill(.regularMaterial))
+            .listRowBackground(Theme.row)
 
             Section {
                 Picker("Goal", selection: $intake.goal) {
@@ -91,13 +91,13 @@ struct IntakeView: View {
             } footer: {
                 Text("A goal with a lift and a number, like \"squat 100 kg\", gets a target card on Trends.")
             }
-            .listRowBackground(Rectangle().fill(.regularMaterial))
+            .listRowBackground(Theme.row)
 
             Section("How often?") {
                 Stepper("\(intake.days) \(intake.days == 1 ? "day" : "days") a week", value: $intake.days, in: 1...6)
                 Stepper("About \(intake.minutes) minutes a session", value: $intake.minutes, in: 20...120, step: 15)
             }
-            .listRowBackground(Rectangle().fill(.regularMaterial))
+            .listRowBackground(Theme.row)
 
             Section("Where do you train?") {
                 Picker("Place", selection: $intake.place) {
@@ -126,7 +126,7 @@ struct IntakeView: View {
                     }
                 }
             }
-            .listRowBackground(Rectangle().fill(.regularMaterial))
+            .listRowBackground(Theme.row)
 
             if intake.place != .bodyweight && intake.equipment.contains(.barbell) {
                 Section {
@@ -156,7 +156,7 @@ struct IntakeView: View {
                          ? "The plates you own, both sides together: four 25s is two a side. Loads are worked out from these."
                          : "A gym's usual rack. Change the plates any time in Settings ▸ Gym.")
                 }
-                .listRowBackground(Rectangle().fill(.regularMaterial))
+                .listRowBackground(Theme.row)
             }
 
             Section {
@@ -164,7 +164,7 @@ struct IntakeView: View {
             } header: {
                 Text("Anything to work around?")
             }
-            .listRowBackground(Rectangle().fill(.regularMaterial))
+            .listRowBackground(Theme.row)
 
             if let saveError {
                 Section {
@@ -223,7 +223,7 @@ struct IntakeView: View {
                     Text("The coach builds from your setup and asks only what it leaves out. Or start straight away with the beginner programme: two full-body days, fitted to your equipment.")
                 }
             }
-            .listRowBackground(Rectangle().fill(.regularMaterial))
+            .listRowBackground(Theme.row)
         }
     }
 

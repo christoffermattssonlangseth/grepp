@@ -210,7 +210,7 @@ final class Store: ObservableObject {
             case .unsafeMerge:
                 return "Aborted: couldn't parse the remote file safely."
             case .missingRemote(let path, let count):
-                return "No file at \(path), but this phone has \(count) sessions from it. Check the path and branch (or wait for iCloud to sync) before saving."
+                return "No file at \(path), but this phone has \(count) \(count == 1 ? "session" : "sessions") from it. Check the path and branch (or wait for iCloud to sync) before saving."
             case .unreadable(let lines):
                 let shown = lines.prefix(3).map { "line \($0.number): \($0.text)" }.joined(separator: "; ")
                 return "Not saved: the file has \(lines.count) \(lines.count == 1 ? "line" : "lines") the app can't read and would lose — \(shown). Fix them in the file first."
@@ -223,12 +223,22 @@ final class Store: ObservableObject {
     // replays writes queued for GitHub into iCloud. The GitHub keys keep
     // their first names so an existing install carries on.
     private var keyPrefix: String { storage == .github ? "gh" : "icloud" }
-    private var cacheKey: String { "\(keyPrefix)_cache" }
+    /// The log's own cache and queue are per file too: pointing at another
+    /// path or branch must not judge that file by this one's history, or
+    /// replay this one's writes into it. The usual file keeps the plain keys
+    /// so an existing install carries on.
+    private var location: String {
+        let b = storage == .github ? branch : "main"
+        return path == "training.md" && b == "main" ? "" : "_\(b):\(path)"
+    }
+    /// The location the queue and sessions in memory were read for.
+    private var loadedLocation: String?
+    private var cacheKey: String { "\(keyPrefix)\(location)_cache" }
     private var coachingCacheKey: String { "\(keyPrefix)_coaching_cache" }
     private var goalsCacheKey: String { "\(keyPrefix)_goals_cache" }
     private var researchCacheKey: String { "\(keyPrefix)_research_cache" }
     private var programCacheKey: String { "\(keyPrefix)_program_cache" }
-    private var pendingKey: String { "\(keyPrefix)_pending" }
+    private var pendingKey: String { "\(keyPrefix)\(location)_pending" }
     private let draftKey = "session_draft"
     private let plansKey = "plan_records"
     private let sessionStartsKey = "session_starts"
@@ -261,6 +271,7 @@ final class Store: ObservableObject {
     /// them. On launch, and on a storage switch: the queue is per backend,
     /// and the one in memory must not be replayed into the other.
     private func reloadFromCache() {
+        loadedLocation = "\(keyPrefix)\(location)"
         pending = loadPending()
         brief = CoachContext.Brief(coaching: defaults.string(forKey: coachingCacheKey) ?? "",
                                    goals: defaults.string(forKey: goalsCacheKey) ?? "",
@@ -527,6 +538,7 @@ final class Store: ObservableObject {
         // runs between this check and `loadTask` being set below.
         while let running = loadTask { await running.value }
         guard !isBusy, !needsSetup else { return }   // don't overlap with an in-flight save
+        followLocation()
         // The task clears itself, so every waiter wakes to it gone.
         let task = Task {
             await performLoad()
@@ -570,7 +582,7 @@ final class Store: ObservableObject {
                 status = "Loaded \(sessions.count) sessions.\(pendingSuffix)"
                 let bad = WorkoutParser.unreadableLines(in: state.content)
                 if !bad.isEmpty { status += " \(bad.count) \(bad.count == 1 ? "line" : "lines") couldn't be read; saving is held until they're fixed." }
-            } else if cachedSessions().count > 1 {
+            } else if !cachedSessions().isEmpty {
                 // The file is gone but this phone remembers it: a wrong path, a
                 // token scoped to another repo, or iCloud still syncing. Show what
                 // we have and say so; nothing is written over it.
@@ -670,6 +682,7 @@ final class Store: ObservableObject {
     @discardableResult
     private func perform(_ write: PendingWrite) async -> CommitResult {
         guard !isBusy else { status = "Still syncing — try again in a moment."; return .failed }
+        followLocation()
         isBusy = true; status = "Saving…"
         defer { isBusy = false }
 
@@ -713,7 +726,7 @@ final class Store: ObservableObject {
         for attempt in 1...maxAttempts {
             do {
                 let remote = try await service.fetch()
-                if remote == nil, cachedSessions().count > 1 {
+                if remote == nil, !cachedSessions().isEmpty {
                     throw StoreError.missingRemote(path, cachedSessions().count)
                 }
                 if let content = remote?.content {
@@ -793,6 +806,12 @@ final class Store: ObservableObject {
     // MARK: - Local persistence (cache + queue)
 
     private var pendingSuffix: String { pending.isEmpty ? "" : " · \(pending.count) queued offline" }
+
+    /// The path or branch was changed in Settings since the queue was read:
+    /// take up the new file's own cache and queue first.
+    private func followLocation() {
+        if loadedLocation != "\(keyPrefix)\(location)" { reloadFromCache() }
+    }
 
     private func cacheContent(_ content: String) { defaults.set(content, forKey: cacheKey) }
     private func cachedSessions() -> [Session] {
@@ -903,7 +922,9 @@ final class Store: ObservableObject {
         }
         d.sets.append(WorkSet(weight: set.weight, added: set.added, reps: set.reps))
         d.restStart = Date()
-        noteSetLanded(on: d.date)
+        // Only today's session has a clock: a backfilled day timed from now
+        // would post to Strava as today.
+        if Calendar.current.isDateInToday(d.date) { noteSetLanded(on: d.date) }
         saveDraft(d)
         // Now, not after the usual two seconds: the app may be suspended the
         // moment the intent returns, and the widget's "N done" with it.

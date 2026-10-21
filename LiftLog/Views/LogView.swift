@@ -709,8 +709,7 @@ struct LogView: View {
                         Image(systemName: "arrow.counterclockwise")
                             .font(.subheadline.weight(.bold))
                             .frame(width: 34, height: 34)
-                            .background(Theme.surface, in: Rectangle())
-                            .overlay(Rectangle().strokeBorder(Theme.rule, lineWidth: 1))
+                            .background(Theme.raised, in: RoundedRectangle(cornerRadius: Theme.corner, style: .continuous))
                     }
                     .buttonStyle(.plain)
                     .accessibilityLabel("Restart rest")
@@ -719,8 +718,7 @@ struct LogView: View {
                             .font(.caption.weight(.bold))
                             .foregroundStyle(.secondary)
                             .frame(width: 34, height: 34)
-                            .background(Theme.surface, in: Rectangle())
-                            .overlay(Rectangle().strokeBorder(Theme.rule, lineWidth: 1))
+                            .background(Theme.raised, in: RoundedRectangle(cornerRadius: Theme.corner, style: .continuous))
                     }
                     .buttonStyle(.plain)
                     .accessibilityLabel("End rest")
@@ -736,10 +734,7 @@ struct LogView: View {
             // Due, the whole card goes solid accent. That's the "in your face":
             // not a label changing colour but the biggest thing on screen changing.
             .background(due ? AnyShapeStyle(Theme.accent) : AnyShapeStyle(Theme.surface),
-                        in: Rectangle())
-            .overlay(
-                Rectangle().strokeBorder(due ? Theme.accent : Theme.rule, lineWidth: 1)
-            )
+                        in: RoundedRectangle(cornerRadius: Theme.corner, style: .continuous))
             // A heartbeat while due, driven by the clock's own ticks — nothing
             // repeating forever that has to be babysat.
             .scaleEffect(due && elapsed % 2 == 0 ? 1.015 : 1)
@@ -769,7 +764,7 @@ struct LogView: View {
                 .monospacedDigit()
                 .padding(.horizontal, 10)
                 .frame(height: 34)
-                .background(Theme.surface, in: Rectangle())
+                .background(Theme.raised, in: RoundedRectangle(cornerRadius: Theme.corner, style: .continuous))
         }
         .buttonStyle(.plain)
         .accessibilityLabel("Rest target")
@@ -807,8 +802,7 @@ struct LogView: View {
                             .font(.subheadline.weight(.heavy))
                             .foregroundStyle(Theme.onAccent)
                             .frame(width: 28, height: 28)
-                            .background(Theme.accent, in: Rectangle())
-                            .overlay(Rectangle().strokeBorder(Theme.rule, lineWidth: 1))
+                            .background(Theme.accent, in: RoundedRectangle(cornerRadius: Theme.corner, style: .continuous))
                         Text(set.loadLabel)
                             .font(.body.weight(.semibold))
                         if let record = record(at: idx) { RecordBadge(record: record) }
@@ -933,9 +927,12 @@ struct LogView: View {
         .padding(.horizontal, 12)
         .frame(maxWidth: .infinity, alignment: .leading)
         .frame(height: min(fieldHeight, Theme.bigFieldHeight * 1.6) + 20)
-        .background(focused ? Theme.surface : .black, in: Rectangle())
+        // A black window cut into the panel; only the live one gets a line.
+        .background(.black, in: RoundedRectangle(cornerRadius: Theme.corner, style: .continuous))
         .overlay(
-            Rectangle().strokeBorder(focused ? Theme.accent : Theme.rule, lineWidth: 1)
+            RoundedRectangle(cornerRadius: Theme.corner, style: .continuous)
+                .strokeBorder(Theme.accent, lineWidth: 1.5)
+                .opacity(focused ? 1 : 0)
         )
         .contentShape(Rectangle())
         .onTapGesture { focus = focusValue }

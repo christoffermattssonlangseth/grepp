@@ -431,7 +431,7 @@ struct LogView: View {
     private var dayBanner: some View {
         HStack(spacing: 10) {
             Image(systemName: "calendar.badge.exclamationmark")
-                .foregroundStyle(.orange)
+                .foregroundStyle(Theme.warning)
             Text("Logging for \(dayLabel), not today")
                 .font(.footnote.weight(.semibold))
             Spacer()
@@ -441,10 +441,10 @@ struct LogView: View {
             }
             .font(.footnote.weight(.bold))
             .buttonStyle(.panel)
-            .tint(.orange)
+            .tint(Theme.warning)
         }
         .padding(.horizontal, 12).padding(.vertical, 8)
-        .background(.orange.opacity(0.12), in: RoundedRectangle(cornerRadius: Theme.corner))
+        .background(Theme.warning.opacity(0.12), in: RoundedRectangle(cornerRadius: Theme.corner))
     }
 
     // MARK: - Section label
@@ -930,7 +930,10 @@ struct LogView: View {
                     .keyboardType(keyboard)
                     .focused($focus, equals: focusValue)
                     .foregroundStyle(.primary)
-                    .opacity(focused ? 1 : 0)
+                    // Not quite 0: a fully clear view leaves VoiceOver, and
+                    // then there's no field to find. 1% under the readout's
+                    // own glyphs can't be seen.
+                    .opacity(focused ? 1 : 0.01)
                     if !focused {
                         Text(text.wrappedValue.isEmpty ? (hint ?? "–") : text.wrappedValue)
                             .foregroundStyle(text.wrappedValue.isEmpty ? AnyShapeStyle(.tertiary) : AnyShapeStyle(.primary))

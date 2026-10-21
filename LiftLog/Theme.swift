@@ -31,15 +31,18 @@ enum Theme {
     /// Strava's orange lifted for small text on black (#FF8A50, 8.4:1).
     static let stravaText = Color(red: 1.00, green: 0.54, blue: 0.31)
 
-    /// The panel face: a step off black, so a panel reads against the ground.
-    static let surface = Color(white: 0.04)   // #0A0A0A
+    /// The panel face: a step off black, enough to read as a panel with no
+    /// line round it. Outlines everywhere made the screen a stack of boxes.
+    static let surface = Color(white: 0.07)   // #121212
+    /// A control's face — buttons, pills — a step up from the panel.
+    static let raised = Color(white: 0.13)    // #212121
     /// The 1px line around panels and between rows.
     static let rule = Color(white: 0.23)      // #3A3A3A
     /// Labels and figures that step back: 6:1 on black.
     static let dim = Color(white: 0.55)       // #8C8C8C
 
-    /// Square, near enough: just enough to stop corners shimmering.
-    static let corner: CGFloat = 2
+    /// Hard, but not sharp: square corners on every box read as a spreadsheet.
+    static let corner: CGFloat = 8
     static let bigFieldHeight: CGFloat = 76
 
     /// The ground every screen sits on.
@@ -102,41 +105,36 @@ extension View {
     }
 
     /// The small control that names a choice and opens a menu — the bar, the
-    /// lift, the model, the day. A bracketed box on black: a bare label in a
+    /// lift, the model, the day. A grey block: a bare label in a
     /// Menu drew as nothing on iOS 26, and this gives it a body once, here.
     func pill() -> some View {
         self
             .padding(.horizontal, 10).padding(.vertical, 7)
-            .background(Color.black, in: Rectangle())
-            .overlay(Rectangle().strokeBorder(Theme.rule, lineWidth: 1))
+            .background(Theme.raised, in: RoundedRectangle(cornerRadius: Theme.corner, style: .continuous))
     }
 
-    /// The quieter surface: a panel face with a 1px rule round it. It sits *in*
+    /// The quieter surface: a panel face, no line round it. It sits *in*
     /// the page; reserve `glassCard` for the one or two things that should read
     /// as raised.
     func panel(cornerRadius: CGFloat = Theme.corner) -> some View {
         self
             .padding(14)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(Theme.surface, in: RoundedRectangle(cornerRadius: cornerRadius))
-            .overlay(RoundedRectangle(cornerRadius: cornerRadius)
-                .strokeBorder(Theme.rule, lineWidth: 1))
+            .background(Theme.surface, in: RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
     }
 
-    /// The raised surface. On a control panel nothing floats, so raised means a
-    /// brighter rule rather than a shadow. Named for what it used to be.
+    /// The raised surface. On a control panel nothing floats, so today it is the
+    /// same face as `panel`. Named for what it used to be.
     func glassCard(cornerRadius: CGFloat = Theme.corner) -> some View {
         self
             .padding(14)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(Theme.surface, in: RoundedRectangle(cornerRadius: cornerRadius))
-            .overlay(RoundedRectangle(cornerRadius: cornerRadius)
-                .strokeBorder(Color(white: 0.32), lineWidth: 1))
+            .background(Theme.surface, in: RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
     }
 }
 
-/// The control panel's button: a square box with a 1px rule, its label in the
-/// tint; prominent, a solid block of the tint with black type. Stands in for
+/// The control panel's button: a grey block, its label in the tint;
+/// prominent, a solid block of the tint with black type. Stands in for
 /// the system's bordered and glass styles, whose capsules and blur belong to
 /// a softer app. Small and mini control sizes get tighter padding.
 struct PanelButtonStyle: ButtonStyle {
@@ -152,13 +150,11 @@ struct PanelButtonStyle: ButtonStyle {
             .padding(.vertical, small ? 5 : 9)
             .foregroundStyle(prominent ? AnyShapeStyle(Theme.onAccent) : AnyShapeStyle(.tint))
             .background {
-                if prominent { Rectangle().fill(.tint) } else { Rectangle().fill(Color.black) }
-            }
-            .overlay {
-                if !prominent { Rectangle().strokeBorder(Theme.rule, lineWidth: 1) }
+                let shape = RoundedRectangle(cornerRadius: Theme.corner, style: .continuous)
+                if prominent { shape.fill(.tint) } else { shape.fill(Theme.raised) }
             }
             .opacity(isEnabled ? (configuration.isPressed ? 0.7 : 1) : 0.4)
-            .contentShape(Rectangle())
+            .contentShape(RoundedRectangle(cornerRadius: Theme.corner, style: .continuous))
     }
 }
 

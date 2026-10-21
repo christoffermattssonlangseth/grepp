@@ -170,7 +170,7 @@ struct CoachView: View {
     private let bottomAnchor = "coach-bottom"
 
     private func scroll(_ proxy: ScrollViewProxy) {
-        withAnimation(.easeOut(duration: 0.2)) {
+        withAnimation(.easeOut(duration: 0.35)) {
             proxy.scrollTo(bottomAnchor, anchor: .bottom)
         }
     }
@@ -255,15 +255,29 @@ struct CoachView: View {
     /// last word — the answer is being written, here.
     private func proseView(_ prose: String, cursor: Bool = false) -> some View {
         let blocks = CoachContext.chatBlocks(CoachContext.chatMarkdown(prose))
-        return TimelineView(.periodic(from: .now, by: 0.5)) { tick in
-            let lit = Int(tick.date.timeIntervalSinceReferenceDate * 2) % 2 == 0
-            proseBlocks(blocks, cursor: cursor ? lit : nil)
+        // Only a reply being written ticks; a finished one is left alone.
+        return Group {
+            if cursor {
+                TimelineView(.periodic(from: .now, by: blink)) { tick in
+                    let lit = Int(tick.date.timeIntervalSinceReferenceDate / blink) % 2 == 0
+                    proseBlocks(blocks, cursor: lit)
+                }
+            } else {
+                proseBlocks(blocks, cursor: nil)
+            }
         }
     }
+
+    /// How long the cursor stays lit, and then dark.
+    private let blink: TimeInterval = 0.7
 
     /// `cursor`: nil for no cursor, else whether the blink is lit this tick.
     private func proseBlocks(_ blocks: [CoachContext.ChatBlock], cursor: Bool?) -> some View {
         VStack(alignment: .leading, spacing: 8) {
+            // Thinking, before the first word: no blocks yet, only the dot.
+            if blocks.isEmpty, cursor != nil {
+                withCursor(Text(""), cursor)
+            }
             ForEach(Array(blocks.enumerated()), id: \.offset) { index, block in
                 let last = index == blocks.count - 1
                 switch block {

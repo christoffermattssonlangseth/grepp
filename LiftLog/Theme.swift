@@ -103,7 +103,7 @@ private struct SlideIn: ViewModifier {
         content
             .opacity(shown ? 1 : 0)
             .offset(y: shown ? 0 : 14)
-            .onAppear { withAnimation(.smooth(duration: 0.45)) { shown = true } }
+            .onAppear { withAnimation(.smooth(duration: 0.7)) { shown = true } }
     }
 }
 

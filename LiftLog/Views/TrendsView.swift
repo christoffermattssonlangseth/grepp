@@ -218,7 +218,7 @@ struct TrendsView: View {
                         }
                         .task(id: "\(exercise)|\(metric.rawValue)") {
                             drawn = 0
-                            withAnimation(.easeOut(duration: 0.9)) { drawn = 1 }
+                            withAnimation(.easeOut(duration: 1.5)) { drawn = 1 }
                         }
                     // The reading under the finger, and the way into that day —
                     // outside the plot, where the chart's own gestures can't eat it.

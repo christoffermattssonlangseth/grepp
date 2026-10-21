@@ -28,14 +28,14 @@ struct MuscleMapView: View {
                 Section("in your log") {
                     ForEach(mine, id: \.self) { row($0) }
                 }
-                .listRowBackground(Rectangle().fill(.regularMaterial))
+                .listRowBackground(Theme.row)
             }
             let rest = table.filter(matches)
             if !rest.isEmpty {
                 Section("the rest of the table") {
                     ForEach(rest, id: \.self) { row($0) }
                 }
-                .listRowBackground(Rectangle().fill(.regularMaterial))
+                .listRowBackground(Theme.row)
             }
             Section {
                 Text("A set of a lift counts for each muscle by its share: 1 is a full set, ½ half. The biggest share is the muscle the lift's progress is read against in Trends. Change a lift's shares and every week is recounted.")
@@ -62,7 +62,7 @@ struct MuscleMapView: View {
                         Text("yours")
                             .font(.caption2.weight(.heavy))
                             .padding(.horizontal, 6).padding(.vertical, 2)
-                            .background(Theme.accent.opacity(0.18), in: Capsule())
+                            .background(Theme.accent.opacity(0.18), in: Rectangle())
                             .foregroundStyle(Theme.accent)
                     }
                 }
@@ -110,7 +110,7 @@ struct ExerciseMuscleView: View {
                                 Text("progress")
                                     .font(.caption2.weight(.heavy))
                                     .padding(.horizontal, 6).padding(.vertical, 2)
-                                    .background(Theme.accent.opacity(0.18), in: Capsule())
+                                    .background(Theme.accent.opacity(0.18), in: Rectangle())
                                     .foregroundStyle(Theme.accent)
                             }
                             Spacer()
@@ -135,7 +135,7 @@ struct ExerciseMuscleView: View {
                      ? "Your shares. Setting them back to the table's forgets them."
                      : (tableShare == nil ? "The app doesn't know this lift. Give it a share and it counts." : "The table's shares. Change any and the lift is yours."))
             }
-            .listRowBackground(Rectangle().fill(.regularMaterial))
+            .listRowBackground(Theme.row)
 
             if muscleMap.isOverridden(exercise) {
                 Section {
@@ -143,7 +143,7 @@ struct ExerciseMuscleView: View {
                         muscleMap.set(nil as MuscleMap.Share?, for: exercise)
                     }
                 }
-                .listRowBackground(Rectangle().fill(.regularMaterial))
+                .listRowBackground(Theme.row)
             }
         }
         .scrollContentBackground(.hidden)

@@ -153,7 +153,7 @@ struct ProgrammeView: View {
                             .frame(maxWidth: .infinity)
                             .padding(.vertical, 6)
                     }
-                    .buttonStyle(.bordered)
+                    .buttonStyle(.panel)
                     .tint(Theme.accent)
                     .listRowBackground(Color.clear)
                     Text("Tap a lift to change it, drag to reorder, swipe to remove. Save writes program.md; the coach's notes between the days stay as they are.")
@@ -203,8 +203,8 @@ struct ProgrammeView: View {
                 }
             }
             .listRowBackground(
-                RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .fill(.regularMaterial)
+                RoundedRectangle(cornerRadius: Theme.corner)
+                    .fill(Theme.surface)
                     .padding(.vertical, 2)
             )
             .accessibilityElement(children: .combine)
@@ -252,8 +252,8 @@ struct ProgrammeView: View {
             }
         }
         .listRowBackground(
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .fill(.regularMaterial)
+            RoundedRectangle(cornerRadius: Theme.corner)
+                .fill(Theme.surface)
                 .padding(.vertical, 2)
         )
         // Swipes and handles only in Edit mode; reading the file is not editing it.
@@ -306,7 +306,7 @@ struct ProgrammeView: View {
         }
         // One prominent button on the screen: the day that is next.
         Group {
-            if isDue { load.buttonStyle(.borderedProminent) } else { load.buttonStyle(.bordered) }
+            if isDue { load.buttonStyle(.panelProminent) } else { load.buttonStyle(.panel) }
         }
         .tint(Theme.accent)
         .disabled(plan.entries.isEmpty)
@@ -350,7 +350,7 @@ struct ProgrammeView: View {
                     .textCase(.uppercase)
                     .foregroundStyle(Theme.onAccent)
                     .padding(.horizontal, 6).padding(.vertical, 2)
-                    .background(Theme.accent, in: Capsule())
+                    .background(Theme.accent, in: Rectangle())
             }
         }
         .accessibilityElement(children: editing ? .contain : .ignore)
@@ -392,14 +392,14 @@ struct ProgrammeView: View {
                 dismiss()
                 onAsk("Write me a programme.")
             }
-            .buttonStyle(.borderedProminent)
+            .buttonStyle(.panelProminent)
             .tint(Theme.accent)
             // The one programme the app carries itself: reverse pyramid, three
             // days, worked out from the log with no coach in the loop.
             Button("Start with reverse pyramid") {
                 Task { _ = await store.save(ReversePyramid.starter, to: .program) }
             }
-            .buttonStyle(.bordered)
+            .buttonStyle(.panel)
             .tint(Theme.accent)
             .disabled(store.isBusy)
             // Or day by day, by hand, here.
@@ -407,7 +407,7 @@ struct ProgrammeView: View {
                 draft = "# Programme\n"
                 addingDay = true
             }
-            .buttonStyle(.bordered)
+            .buttonStyle(.panel)
             .tint(Theme.accent)
         }
     }
@@ -449,7 +449,7 @@ private struct LiftSheet: View {
                             .font(.subheadline)
                     }
                 }
-                .listRowBackground(Rectangle().fill(.regularMaterial))
+                .listRowBackground(Theme.row)
                 Section {
                     TextField("3x5, 3x8-10, 3xAMRAP", text: $scheme)
                         .font(.system(.body, design: .monospaced))
@@ -462,11 +462,11 @@ private struct LiftSheet: View {
                     Text(rpt ? "The app works the loads out from the last session: top set first, each set after it a tenth lighter for two more reps."
                              : "Loads are not in the file; the coach or Load this day puts them on from your log.")
                 }
-                .listRowBackground(Rectangle().fill(.regularMaterial))
+                .listRowBackground(Theme.row)
                 Section("Note") {
                     TextField("add 2.5 kg when all sets hit", text: $note)
                 }
-                .listRowBackground(Rectangle().fill(.regularMaterial))
+                .listRowBackground(Theme.row)
             }
             .scrollContentBackground(.hidden)
             .background(Theme.backgroundView)
@@ -520,7 +520,7 @@ private struct DaySheet: View {
                 Section("Day") {
                     TextField("Day A — Lower", text: $title)
                 }
-                .listRowBackground(Rectangle().fill(.regularMaterial))
+                .listRowBackground(Theme.row)
                 Section("First lift") {
                     HStack {
                         TextField("squat", text: $name)
@@ -534,7 +534,7 @@ private struct DaySheet: View {
                         .textInputAutocapitalization(.never)
                         .autocorrectionDisabled()
                 }
-                .listRowBackground(Rectangle().fill(.regularMaterial))
+                .listRowBackground(Theme.row)
             }
             .scrollContentBackground(.hidden)
             .background(Theme.backgroundView)

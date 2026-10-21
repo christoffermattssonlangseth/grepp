@@ -184,7 +184,7 @@ struct CoachView: View {
                     Text(message.text)
                         .font(.body.weight(.medium))
                         .padding(.horizontal, 14).padding(.vertical, 10)
-                        .background(Theme.accent, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                        .background(Theme.accent, in: RoundedRectangle(cornerRadius: Theme.corner))
                         .foregroundStyle(Theme.onAccent)
                 }
             case .coach:
@@ -205,7 +205,7 @@ struct CoachView: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
-            .glassCard(cornerRadius: 16)
+            .glassCard()
 
             Button(action: beginGoalsInterview) {
                 HStack {
@@ -221,7 +221,7 @@ struct CoachView: View {
                         .foregroundStyle(hasGoals ? Color.secondary : Theme.accent)
                 }
                 .foregroundStyle(.primary)
-                .glassCard(cornerRadius: 14)
+                .glassCard()
             }
             .buttonStyle(.plain)
 
@@ -236,7 +236,7 @@ struct CoachView: View {
                         Image(systemName: "arrow.up.right").font(.footnote)
                     }
                     .foregroundStyle(.primary)
-                    .glassCard(cornerRadius: 14)
+                    .glassCard()
                 }
                 .buttonStyle(.plain)
             }
@@ -389,7 +389,7 @@ struct CoachView: View {
                     Label("Continue", systemImage: "arrow.clockwise")
                         .font(.subheadline.weight(.semibold))
                 }
-                .buttonStyle(.bordered)
+                .buttonStyle(.panel)
                 .tint(Theme.accent)
             }
             // The API's own token counts, priced — not an estimate of them.
@@ -399,7 +399,7 @@ struct CoachView: View {
                     .foregroundStyle(.tertiary)
             }
         }
-        .glassCard(cornerRadius: 16)
+        .glassCard()
 
         // The file gets its own card: it's a thing you save, not a paragraph, and a
         // raw fenced block in a chat bubble reads as noise.
@@ -437,7 +437,7 @@ struct CoachView: View {
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 8)
             }
-            .buttonStyle(.borderedProminent)
+            .buttonStyle(.panelProminent)
             .tint(Theme.accent)
         }
         ForEach(Array(reply.prescriptions.enumerated()), id: \.offset) { _, rx in
@@ -473,12 +473,12 @@ struct CoachView: View {
             }
             .tint(Theme.accent)
             if quiet {
-                button.buttonStyle(.bordered)
+                button.buttonStyle(.panel)
             } else {
-                button.buttonStyle(.borderedProminent)
+                button.buttonStyle(.panelProminent)
             }
         }
-        .panel(cornerRadius: 14)
+        .panel()
     }
 
     /// A programme the coach has written. Saving replaces program.md; from then
@@ -536,7 +536,7 @@ struct CoachView: View {
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 10)
             }
-            .buttonStyle(.borderedProminent)
+            .buttonStyle(.panelProminent)
             .tint(saved ? Color.secondary : Theme.accent)
             .disabled(savingProgram || saved)
 
@@ -544,7 +544,7 @@ struct CoachView: View {
                 Text(programError).font(.caption2).foregroundStyle(Theme.warning)
             }
         }
-        .glassCard(cornerRadius: 16)
+        .glassCard()
     }
 
     /// Sessions the coach wrote from what the lifter told it. Adding merges them
@@ -586,7 +586,7 @@ struct CoachView: View {
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 10)
             }
-            .buttonStyle(.borderedProminent)
+            .buttonStyle(.panelProminent)
             .tint(added ? Color.secondary : Theme.accent)
             .disabled(addingLog || added)
 
@@ -594,7 +594,7 @@ struct CoachView: View {
                 Text(logError).font(.caption2).foregroundStyle(Theme.warning)
             }
         }
-        .glassCard(cornerRadius: 16)
+        .glassCard()
     }
 
     /// Findings the coach has written up. Saving numbers them and appends them to
@@ -635,7 +635,7 @@ struct CoachView: View {
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 10)
             }
-            .buttonStyle(.borderedProminent)
+            .buttonStyle(.panelProminent)
             .tint(saved ? Color.secondary : Theme.accent)
             .disabled(savingResearch || saved)
 
@@ -643,7 +643,7 @@ struct CoachView: View {
                 Text(researchError).font(.caption2).foregroundStyle(Theme.warning)
             }
         }
-        .glassCard(cornerRadius: 16)
+        .glassCard()
     }
 
     /// Something the coach noticed and would like to remember. Remember appends it
@@ -681,7 +681,7 @@ struct CoachView: View {
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 10)
             }
-            .buttonStyle(.borderedProminent)
+            .buttonStyle(.panelProminent)
             .tint(saved ? Color.secondary : Theme.accent)
             .disabled(savingMemory || saved)
 
@@ -689,7 +689,7 @@ struct CoachView: View {
                 Text(memoryError).font(.caption2).foregroundStyle(Theme.warning)
             }
         }
-        .glassCard(cornerRadius: 16)
+        .glassCard()
     }
 
     /// A goals file the coach has written, with the one button that commits it.
@@ -726,7 +726,7 @@ struct CoachView: View {
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 10)
             }
-            .buttonStyle(.borderedProminent)
+            .buttonStyle(.panelProminent)
             .tint(saved ? Color.secondary : Theme.accent)   // done, not a traffic light
             .disabled(savingGoals || saved)
 
@@ -736,7 +736,7 @@ struct CoachView: View {
                 Text(saveError).font(.caption2).foregroundStyle(Theme.warning)
             }
         }
-        .glassCard(cornerRadius: 16)
+        .glassCard()
     }
 
     private var hasBrief: Bool { store.brief.hasContent }
@@ -769,7 +769,7 @@ struct CoachView: View {
         Label(text, systemImage: "exclamationmark.triangle.fill")
             .font(.footnote)
             .foregroundStyle(Theme.warning)
-            .glassCard(cornerRadius: 14)
+            .glassCard()
     }
 
     // MARK: - Input
@@ -812,7 +812,7 @@ struct CoachView: View {
                     .lineLimit(1...5)
                     .focused($inputFocused)
                     .padding(.horizontal, 14).padding(.vertical, 10)
-                    .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+                    .background(Theme.surface, in: RoundedRectangle(cornerRadius: Theme.corner))
                     .onSubmit { ask(draft) }
 
                 Button {
@@ -860,11 +860,11 @@ struct CoachView: View {
                  : "Coach asks Claude about your training log. Add a Claude API key to get started — it's stored in the Keychain, never in the repo.")
         } actions: {
             Button("Open Settings") { store.selectedTab = 4 }
-                .buttonStyle(.borderedProminent)
+                .buttonStyle(.panelProminent)
                 .tint(Theme.accent)
             if AppleCoach.isSupported {
                 Button("Use the on-device model") { model = .onDevice }
-                    .buttonStyle(.bordered)
+                    .buttonStyle(.panel)
                     .tint(Theme.accent)
             }
         }

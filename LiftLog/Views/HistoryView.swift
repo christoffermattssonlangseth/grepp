@@ -146,7 +146,9 @@ struct HistoryView: View {
                 }
             }
         }
-        .searchable(text: $query, prompt: "Lift")
+        // Grouped, not inset: square day panels edge to edge, like a printout.
+        .listStyle(.grouped)
+        .searchable(text: $query, prompt: "lift")
     }
 
     /// One month's row: its name, how many days, and whether it's open.
@@ -220,7 +222,7 @@ struct HistoryView: View {
                 .buttonStyle(.plain)
                 // One panel per day: the section rounds the outer corners and
                 // draws the hairlines between lifts, so a row is just a fill.
-                .listRowBackground(Rectangle().fill(.regularMaterial))
+                .listRowBackground(Theme.row)
                 .swipeActions(edge: .leading) {
                     Button {
                         store.requestEdit(exercise: ex.name, on: session.date, line: lineRef(ex, session))
@@ -270,23 +272,25 @@ struct HistoryView: View {
                     } label: {
                         HStack(spacing: 4) {
                             Text(dayTitle(session))
+                                .font(.headline.weight(.heavy))
+                                .foregroundStyle(.white)
                             Image(systemName: "chevron.up.chevron.down")
                                 .font(.caption2.weight(.bold))
                                 .foregroundStyle(.tertiary)
                         }
                         .textCase(nil)
                         .padding(.horizontal, 8).padding(.vertical, 3)
-                        .background(.ultraThinMaterial, in: Capsule())
+                        .background(Theme.surface, in: Rectangle())
                         .fixedSize()
                     }
                     .buttonStyle(.plain)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(.primary)
                     .accessibilityLabel("\(session.dateString), move the day")
                     if let sets = setsLine(session) {
                         Text(sets)
                             .font(.caption2)
                             .textCase(nil)
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(Theme.dim)
                     }
                     if let postError, postError.day == session.dateString {
                         Text(postError.text)
@@ -391,7 +395,7 @@ private struct MoveSheet: View {
                         .frame(maxWidth: .infinity)
                         .frame(height: 48)
                 }
-                .buttonStyle(.glassProminent)
+                .buttonStyle(.panelProminent)
                 .tint(Theme.accent)
                 .disabled(sameDay)
                 Spacer(minLength: 0)

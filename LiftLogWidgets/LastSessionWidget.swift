@@ -92,9 +92,9 @@ struct LastSessionView: View {
                 }
         case .steel:
             home.containerBackground(for: .widget) {
-                LinearGradient(colors: [Brand.accent.opacity(0.28),
+                LinearGradient(colors: [Brand.steel.opacity(0.28),
                                         Color(.systemBackground),
-                                        Brand.accent.opacity(0.14)],
+                                        Brand.steel.opacity(0.14)],
                                startPoint: .topLeading, endPoint: .bottomTrailing)
             }
         }

@@ -55,7 +55,7 @@ struct SettingsView: View {
                             .foregroundStyle(.secondary)
                     }
                 }
-                .listRowBackground(Rectangle().fill(.regularMaterial))
+                .listRowBackground(Theme.row)
 
                 if store.storage == .github {
                 Section("repository") {
@@ -64,7 +64,7 @@ struct SettingsView: View {
                     labeled("file path", text: $store.path, placeholder: "training.md")
                     labeled("branch", text: $store.branch, placeholder: "main")
                 }
-                .listRowBackground(Rectangle().fill(.regularMaterial))
+                .listRowBackground(Theme.row)
                 }
 
                 if store.storage == .github {
@@ -77,7 +77,7 @@ struct SettingsView: View {
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
-                .listRowBackground(Rectangle().fill(.regularMaterial))
+                .listRowBackground(Theme.row)
                 }
 
                 Section("gym") {
@@ -107,7 +107,7 @@ struct SettingsView: View {
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
-                .listRowBackground(Rectangle().fill(.regularMaterial))
+                .listRowBackground(Theme.row)
 
                 Section("widget") {
                     Picker("home screen", selection: $widgetStyle) {
@@ -121,7 +121,7 @@ struct SettingsView: View {
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
-                .listRowBackground(Rectangle().fill(.regularMaterial))
+                .listRowBackground(Theme.row)
 
                 Section("muscles") {
                     let unmapped = muscleMap.unmapped(in: store.sessions)
@@ -148,7 +148,7 @@ struct SettingsView: View {
                         }
                     }
                 }
-                .listRowBackground(Rectangle().fill(.regularMaterial))
+                .listRowBackground(Theme.row)
 
                 Section("coach") {
                     SecureField("sk-ant-… (Claude API key)", text: $store.anthropicKey)
@@ -214,7 +214,7 @@ struct SettingsView: View {
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
-                .listRowBackground(Rectangle().fill(.regularMaterial))
+                .listRowBackground(Theme.row)
 
                 Section("Apple Health") {
                     Toggle("Save sessions to Health", isOn: $healthEnabled)
@@ -228,7 +228,7 @@ struct SettingsView: View {
                         .foregroundStyle(.secondary)
                         .id(healthAsked)
                 }
-                .listRowBackground(Rectangle().fill(.regularMaterial))
+                .listRowBackground(Theme.row)
 
                 Section("Strava") {
                     Toggle("Strava", isOn: $stravaEnabled)
@@ -262,7 +262,7 @@ struct SettingsView: View {
                                 .padding(.vertical, 8)
                                 .contentShape(Rectangle())
                             }
-                            .buttonStyle(.borderedProminent)
+                            .buttonStyle(.panelProminent)
                             .tint(Theme.strava)
                             .disabled(backfilling)
                             Text("Older days have no clock, so they go up as an hour from noon. Days posted before the app kept track will be posted again — delete the doubles on Strava.")
@@ -312,7 +312,7 @@ struct SettingsView: View {
                             .frame(maxWidth: .infinity)
                             .padding(.vertical, 8)
                         }
-                        .buttonStyle(.borderedProminent)
+                        .buttonStyle(.panelProminent)
                         .tint(Theme.strava)
                         .disabled(strava.isBusy || !(strava.isConfigured || keysTyped))
                         if strava.isConfigured {
@@ -331,7 +331,7 @@ struct SettingsView: View {
                             .foregroundStyle(.tertiary)
                     }
                 }
-                .listRowBackground(Rectangle().fill(.regularMaterial))
+                .listRowBackground(Theme.row)
 
                 if !store.pending.isEmpty {
                     Section("waiting to sync") {
@@ -347,7 +347,7 @@ struct SettingsView: View {
                         Text("^[\(store.pending.count) change](inflect: true) saved offline. Reloading below pushes them.")
                             .font(.caption).foregroundStyle(.secondary)
                     }
-                    .listRowBackground(Rectangle().fill(.regularMaterial))
+                    .listRowBackground(Theme.row)
                 }
 
                 Section {
@@ -361,7 +361,7 @@ struct SettingsView: View {
                         Text(store.status).font(.caption).foregroundStyle(.secondary)
                     }
                 }
-                .listRowBackground(Rectangle().fill(.regularMaterial))
+                .listRowBackground(Theme.row)
 
                 Section {
                     VStack(spacing: 8) {

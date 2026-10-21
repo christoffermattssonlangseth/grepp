@@ -41,9 +41,9 @@ struct EvidenceView: View {
                     row(entry)
                         .id(entry.tag)
                         .listRowBackground(
-                            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                            RoundedRectangle(cornerRadius: Theme.corner)
                                 .fill(entry.tag == focus ? AnyShapeStyle(Theme.accent.opacity(0.18))
-                                                          : AnyShapeStyle(Material.regularMaterial))
+                                                          : AnyShapeStyle(Theme.surface))
                                 .padding(.vertical, 2)
                         )
                 }

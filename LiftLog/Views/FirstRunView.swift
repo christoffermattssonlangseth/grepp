@@ -95,6 +95,6 @@ struct FirstRunView: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .glassCard(cornerRadius: 16)
+        .glassCard()
     }
 }

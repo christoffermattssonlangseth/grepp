@@ -77,7 +77,7 @@ struct TrendsView: View {
                     ContentUnavailableView {
                         VStack(spacing: 12) {
                             Barbell(height: 38)
-                            Text("No data yet")
+                            Text("no data yet")
                         }
                     } description: {
                         Text("A chart appears after a lift's second session; sets per muscle after the first week.")

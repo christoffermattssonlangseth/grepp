@@ -315,7 +315,7 @@ struct HistoryView: View {
                     ContentUnavailableView {
                         VStack(spacing: 12) {
                             Barbell(height: 38)
-                            Text("No sessions yet")
+                            Text("no sessions yet")
                         }
                     } description: {
                         Text("Your first lift appears here, under its date.")
@@ -392,7 +392,7 @@ private struct MoveSheet: View {
                     onMove(date)
                     dismiss()
                 } label: {
-                    Text("Move")
+                    Text("move")
                         .font(.headline.weight(.heavy))
                         .frame(maxWidth: .infinity)
                         .frame(height: 48)

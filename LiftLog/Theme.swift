@@ -14,6 +14,10 @@ enum Theme {
     /// a touch muted to sit with the warm grounds.
     static let progressing = dynamic(light: (0.16, 0.50, 0.30), dark: (0.36, 0.72, 0.48))
 
+    /// Text on a `progressing` fill: white on the deep green by day, charcoal
+    /// on the light green by night — white there was 2.4:1.
+    static let onProgressing = dynamic(light: (1, 1, 1), dark: (0.149, 0.149, 0.141))
+
     /// A lift that has stopped. Amber, not red: a stall is a fact to act on,
     /// not an error.
     static let stalled = Color(red: 0.80, green: 0.55, blue: 0.10)   // #CC8C1A
@@ -78,7 +82,7 @@ struct RecordBadge: View {
             .tracking(0.5)
             .padding(.horizontal, 6).padding(.vertical, 2)
             .background(Theme.progressing, in: Capsule())
-            .foregroundStyle(.white)
+            .foregroundStyle(Theme.onProgressing)
             .accessibilityLabel(record == .load ? "personal record" : "rep record")
     }
 }

@@ -138,11 +138,13 @@ struct HistoryView: View {
     }
 
     private var listBody: some View {
-        List {
+        // Once per body pass, not once per row.
+        let records = Analytics.records(in: store.sessions)
+        return List {
             ForEach(months) { month in
                 if months.count > 1 || !isOpen(month) { monthRow(month) }
                 if isOpen(month) {
-                    ForEach(month.sessions, id: \.dateString) { session in daySection(session) }
+                    ForEach(month.sessions, id: \.dateString) { session in daySection(session, records: records) }
                 }
             }
         }
@@ -172,11 +174,6 @@ struct HistoryView: View {
         }
     }
 
-    /// One day: its lifts, under a header with the date and where the sets went.
-    /// Every record day in the log, once per body pass: one walk over the
-    /// sets, keyed by day and lift, so a search that rebuilds a session's
-    /// lifts still finds its records.
-    private var records: [String: [String: Analytics.Record]] { Analytics.records(in: store.sessions) }
 
     /// The line a row stands for, counted against the whole day — a search
     /// shows some of a day's lifts, but the file has all of them.
@@ -194,9 +191,15 @@ struct HistoryView: View {
         return session.date.formatted(style.locale(Locale(identifier: "en_GB"))).replacingOccurrences(of: ",", with: "").lowercased()
     }
 
-    private func daySection(_ session: Session) -> some View {
+    /// One day: its lifts, under a header with the date and where the sets
+    /// went. `records`: every record day in the log, keyed by day and lift,
+    /// so a search that rebuilds a session's lifts still finds its records.
+    private func daySection(_ session: Session, records: [String: [String: Analytics.Record]]) -> some View {
         Section {
-            ForEach(session.exercises) { ex in
+            // Keyed by place, not the entry's id: every reload of
+            // the file mints new ids, and new ids are new rows — each one
+            // sliding in again after every save.
+            ForEach(Array(session.exercises.enumerated()), id: \.offset) { _, ex in
                 // A button, not a tap gesture: tapping a row to close a swipe
                 // you changed your mind about must not open the lift.
                 Button {

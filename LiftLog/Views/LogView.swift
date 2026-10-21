@@ -187,7 +187,7 @@ struct LogView: View {
                     // Our own pill, not the system picker's: that one writes
                     // "18 Oct 2026" however it's asked. A tap opens the calendar.
                     Button { pickingDate = true } label: {
-                        Text("[ \(pillLabel) ]")
+                        Text(pillLabel)
                             .font(.footnote.weight(.semibold))
                             .foregroundStyle(isToday ? Color.primary : Theme.warning)
                             .pill()
@@ -207,7 +207,7 @@ struct LogView: View {
                             .presentationCompactAdaptation(.popover)
                     }
                 }
-                // Our ruled box, not iOS 26's glass bubble round it.
+                // Our capsule, not iOS 26's glass bubble round it.
                 .sharedBackgroundVisibility(.hidden)
                 ToolbarItemGroup(placement: .keyboard) {
                     Spacer()
@@ -903,16 +903,15 @@ struct LogView: View {
         return sets.count < last.count ? last[sets.count] : last.last
     }
 
-    /// A field drawn like a readout on a control panel: a black window, the
-    /// number big in heavy mono, its unit beside it. Empty, it shows last
-    /// time's figure faintly instead of a "0" that reads as a value. The label
-    /// says which field is live: an orange ● while typing, a dim ○ otherwise.
+    /// A big readout: a soft well with the number large in the serif, its unit
+    /// beside it. Empty, it shows last time's figure faintly instead of a "0"
+    /// that reads as a value. The live field gets a terracotta ring.
     private func bigField(title: String, unit: String, text: Binding<String>, hint: String?,
                           keyboard: UIKeyboardType, focusValue: Field) -> some View {
         let focused = focus == focusValue
         return VStack(alignment: .leading, spacing: 2) {
-            Text("\(focused ? "●" : "○") \(title)")
-                .font(.caption.weight(.semibold)).tracking(1)
+            Text(title)
+                .font(.caption.weight(.medium))
                 .foregroundStyle(focused ? Theme.accent : Theme.dim)
             HStack(alignment: .firstTextBaseline, spacing: 6) {
                 // While typing, the field; otherwise a Text over it, so a number
@@ -920,22 +919,22 @@ struct LogView: View {
                 // picked — rolls like a counter instead of snapping. A text field
                 // can't animate its own digits.
                 ZStack(alignment: .leading) {
-                    TextField(text: text, prompt: Text(hint ?? "–").foregroundStyle(.white.opacity(0.25))) {
+                    TextField(text: text, prompt: Text(hint ?? "–").foregroundStyle(.tertiary)) {
                         Text(title)
                     }
                     .keyboardType(keyboard)
                     .focused($focus, equals: focusValue)
-                    .foregroundStyle(.white)
+                    .foregroundStyle(.primary)
                     .opacity(focused ? 1 : 0)
                     if !focused {
                         Text(text.wrappedValue.isEmpty ? (hint ?? "–") : text.wrappedValue)
-                            .foregroundStyle(text.wrappedValue.isEmpty ? .white.opacity(0.25) : .white)
+                            .foregroundStyle(text.wrappedValue.isEmpty ? AnyShapeStyle(.tertiary) : AnyShapeStyle(.primary))
                             .contentTransition(.numericText())
                             .accessibilityHidden(true)
                     }
                 }
-                .font(.system(size: min(fieldNumberSize, 56), weight: .heavy, design: .monospaced))
-                .tracking(-3)
+                .font(.system(size: min(fieldNumberSize, 58), weight: .medium, design: .serif))
+                .monospacedDigit()
                 .minimumScaleFactor(0.5)
                 .lineLimit(1)
                 .animation(.snappy(duration: 0.35), value: text.wrappedValue)
@@ -953,13 +952,14 @@ struct LogView: View {
         .padding(.horizontal, 12)
         .frame(maxWidth: .infinity, alignment: .leading)
         .frame(height: min(fieldHeight, Theme.bigFieldHeight * 1.6) + 20)
-        // A black window cut into the panel; only the live one gets a line.
-        .background(.black, in: RoundedRectangle(cornerRadius: Theme.corner, style: .continuous))
+        // A soft well in the card; only the live one gets a ring.
+        .background(Theme.raised, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
         .overlay(
-            RoundedRectangle(cornerRadius: Theme.corner, style: .continuous)
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
                 .strokeBorder(Theme.accent, lineWidth: 1.5)
                 .opacity(focused ? 1 : 0)
         )
+        .animation(.snappy(duration: 0.2), value: focused)
         .contentShape(Rectangle())
         .onTapGesture { focus = focusValue }
     }

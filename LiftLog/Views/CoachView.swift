@@ -180,17 +180,16 @@ struct CoachView: View {
             switch message.role {
             case .you:
                 // A leading spacer with a floor, so a long question wraps inside a
-                // bubble instead of becoming a full-width block.
-                // A prompt line, as on a terminal: the orange › is you.
-                HStack(alignment: .firstTextBaseline, spacing: 8) {
-                    Text("›")
-                        .font(.subheadline.weight(.heavy))
-                        .foregroundStyle(Theme.accent)
+                // bubble instead of becoming a full-width block. Your words in a
+                // soft bubble; the coach's sit on the page.
+                HStack {
+                    Spacer(minLength: 56)
                     Text(message.text)
-                        .font(.subheadline.weight(.semibold))
-                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .font(.body)
+                        .padding(.horizontal, 14).padding(.vertical, 10)
+                        .background(Theme.raised, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
                 }
-                .padding(.top, 10)
+                .padding(.top, 6)
             case .coach:
                 coachBubble(message)
             }
@@ -252,8 +251,8 @@ struct CoachView: View {
     /// Inline-only preserves the line breaks that `.full` would collapse.
     /// Paragraphs and list items: a bullet sits in its own column, so a
     /// wrapped line lines up under the text, not under the dash.
-    /// `cursor`: while the answer streams, an orange block blinks after the
-    /// last word, as on a terminal — the answer is being typed, here.
+    /// `cursor`: while the answer streams, a terracotta dot pulses after the
+    /// last word — the answer is being written, here.
     private func proseView(_ prose: String, cursor: Bool = false) -> some View {
         let blocks = CoachContext.chatBlocks(CoachContext.chatMarkdown(prose))
         return TimelineView(.periodic(from: .now, by: 0.5)) { tick in
@@ -282,8 +281,8 @@ struct CoachView: View {
                 }
             }
         }
-        .font(.subheadline)
-        .lineSpacing(3)
+        .font(.body)
+        .lineSpacing(4)
         .textSelection(.enabled)
     }
 
@@ -295,7 +294,7 @@ struct CoachView: View {
 
     private func withCursor(_ text: Text, _ lit: Bool?) -> Text {
         guard let lit else { return text }
-        return Text("\(text) \(Text("▮").foregroundStyle(Theme.accent.opacity(lit ? 1 : 0.15)))")
+        return Text("\(text) \(Text("●").foregroundStyle(Theme.accent.opacity(lit ? 1 : 0.3)))")
     }
 
     private func rendered(_ markdown: String) -> AttributedString {
@@ -427,11 +426,10 @@ struct CoachView: View {
                     .foregroundStyle(.tertiary)
             }
         }
-        // Straight on the black, under a thin rule: an answer is the page,
-        // not a card in it. Cards are for the things you act on below.
-        .padding(.top, 12)
+        // Straight on the page: an answer is the page, not a card in it.
+        // Cards are for the things you act on below.
+        .padding(.vertical, 6)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .overlay(alignment: .top) { Rectangle().fill(Theme.rule).frame(height: 1) }
 
         // The file gets its own card: it's a thing you save, not a paragraph, and a
         // raw fenced block in a chat bubble reads as noise.
@@ -806,64 +804,68 @@ struct CoachView: View {
 
     // MARK: - Input
 
+    /// One rounded card: the question on top, the model and send underneath,
+    /// with what the coach can see in a quiet line above it.
     private var inputBar: some View {
-        VStack(spacing: 8) {
-            HStack {
-                // A menu, not segments: four names don't fit a row, and the
-                // question box is what this bar is for.
-                Menu {
-                    Picker("Model", selection: $model) {
-                        ForEach(CoachModelChoice.offered) { Text($0.label).tag($0) }
-                    }
-                } label: {
-                    HStack(spacing: 4) {
-                        Text(model.label.lowercased()).font(.subheadline.weight(.semibold))
-                        Image(systemName: "chevron.up.chevron.down").font(.caption2.weight(.semibold))
-                    }
-                    .pill()
-                    .foregroundStyle(.primary)
-                }
-                .buttonStyle(.plain)
-                .fixedSize()
-                .disabled(coach.isResponding)
-                .accessibilityLabel("Model")
-                .accessibilityValue(model.label)
-                Spacer()
-                // Before the first question there's no context to report yet, so
-                // say what the picked model costs you instead.
-                Text(coach.contextNote ?? model.blurb)
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(2)
-                    .minimumScaleFactor(0.8)
-                    .multilineTextAlignment(.trailing)
-            }
+        VStack(alignment: .leading, spacing: 6) {
+            // Before the first question there's no context to report yet, so
+            // say what the picked model costs you instead.
+            Text(coach.contextNote ?? model.blurb)
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+                .lineLimit(2)
+                .minimumScaleFactor(0.8)
+                .padding(.horizontal, 6)
 
-            HStack(spacing: 10) {
+            VStack(alignment: .leading, spacing: 10) {
                 TextField("ask your coach…", text: $draft, axis: .vertical)
-                    .lineLimit(1...5)
+                    .lineLimit(1...6)
                     .focused($inputFocused)
-                    .padding(.horizontal, 14).padding(.vertical, 10)
-                    .background(Theme.surface, in: RoundedRectangle(cornerRadius: Theme.corner, style: .continuous))
                     .onSubmit { ask(draft) }
 
-                Button {
-                    if coach.isResponding { coach.cancel() } else { ask(draft) }
-                } label: {
-                    Image(systemName: coach.isResponding ? "stop.fill" : "arrow.up")
-                        .symbolEffect(.bounce, value: sent)
-                        .font(.headline.weight(.bold))
-                        .frame(width: 44, height: 44)
-                        .background(Theme.accent, in: RoundedRectangle(cornerRadius: Theme.corner, style: .continuous))
-                        .foregroundStyle(Theme.onAccent)
+                HStack {
+                    // A menu, not segments: four names don't fit a row, and the
+                    // question box is what this bar is for.
+                    Menu {
+                        Picker("Model", selection: $model) {
+                            ForEach(CoachModelChoice.offered) { Text($0.label).tag($0) }
+                        }
+                    } label: {
+                        HStack(spacing: 4) {
+                            Text(model.label.lowercased()).font(.footnote.weight(.medium))
+                            Image(systemName: "chevron.up.chevron.down").font(.caption2.weight(.semibold))
+                        }
+                        .pill()
+                        .foregroundStyle(.primary)
+                    }
+                    .buttonStyle(.plain)
+                    .fixedSize()
+                    .disabled(coach.isResponding)
+                    .accessibilityLabel("Model")
+                    .accessibilityValue(model.label)
+                    Spacer()
+                    Button {
+                        if coach.isResponding { coach.cancel() } else { ask(draft) }
+                    } label: {
+                        Image(systemName: coach.isResponding ? "stop.fill" : "arrow.up")
+                            .symbolEffect(.bounce, value: sent)
+                            .font(.subheadline.weight(.bold))
+                            .frame(width: 34, height: 34)
+                            .background(Theme.accent, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                            .foregroundStyle(Theme.onAccent)
+                    }
+                    .disabled(!coach.isResponding && draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                 }
-                .disabled(!coach.isResponding && draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
             }
+            .padding(.horizontal, 14).padding(.top, 12).padding(.bottom, 10)
+            .background(Theme.surface, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 22, style: .continuous)
+                .strokeBorder(Theme.rule, lineWidth: 0.5))
+            .shadow(color: .black.opacity(0.05), radius: 10, x: 0, y: 2)
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 12)
-        .background(Color.black)
-        .overlay(alignment: .top) { Rectangle().fill(Theme.rule).frame(height: 1) }
+        .padding(.horizontal, 12)
+        .padding(.top, 6).padding(.bottom, 10)
+        .background(Theme.ground)
     }
 
     private func ask(_ question: String) {

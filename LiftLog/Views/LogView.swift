@@ -432,7 +432,7 @@ struct LogView: View {
         HStack(spacing: 10) {
             Image(systemName: "calendar.badge.exclamationmark")
                 .foregroundStyle(Theme.warning)
-            Text("Logging for \(dayLabel), not today")
+            Text("logging for \(pillLabel), not today")
                 .font(.footnote.weight(.semibold))
             Spacer()
             Button("today") {

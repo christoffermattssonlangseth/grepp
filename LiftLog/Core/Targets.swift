@@ -106,14 +106,16 @@ enum Targets {
                 // that and everything after it is cut before the number is read.
                 let clause = whole.replacingOccurrences(of: #"\b(currently|now|today|at the moment|was|last)\b.*$"#, with: "", options: .regularExpression)
                 let name = lift(in: whole) ?? (liftsInLine.count <= 1 ? lineLift : nil) ?? heading
-                guard let name, !seen.contains(name), let number = number(in: clause) else { continue }
-                seen.insert(name)
+                guard let name, let number = number(in: clause) else { continue }
                 // A clause with its own "by" keeps its own date, readable or
                 // not; one without borrows the sentence's.
                 let ownDate = clause.range(of: #"\b(by|before|until|till)\b"#, options: .regularExpression) != nil
                 let kind: Target.Kind = number.isReps ? .reps
                     : isAddedLoad(clause) ? .addedLoad
                     : (sectionIsMax || isMax(clause) || isMax(text)) ? .oneRepMax : .topSet
+                // The first of each kind per lift: "bench 12 reps" mustn't hide
+                // a later "bench 100 kg" that a weighted bench can use.
+                guard seen.insert("\(name)|\(kind)").inserted else { continue }
                 out.append(Target(lift: name, value: number.value, kind: kind,
                                   by: ownDate ? date(in: clause, today: today, calendar: calendar) : lineDate,
                                   line: line))
@@ -138,10 +140,12 @@ enum Targets {
     /// takes reps or added load; a weighted one, a top set or a max.
     static func target(for name: String, in targets: [Target], sessions: [Session]) -> Target? {
         let key = MuscleMap.canonical(name)
-        guard let target = targets.first(where: { $0.lift == key }) else { return nil }
-        guard Analytics.isBodyweight(name, in: sessions) else {
-            return target.kind == .topSet || target.kind == .oneRepMax ? target : nil
-        }
+        let bodyweight = Analytics.isBodyweight(name, in: sessions)
+        // The first that fits this kind of lift, not the first that names it.
+        guard let target = targets.first(where: { t in
+            t.lift == key && (bodyweight ? t.kind != .oneRepMax : (t.kind == .topSet || t.kind == .oneRepMax))
+        }) else { return nil }
+        guard bodyweight else { return target }
         switch target.kind {
         case .reps, .addedLoad: return target
         case .topSet: return Target(lift: target.lift, value: target.value, kind: .addedLoad, by: target.by, line: target.line)
@@ -299,7 +303,10 @@ struct Projection: Equatable {
     /// The day the line reaches the target at this pace; nil when it is
     /// already met (`isMet`) or the pace is flat.
     let date: Date?
-    var isMet: Bool { current >= target }
+    /// The best value the series has reached, so one lighter week after
+    /// hitting the target doesn't un-meet it.
+    var best: Double? = nil
+    var isMet: Bool { max(current, best ?? current) >= target }
 }
 
 extension Analytics {
@@ -309,10 +316,15 @@ extension Analytics {
     static func projection(_ series: [TrendPoint], to target: Double,
                            now: Date = Date(), calendar: Calendar = .current) -> Projection? {
         guard let last = series.last, series.count >= 2 else { return nil }
+        let best = series.map(\.value).max() ?? last.value
+        if best >= target { return Projection(target: target, current: last.value, perDay: nil, date: nil, best: best) }
         let cutoff = calendar.date(byAdding: .day, value: -84, to: calendar.startOfDay(for: now)) ?? now
         var window = series.filter { $0.date >= cutoff }
         if window.count < 3 { window = Array(series.suffix(2)) }
         guard window.count >= 2, let first = window.first else { return nil }
+        // Nothing lifted in the window: no pace to speak of, rather than one
+        // carried from months ago to a date already gone.
+        guard last.date >= cutoff else { return Projection(target: target, current: last.value, perDay: nil, date: nil) }
 
         let xs = window.map { $0.date.timeIntervalSince(first.date) / 86_400 }
         let ys = window.map(\.value)
@@ -322,7 +334,6 @@ extension Analytics {
         for (x, y) in zip(xs, ys) { sxx += (x - mx) * (x - mx); sxy += (x - mx) * (y - my) }
         let slope = sxx > 0 ? sxy / sxx : 0
 
-        if last.value >= target { return Projection(target: target, current: last.value, perDay: slope, date: nil) }
         guard slope > 0 else { return Projection(target: target, current: last.value, perDay: nil, date: nil) }
         let days = (target - last.value) / slope
         let date = last.date.addingTimeInterval(days * 86_400)

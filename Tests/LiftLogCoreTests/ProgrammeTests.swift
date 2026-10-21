@@ -144,6 +144,15 @@ extension ProgrammeTests {
         XCTAssertNil(Programme.parse("").adherence(in: sessions, today: today))
     }
 
+    func testFourWeeksIsTwentyEightDays() {
+        let p = Programme.parse(file)
+        let today = Session.dateFormatter.date(from: "2026-09-21")!
+        // The same weekday four weeks back is outside the window.
+        let a = p.adherence(in: [session("2026-08-24", ["bench-press", "chin-ups"]),
+                                 session("2026-08-25", ["bench-press", "chin-ups"])], weeks: 4, today: today)!
+        XCTAssertEqual(a.daysDone, 1)
+    }
+
     func testDueDayIsTheOneAfterTheDayLastDone() {
         let p = Programme.parse("""
         ## A

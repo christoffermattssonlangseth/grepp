@@ -107,8 +107,11 @@ struct CoachMessage: Identifiable, Equatable, Codable {
     /// The app's own stop reason, not the API's: the answer was still coming
     /// when iOS took the time back. Offers Continue.
     static let interrupted = "interrupted"
+    /// Also the app's: an error arrived after part of the answer had. Offers
+    /// Continue too, so the half answer isn't left looking finished.
+    static let failed = "failed"
 
-    var wasInterrupted: Bool { stop == Self.interrupted }
+    var wasInterrupted: Bool { stop == Self.interrupted || stop == Self.failed }
 
     /// The sentence for `stop`, in the app's voice.
     var stopNote: String? {
@@ -117,6 +120,7 @@ struct CoachMessage: Identifiable, Equatable, Codable {
         case "max_tokens": return "The answer hit the length limit and was cut off here."
         case "pause_turn": return "The search ran out of rounds before it finished. Ask again to continue."
         case CoachMessage.interrupted: return "Cut off when you left the app: iOS stopped the answer before it finished."
+        case CoachMessage.failed: return "Cut off by an error partway through: this answer isn't finished."
         case nil: return nil
         // A reason the app doesn't know yet still says something, or an empty
         // bubble is left with no explanation at all.
@@ -516,6 +520,11 @@ final class CoachService: ObservableObject {
                 // Surface the failure, not the request: ClaudeError carries the
                 // status and the API's reason — never the prompt or the log.
                 self?.errorText = error.localizedDescription
+                // Part of the answer arrived first: mark it unfinished.
+                if let self, self.messages.first(where: { $0.id == reply.id })?.text
+                    .trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false {
+                    self.noteStop(CoachMessage.failed, on: reply.id)
+                }
                 // A lookup the API turned down cost nothing: drop its estimate.
                 if lookup != nil, error is ClaudeService.ClaudeError { self?.setUsage(nil, on: reply.id) }
             }

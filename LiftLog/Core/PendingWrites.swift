@@ -40,6 +40,16 @@ struct LineRef: Codable, Equatable {
         if let first = sameText.first { return first }
         return occurrence < same.count ? same[occurrence] : nil
     }
+
+    /// Where the line is, by its text only. For a delete or a move: a retry
+    /// of one that already landed finds its text gone, and the same-numbered
+    /// line then is the next one — a back-off line nobody asked to touch.
+    func exactIndex(in exercises: [ExerciseEntry]) -> Int? {
+        let same = exercises.indices.filter { Analytics.matches(exercises[$0].name, name) }
+        let sameText = same.filter { exercises[$0].line(date: day) == text }
+        if occurrence < same.count, sameText.contains(same[occurrence]) { return same[occurrence] }
+        return sameText.first
+    }
 }
 
 /// A change that couldn't reach GitHub yet — captured locally so it survives an
@@ -254,7 +264,7 @@ extension WorkoutParser {
     static func remove(_ name: String, onDay key: String, line target: LineRef? = nil, from base: inout [Session]) {
         guard let idx = base.firstIndex(where: { $0.dateString == key }) else { return }
         if let target, target.day == key {
-            guard let exIdx = target.index(in: base[idx].exercises) else { return }
+            guard let exIdx = target.exactIndex(in: base[idx].exercises) else { return }
             base[idx].exercises.remove(at: exIdx)
         } else {
             base[idx].exercises.removeAll { Analytics.matches($0.name, name) }
@@ -279,7 +289,7 @@ extension WorkoutParser {
               let idx = base.firstIndex(where: { $0.dateString == key }) else { return }
         let indices: [Int]
         if name != nil, let target, target.day == key {
-            indices = target.index(in: base[idx].exercises).map { [$0] } ?? []
+            indices = target.exactIndex(in: base[idx].exercises).map { [$0] } ?? []
         } else {
             indices = base[idx].exercises.indices.filter { i in
                 name.map { Analytics.matches(base[idx].exercises[i].name, $0) } ?? true

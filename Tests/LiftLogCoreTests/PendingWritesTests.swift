@@ -221,6 +221,27 @@ final class PendingWritesTests: XCTestCase {
         XCTAssertEqual(target.index(in: base[0].exercises), 1)
     }
 
+    func testARetriedDeleteThatAlreadyLandedTouchesNothing() {
+        var base = WorkoutParser.parse(backOff)
+        let delete = PendingWrite(operation: .delete(name: "squat"), date: date("2026-09-07"), message: "d",
+                                  target: ref(base, 0))
+        WorkoutParser.apply(delete, to: &base)
+        // The reply was lost on gym wifi; the queue replays the same delete.
+        WorkoutParser.apply(delete, to: &base)
+        XCTAssertEqual(WorkoutParser.serialize(base), "2026-09-07 bench 60x8\n2026-09-07 squat 80x8 80x8\n",
+                       "the back-off line stays")
+    }
+
+    func testARetriedMoveThatAlreadyLandedMovesNothingElse() {
+        var base = WorkoutParser.parse(backOff)
+        let move = PendingWrite(operation: .move(name: "squat", to: date("2026-09-08")), date: date("2026-09-07"),
+                                message: "m", target: ref(base, 0))
+        WorkoutParser.apply(move, to: &base)
+        WorkoutParser.apply(move, to: &base)
+        XCTAssertEqual(base[0].exercises.map(\.name), ["bench", "squat"])
+        XCTAssertEqual(base[1].exercises.map { $0.sets.first?.weight }, [100])
+    }
+
     func testAStaleRefAddsRatherThanOverwrites() {
         var base = WorkoutParser.parse("2026-09-07 squat 100x5\n")
         let gone = LineRef(day: "2026-09-07", name: "squat", text: "2026-09-07 squat 80x8", occurrence: 1)

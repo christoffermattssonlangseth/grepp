@@ -545,8 +545,21 @@ final class Store: ObservableObject {
         return error is URLError || icloud == .unavailable || icloud == .notReady
     }
 
+    /// The last load didn't reach the file — offline, or no token yet
+    /// because the phone was locked when the app was woken.
+    private var loadFailed = false
+
+    /// Back on screen: sync what's waiting, and retry a load that didn't
+    /// land. A clean load with nothing queued isn't repeated every time.
+    func resume() async {
+        // A load already running (the launch one) is this one.
+        guard loadTask == nil, !pending.isEmpty || loadFailed else { return }
+        await load()
+    }
+
     private func performLoad() async {
         isBusy = true; status = "Loading…"
+        loadFailed = true
         defer { isBusy = false }
         do {
             if let state = try await service.fetch() {
@@ -570,6 +583,7 @@ final class Store: ObservableObject {
                 sessions = WorkoutParser.applying(pending, to: [])
                 status = "No file yet — first save will create it.\(pendingSuffix)"
             }
+            loadFailed = false
             await loadBrief()
             await flushPending()
         } catch let error where isOffline(error) {

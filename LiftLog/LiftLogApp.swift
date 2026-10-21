@@ -41,7 +41,10 @@ struct LiftLogApp: App {
                 // reload on the way out whatever happened to the ones before.
                 .onChange(of: scenePhase) { _, phase in
                     if phase == .background { store.refreshWidget() }
-                    if phase == .active { store.reloadCredentials() }
+                    if phase == .active {
+                        store.reloadCredentials()
+                        Task { await store.resume() }
+                    }
                 }
         }
     }

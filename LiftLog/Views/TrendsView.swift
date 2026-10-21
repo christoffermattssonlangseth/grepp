@@ -205,9 +205,15 @@ struct TrendsView: View {
                 if series.count >= 2 {
                     liftChart(series)
                         .frame(height: 240)
+                        // The wipe only limits width: the reading under the
+                        // finger floats above the plot, outside the chart's
+                        // frame, and a frame-sized mask cut it off.
                         .mask(alignment: .leading) {
                             GeometryReader { g in
-                                Rectangle().frame(width: g.size.width * drawn)
+                                Rectangle()
+                                    .frame(width: drawn < 1 ? g.size.width * drawn : g.size.width + 400,
+                                           height: g.size.height + 400)
+                                    .offset(x: drawn < 1 ? 0 : -200, y: -200)
                             }
                         }
                         .task(id: "\(exercise)|\(metric.rawValue)") {

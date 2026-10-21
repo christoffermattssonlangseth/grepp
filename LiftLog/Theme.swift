@@ -95,7 +95,22 @@ struct Panel<Content: View>: View {
     var body: some View { content.panel() }
 }
 
+/// Rises and fades in the first time it comes on screen: rows that arrive
+/// as you scroll slide into place rather than popping in.
+private struct SlideIn: ViewModifier {
+    @State private var shown = false
+    func body(content: Content) -> some View {
+        content
+            .opacity(shown ? 1 : 0)
+            .offset(y: shown ? 0 : 14)
+            .onAppear { withAnimation(.smooth(duration: 0.45)) { shown = true } }
+    }
+}
+
 extension View {
+    /// Rise and fade in on first showing. See `SlideIn`.
+    func slidesIn() -> some View { modifier(SlideIn()) }
+
     /// Tap any empty space, or drag a scrolling list, and the keyboard goes.
     /// Controls still win their own taps — this only catches the space between
     /// them. Dismisses through the responder chain rather than a FocusState, so it

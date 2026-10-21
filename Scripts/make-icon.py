@@ -4,13 +4,14 @@
     pip install pillow
     python3 Scripts/make-icon.py
 
-Writes LiftLog/Assets.xcassets/AppIcon.appiconset/icon-1024.png, and
-icon-1024-dark.png for iOS's dark home screen: true black with a hairline
-edge, the same mark.
+Writes LiftLog/Assets.xcassets/AppIcon.appiconset/icon-1024.png (a
+terracotta barbell on ivory) and icon-1024-dark.png for iOS's dark home
+screen (the same mark, lifted a touch, on warm charcoal): the app's own
+grounds and accent.
 
-The mark is the same barbell as `Barbell` in Theme.swift — bar running past two
-plates a side, outer plate shorter — and ACCENT below is Theme.accent. Re-skin
-the app and re-run this, rather than editing a PNG by hand.
+The mark is the same barbell as `Barbell` in Brand.swift — bar running past two
+plates a side, outer plate shorter — and the colours are Theme's. Re-skin the
+app and re-run this, rather than editing a PNG by hand.
 """
 from PIL import Image, ImageDraw
 
@@ -18,15 +19,10 @@ OUT = "LiftLog/Assets.xcassets/AppIcon.appiconset/icon-1024.png"
 OUT_DARK = "LiftLog/Assets.xcassets/AppIcon.appiconset/icon-1024-dark.png"
 SIZE, SUPERSAMPLE = 1024, 4
 
-# Steel, a touch either side of Theme.accent (#1F7899) for depth.
-TOP    = (45, 149, 186)   # #2D95BA
-BOTTOM = (20, 96, 124)    # #14607C
-MARK   = (232, 239, 243)  # #E8EFF3 — brushed off-white, faint cool cast
-
-# Dark: black ground, the edge a quiet grey just inside iOS's mask.
-DARK_GROUND = (0, 0, 0)
-DARK_EDGE   = (84, 88, 92)    # #54585C
-EDGE_INSET, EDGE_WIDTH, EDGE_RADIUS = 30, 9, 200
+IVORY     = (250, 249, 245)   # #FAF9F5 — Theme.ground, light
+CHARCOAL  = (38, 38, 36)      # #262624 — Theme.ground, dark
+ACCENT    = (198, 97, 63)     # #C6613F — Brand.accent
+ACCENT_LIT = (217, 119, 87)   # #D97757 — the accent lifted for the dark ground
 
 # x0, y0, x1, y1, corner radius, on a 1024 grid. The mark spans ~80% of the
 # width: any wider and its corners start meeting iOS's squircle mask.
@@ -39,11 +35,11 @@ PARTS = [
 ]
 
 
-def draw_mark(draw: ImageDraw.ImageDraw) -> None:
+def draw_mark(draw: ImageDraw.ImageDraw, colour) -> None:
     for x0, y0, x1, y1, r in PARTS:
         draw.rounded_rectangle([x0 * SUPERSAMPLE, y0 * SUPERSAMPLE,
                                 x1 * SUPERSAMPLE, y1 * SUPERSAMPLE],
-                               radius=r * SUPERSAMPLE, fill=MARK)
+                               radius=r * SUPERSAMPLE, fill=colour)
 
 
 def save(img: Image.Image, path: str) -> None:
@@ -55,24 +51,10 @@ def save(img: Image.Image, path: str) -> None:
 
 def main() -> None:
     w = SIZE * SUPERSAMPLE
-    img = Image.new("RGB", (w, w), TOP)
-    draw = ImageDraw.Draw(img)
-
-    # One line per row at full supersampled height, so the gradient doesn't band.
-    for y in range(w):
-        t = y / (w - 1)
-        draw.line([(0, y), (w, y)],
-                  fill=tuple(round(TOP[i] + (BOTTOM[i] - TOP[i]) * t) for i in range(3)))
-    draw_mark(draw)
-    save(img, OUT)
-
-    dark = Image.new("RGB", (w, w), DARK_GROUND)
-    draw = ImageDraw.Draw(dark)
-    i, e = EDGE_INSET * SUPERSAMPLE, EDGE_WIDTH * SUPERSAMPLE
-    draw.rounded_rectangle([i, i, w - i, w - i], radius=EDGE_RADIUS * SUPERSAMPLE,
-                           outline=DARK_EDGE, width=e)
-    draw_mark(draw)
-    save(dark, OUT_DARK)
+    for ground, mark, path in [(IVORY, ACCENT, OUT), (CHARCOAL, ACCENT_LIT, OUT_DARK)]:
+        img = Image.new("RGB", (w, w), ground)
+        draw_mark(ImageDraw.Draw(img), mark)
+        save(img, path)
 
 
 if __name__ == "__main__":

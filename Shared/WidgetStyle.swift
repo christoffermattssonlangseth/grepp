@@ -3,7 +3,7 @@ import Foundation
 /// How the home-screen widget looks, picked in Settings. Kept in the App
 /// Group beside the snapshot, so the widget reads what the app wrote.
 enum WidgetStyle: String, CaseIterable, Identifiable {
-    /// True black in dark mode, white in light: follows the phone.
+    /// The app's own grounds: charcoal in dark mode, ivory in light.
     case auto
     /// Black whatever the phone's mode.
     case black

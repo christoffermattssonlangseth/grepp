@@ -44,6 +44,8 @@ struct LogView: View {
     @State private var repsText = ""
 
     @State private var showingPicker = false
+    /// The lift card the picker grows out of, and shrinks back into.
+    @Namespace private var pickerZoom
     /// The sets Coach prescribed, shown as a target and used to prefill each next set.
     @State private var plan: [WorkSet]?
     /// Exercises still to come after this one, when Coach handed over a session.
@@ -179,6 +181,7 @@ struct LogView: View {
                     }
                     name = picked
                 }
+                .navigationTransition(.zoom(sourceID: "lift", in: pickerZoom))
             }
             .toolbar {
                 // The date as a compact pill up here, not a whole card under the
@@ -572,6 +575,7 @@ struct LogView: View {
                             .foregroundStyle(Theme.accent)
                     }
                 }
+                .matchedTransitionSource(id: "lift", in: pickerZoom)
                 if let plan {
                     Label {
                         Text("plan  " + plan.map(\.token).joined(separator: "  "))

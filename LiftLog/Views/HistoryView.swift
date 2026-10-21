@@ -216,6 +216,7 @@ struct HistoryView: View {
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .contentShape(Rectangle())
+                    .slidesIn()
                 }
                 .buttonStyle(.plain)
                 // One panel per day: the section rounds the outer corners and
@@ -299,6 +300,7 @@ struct HistoryView: View {
                 Spacer()
                 if stravaEnabled, strava.isConnected { stravaMark(session) }
             }
+            .slidesIn()
         }
     }
 

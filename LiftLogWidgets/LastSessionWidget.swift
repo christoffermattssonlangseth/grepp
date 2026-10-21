@@ -68,18 +68,15 @@ struct LastSessionView: View {
         }
     }
 
-    /// The home widget on the plate Settings picked. Black and follow-phone
-    /// get a hairline edge, like the Log tab's readout windows; black keeps
-    /// dark text styles in light mode, or the text would vanish on it.
+    /// The home widget on the plate Settings picked. Follow-phone wears the
+    /// app's ivory or charcoal with its hairline; black keeps dark text styles
+    /// in light mode, or the text would vanish on it.
     @ViewBuilder
     private func homePlate(_ style: WidgetStyle) -> some View {
         switch style {
         case .auto:
             home.containerBackground(for: .widget) {
-                ZStack {
-                    Color(UIColor { $0.userInterfaceStyle == .dark ? .black : .white })
-                    ContainerRelativeShape().strokeBorder(Color.primary.opacity(0.2), lineWidth: 1)
-                }
+                WarmPlate()
             }
         case .black:
             home
@@ -277,8 +274,7 @@ struct LastSessionView: View {
         VStack(alignment: .leading, spacing: 0) {
             header
             Text(relative(snapshot))
-                .font((compact ? Font.headline : .title3).weight(.heavy))
-                .fontWidth(.condensed)
+                .font(.system(compact ? .headline : .title2, design: .serif, weight: .medium))
                 .lineLimit(1)
                 .padding(.top, 4)
             Text(dayLabel(snapshot))
@@ -322,8 +318,7 @@ struct LastSessionView: View {
             header
             Spacer(minLength: 0)
             Text("nothing logged yet")
-                .font(.headline)
-                .fontWidth(.condensed)
+                .font(.system(.headline, design: .serif, weight: .medium))
             Text("open grepp and land a set.")
                 .font(.caption2)
                 .foregroundStyle(.secondary)
@@ -351,5 +346,17 @@ struct LastSessionView: View {
     private func dayLabel(_ snapshot: WidgetSnapshot) -> String {
         guard let day = snapshot.date else { return "" }
         return day.formatted(.dateTime.weekday(.wide).day().month(.abbreviated)).lowercased()
+    }
+}
+
+/// Ivory or charcoal, following the phone, with the app's hairline round it.
+private struct WarmPlate: View {
+    @Environment(\.colorScheme) private var scheme
+    var body: some View {
+        ZStack {
+            scheme == .dark ? Brand.charcoal : Brand.ivory
+            ContainerRelativeShape()
+                .strokeBorder(scheme == .dark ? Brand.charcoalRule : Brand.ivoryRule, lineWidth: 1)
+        }
     }
 }

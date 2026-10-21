@@ -13,6 +13,13 @@ enum Brand {
     /// Anything drawn *on* the accent.
     static let onAccent = Color.white
 
+    /// The warm grounds the app sits on, here so the home widget matches:
+    /// ivory by day, charcoal by night, each with its hairline.
+    static let ivory = Color(red: 0.980, green: 0.976, blue: 0.961)      // #FAF9F5
+    static let charcoal = Color(red: 0.149, green: 0.149, blue: 0.141)   // #262624
+    static let ivoryRule = Color(red: 0.890, green: 0.882, blue: 0.855)  // #E3E1DA
+    static let charcoalRule = Color(red: 0.267, green: 0.263, blue: 0.251) // #444340
+
     /// The old steel cyan, kept for the home widget's "steel" look only.
     static let steel = Color(red: 0.122, green: 0.471, blue: 0.600)   // #1F7899
 

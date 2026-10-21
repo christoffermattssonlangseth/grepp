@@ -24,6 +24,9 @@ struct TrendsView: View {
     @State private var metric: Analytics.Metric = .topSet
     /// Where a finger is on the chart's x-axis, if it's on it at all.
     @State private var scrub: Date?
+    /// How much of the line is drawn: 0 to 1, run on open and on a new lift,
+    /// so the trend traces in left to right instead of appearing.
+    @State private var drawn: CGFloat = 1
     @State private var weekScrub: Date?
     /// The week under a finger on the work-and-result bars, if any.
     @State private var showingPicker = false
@@ -202,6 +205,15 @@ struct TrendsView: View {
                 if series.count >= 2 {
                     liftChart(series)
                         .frame(height: 240)
+                        .mask(alignment: .leading) {
+                            GeometryReader { g in
+                                Rectangle().frame(width: g.size.width * drawn)
+                            }
+                        }
+                        .task(id: "\(exercise)|\(metric.rawValue)") {
+                            drawn = 0
+                            withAnimation(.easeOut(duration: 0.9)) { drawn = 1 }
+                        }
                     // The reading under the finger, and the way into that day —
                     // outside the plot, where the chart's own gestures can't eat it.
                     if let picked = scrubbed(in: series) {

@@ -63,6 +63,8 @@ struct LogView: View {
     /// restore over the top of live work.
     @State private var restored = false
     @State private var setAdded = 0
+    /// The set that just landed, lit orange for a moment.
+    @State private var flashedSet: UUID?
     @State private var exerciseFinished = 0
     @State private var recordSet = 0
     @StateObject private var strava = StravaService.shared
@@ -213,7 +215,7 @@ struct LogView: View {
                 }
             }
             // 11. Feel: a tap that lands a set should be felt, and finishing more so.
-            .sensoryFeedback(.impact(weight: .medium), trigger: setAdded)
+            .sensoryFeedback(.impact(flexibility: .rigid, intensity: 1), trigger: setAdded)
             .sensoryFeedback(.success, trigger: exerciseFinished)
             // A record lands on top of the ordinary set buzz: a heavy hit after a
             // medium one, which reads as "more" without a second haptic vocabulary.
@@ -809,7 +811,7 @@ struct LogView: View {
                         Spacer()
                         Text("× \(set.reps)").font(.title3.weight(.heavy))
                         Button {
-                            sets.removeAll { $0.id == set.id }
+                            withAnimation(.snappy) { sets.removeAll { $0.id == set.id } }
                         } label: {
                             Image(systemName: "minus.circle.fill")
                                 .font(.title3)
@@ -817,6 +819,15 @@ struct LogView: View {
                         }
                     }
                     .padding(.vertical, 4)
+                    .padding(.horizontal, 6)
+                    .background(Theme.accent.opacity(flashedSet == set.id ? 0.28 : 0),
+                                in: RoundedRectangle(cornerRadius: Theme.corner, style: .continuous))
+                    .padding(.horizontal, -6)
+                    // Drops in from the readout above and settles with a bounce.
+                    .transition(.asymmetric(
+                        insertion: .scale(scale: 0.6, anchor: .top).combined(with: .opacity)
+                            .combined(with: .offset(y: -24)),
+                        removal: .opacity.combined(with: .scale(scale: 0.9))))
                 }
                 Button {
                     if let last = sets.last {
@@ -904,16 +915,31 @@ struct LogView: View {
                 .font(.caption.weight(.semibold)).tracking(1)
                 .foregroundStyle(focused ? Theme.accent : Theme.dim)
             HStack(alignment: .firstTextBaseline, spacing: 6) {
-                TextField(text: text, prompt: Text(hint ?? "–").foregroundStyle(.white.opacity(0.25))) {
-                    Text(title)
+                // While typing, the field; otherwise a Text over it, so a number
+                // that changes under you — the next set prefilled, another lift
+                // picked — rolls like a counter instead of snapping. A text field
+                // can't animate its own digits.
+                ZStack(alignment: .leading) {
+                    TextField(text: text, prompt: Text(hint ?? "–").foregroundStyle(.white.opacity(0.25))) {
+                        Text(title)
+                    }
+                    .keyboardType(keyboard)
+                    .focused($focus, equals: focusValue)
+                    .foregroundStyle(.white)
+                    .opacity(focused ? 1 : 0)
+                    if !focused {
+                        Text(text.wrappedValue.isEmpty ? (hint ?? "–") : text.wrappedValue)
+                            .foregroundStyle(text.wrappedValue.isEmpty ? .white.opacity(0.25) : .white)
+                            .contentTransition(.numericText())
+                            .accessibilityHidden(true)
+                    }
                 }
-                .keyboardType(keyboard)
-                .focused($focus, equals: focusValue)
-                .foregroundStyle(.white)
                 .font(.system(size: min(fieldNumberSize, 56), weight: .heavy, design: .monospaced))
                 .tracking(-3)
                 .minimumScaleFactor(0.5)
                 .lineLimit(1)
+                .animation(.snappy(duration: 0.35), value: text.wrappedValue)
+                .animation(.snappy(duration: 0.35), value: hint)
                 // As wide as the number, so the unit sits right after it;
                 // a tap anywhere in the window still focuses it.
                 .fixedSize(horizontal: true, vertical: false)
@@ -963,7 +989,16 @@ struct LogView: View {
             dayCheck = .set(set)
             return
         }
-        sets.append(set)
+        withAnimation(.spring(response: 0.38, dampingFraction: 0.62)) {
+            sets.append(set)
+            flashedSet = set.id
+        }
+        Task {
+            try? await Task.sleep(for: .milliseconds(650))
+            withAnimation(.easeOut(duration: 0.5)) {
+                if flashedSet == set.id { flashedSet = nil }
+            }
+        }
         // Only now do the typed reps go: a Cancel in the day dialog keeps them.
         repsText = ""
         focus = nil

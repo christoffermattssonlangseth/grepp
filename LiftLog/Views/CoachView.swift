@@ -252,20 +252,31 @@ struct CoachView: View {
     /// Inline-only preserves the line breaks that `.full` would collapse.
     /// Paragraphs and list items: a bullet sits in its own column, so a
     /// wrapped line lines up under the text, not under the dash.
-    private func proseView(_ prose: String) -> some View {
+    /// `cursor`: while the answer streams, an orange block blinks after the
+    /// last word, as on a terminal — the answer is being typed, here.
+    private func proseView(_ prose: String, cursor: Bool = false) -> some View {
         let blocks = CoachContext.chatBlocks(CoachContext.chatMarkdown(prose))
-        return VStack(alignment: .leading, spacing: 8) {
-            ForEach(Array(blocks.enumerated()), id: \.offset) { _, block in
+        return TimelineView(.periodic(from: .now, by: 0.5)) { tick in
+            let lit = Int(tick.date.timeIntervalSinceReferenceDate * 2) % 2 == 0
+            proseBlocks(blocks, cursor: cursor ? lit : nil)
+        }
+    }
+
+    /// `cursor`: nil for no cursor, else whether the blink is lit this tick.
+    private func proseBlocks(_ blocks: [CoachContext.ChatBlock], cursor: Bool?) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            ForEach(Array(blocks.enumerated()), id: \.offset) { index, block in
+                let last = index == blocks.count - 1
                 switch block {
                 case .text(let text):
-                    Text(rendered(text))
+                    withCursor(Text(rendered(text)), last ? cursor : nil)
                 case .item(let marker, let text, let level):
                     HStack(alignment: .firstTextBaseline, spacing: 8) {
                         Text(marker)
                             .foregroundStyle(marker == "•" ? Theme.accent : .secondary)
                             .monospacedDigit()
                             .frame(minWidth: 14, alignment: .trailing)
-                        Text(rendered(text))
+                        withCursor(Text(rendered(text)), last ? cursor : nil)
                     }
                     .padding(.leading, level == 1 ? 22 : 0)
                 }
@@ -274,6 +285,17 @@ struct CoachView: View {
         .font(.subheadline)
         .lineSpacing(3)
         .textSelection(.enabled)
+    }
+
+    /// Writing a file or reading a paper has its own label; the cursor stays out.
+    private func isWritingFile(_ r: CoachContext.Reply) -> Bool {
+        r.isWritingGoals || r.isWritingMemory || r.isWritingResearch
+            || r.isWritingProgram || r.isWritingPrescription || r.isWritingLog
+    }
+
+    private func withCursor(_ text: Text, _ lit: Bool?) -> Text {
+        guard let lit else { return text }
+        return Text("\(text) \(Text("▮").foregroundStyle(Theme.accent.opacity(lit ? 1 : 0.15)))")
     }
 
     private func rendered(_ markdown: String) -> AttributedString {
@@ -353,7 +375,7 @@ struct CoachView: View {
 
         VStack(alignment: .leading, spacing: 6) {
             if !reply.prose.isEmpty {
-                proseView(reply.prose)
+                proseView(reply.prose, cursor: message.isStreaming && !isWritingFile(reply) && message.isLookup != true)
             }
             if message.isStreaming, reply.isWritingGoals {
                 Label("writing your goals…", systemImage: "square.and.pencil")
@@ -376,8 +398,9 @@ struct CoachView: View {
             } else if message.isStreaming, message.isLookup == true {
                 Label("reading the paper…", systemImage: "magnifyingglass")
                     .font(.caption).foregroundStyle(.secondary)
-            } else if message.isStreaming {
-                ProgressView().controlSize(.small)
+            } else if message.isStreaming, reply.prose.isEmpty {
+                // Thinking, before the first word: the cursor on its own.
+                proseView("", cursor: true)
             }
             if !message.isStreaming, let note = message.stopNote {
                 Text(note)

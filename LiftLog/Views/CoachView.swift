@@ -466,6 +466,14 @@ struct CoachView: View {
         if let log = reply.log {
             logCard(log)
         }
+        // Cut off inside a file: said, not offered as half a file to save.
+        if let cut = reply.cutOff {
+            Label("the reply stopped partway through \(cut == "block" ? "a file" : cut), so there's nothing to save. ask again for the whole thing.",
+                  systemImage: "scissors")
+                .font(.footnote)
+                .foregroundStyle(Theme.warning)
+                .fixedSize(horizontal: false, vertical: true)
+        }
 
         // Each prescribed exercise is one tap from the Log tab — the advice
         // becoming the next set is the loop closing. Two or more and there's a

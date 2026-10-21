@@ -506,16 +506,24 @@ final class CoachContextTests: XCTestCase {
                        CoachContext.LookupTarget(url: nil), "a subdomain of a journal counts")
     }
 
-    func testAFinishedReplyClosesItsOpenFence() {
+    func testAFinishedReplyDropsItsHalfWrittenBlock() {
         let text = "Here's a programme.\n```program.md\n# Plan\n## Day 1\n- squat 3x5"
         let streaming = CoachContext.parseReply(text)
         XCTAssertTrue(streaming.isWritingProgram)
         XCTAssertNil(streaming.program)
         let done = CoachContext.parseReply(text, final: true)
         XCTAssertFalse(done.isWritingProgram)
-        XCTAssertEqual(done.program, "# Plan\n## Day 1\n- squat 3x5")
+        XCTAssertNil(done.program, "half a programme is not offered to save over the whole one")
+        XCTAssertEqual(done.cutOff, "program.md")
         XCTAssertEqual(done.prose, "Here's a programme.")
-        XCTAssertEqual(CoachContext.parseReply("plain answer", final: true).prose, "plain answer")
+        let plain = CoachContext.parseReply("plain answer", final: true)
+        XCTAssertEqual(plain.prose, "plain answer")
+        XCTAssertNil(plain.cutOff)
+        // A log cut mid-line adds nothing; the finished block before it stays.
+        let log = CoachContext.parseReply("Noted.\n```remember\nKnees.\n```\n```log\n2026-03-01 squat 100x", final: true)
+        XCTAssertNil(log.log)
+        XCTAssertEqual(log.memory, "Knees.")
+        XCTAssertEqual(log.cutOff, "log")
     }
 
     // MARK: - mid-session

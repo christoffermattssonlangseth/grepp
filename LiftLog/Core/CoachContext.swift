@@ -801,6 +801,10 @@ enum CoachContext {
         var log: [Session]?
         /// A log fence is open but not yet closed.
         var isWritingLog: Bool
+        /// The reply ended inside a block — stopped, cut by the token limit,
+        /// an error mid-stream — and this is that block's fence label
+        /// ("program.md", "log"…). Half a file is not offered to save.
+        var cutOff: String? = nil
 
         init(prose: String,
              goals: String? = nil,
@@ -836,13 +840,22 @@ enum CoachContext {
     /// Called on every streamed chunk, so a partial block has to read as "still
     /// writing" rather than as prose with a stray fence in it.
     static func parseReply(_ text: String, final: Bool = false) -> Reply {
-        var remaining = text
-        // A reply that ended mid-block — stopped, cut off, cut by the token
-        // limit — must not read as "still writing" for good: once the stream
-        // is over, an open fence is closed and what arrived becomes the card.
-        if final, remaining.components(separatedBy: "```").count % 2 == 0 {
-            remaining += "\n```"
+        // A reply that ended mid-block must not read as "still writing" for
+        // good, nor offer half a programme to save over the whole one: once
+        // the stream is over, the open block is dropped and named instead.
+        guard final, text.components(separatedBy: "```").count % 2 == 0,
+              let open = text.range(of: "```", options: .backwards) else {
+            return parseBlocks(text)
         }
+        let label = text[open.upperBound...].prefix { !$0.isNewline }
+            .trimmingCharacters(in: .whitespaces)
+        var reply = parseBlocks(String(text[..<open.lowerBound]))
+        reply.cutOff = label.isEmpty ? "block" : label
+        return reply
+    }
+
+    private static func parseBlocks(_ text: String) -> Reply {
+        var remaining = text
         var prescriptions: [Prescription] = []
         var writingPrescription = false
 

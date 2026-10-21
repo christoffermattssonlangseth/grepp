@@ -893,6 +893,9 @@ struct CoachView: View {
     private func ask(_ question: String) {
         let trimmed = question.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
+        // Busy answering: the question waits in the box, as consumeQuestion
+        // does, rather than being dropped along with what was typed there.
+        guard !coach.isResponding else { draft = trimmed; return }
         draft = ""
         inputFocused = false
         sent += 1

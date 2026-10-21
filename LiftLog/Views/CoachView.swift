@@ -105,18 +105,19 @@ struct CoachView: View {
                 ToolbarItem(placement: .topBarLeading) {
                     Menu {
                         Button { showingBrief = true } label: {
-                            Label("Your brief", systemImage: "person.text.rectangle")
+                            Label("your brief", systemImage: "person.text.rectangle")
                         }
                         Button { evidenceTag = nil; showingEvidence = true } label: {
-                            Label("Evidence", systemImage: "books.vertical")
+                            Label("evidence", systemImage: "books.vertical")
                         }
                         Button { showingProgramme = true } label: {
-                            Label("Programme", systemImage: "calendar")
+                            Label("programme", systemImage: "calendar")
                         }
                     } label: {
                         Label("Brief", systemImage: "person.text.rectangle")
                     }
                 }
+                .sharedBackgroundVisibility(.hidden)
                 ToolbarItem(placement: .topBarTrailing) {
                     Button {
                         coach.reset()
@@ -134,6 +135,7 @@ struct CoachView: View {
                     }
                     .disabled(coach.isEmpty)
                 }
+                .sharedBackgroundVisibility(.hidden)
             }
         }
     }
@@ -179,14 +181,16 @@ struct CoachView: View {
             case .you:
                 // A leading spacer with a floor, so a long question wraps inside a
                 // bubble instead of becoming a full-width block.
-                HStack {
-                    Spacer(minLength: 56)
+                // A prompt line, as on a terminal: the orange › is you.
+                HStack(alignment: .firstTextBaseline, spacing: 8) {
+                    Text("›")
+                        .font(.subheadline.weight(.heavy))
+                        .foregroundStyle(Theme.accent)
                     Text(message.text)
-                        .font(.body.weight(.medium))
-                        .padding(.horizontal, 14).padding(.vertical, 10)
-                        .background(Theme.accent, in: RoundedRectangle(cornerRadius: Theme.corner))
-                        .foregroundStyle(Theme.onAccent)
+                        .font(.subheadline.weight(.semibold))
+                        .frame(maxWidth: .infinity, alignment: .leading)
                 }
+                .padding(.top, 10)
             case .coach:
                 coachBubble(message)
             }
@@ -196,7 +200,7 @@ struct CoachView: View {
     private var intro: some View {
         VStack(alignment: .leading, spacing: 14) {
             VStack(alignment: .leading, spacing: 6) {
-                Text("Ask about your training")
+                Text("ask about your training")
                     .font(.title3.weight(.bold))
                 Text("Your \(store.path) goes with every question, so answers cite your own dates and loads.")
                     .font(.subheadline)
@@ -267,7 +271,8 @@ struct CoachView: View {
                 }
             }
         }
-        .font(.body)
+        .font(.subheadline)
+        .lineSpacing(3)
         .textSelection(.enabled)
     }
 
@@ -386,7 +391,7 @@ struct CoachView: View {
                     ask(message.text.isEmpty ? "You were cut off before answering. Please answer my last question."
                                              : "You were cut off. Continue from where you stopped.")
                 } label: {
-                    Label("Continue", systemImage: "arrow.clockwise")
+                    Label("continue", systemImage: "arrow.clockwise")
                         .font(.subheadline.weight(.semibold))
                 }
                 .buttonStyle(.panel)
@@ -399,7 +404,11 @@ struct CoachView: View {
                     .foregroundStyle(.tertiary)
             }
         }
-        .glassCard()
+        // Straight on the black, under a thin rule: an answer is the page,
+        // not a card in it. Cards are for the things you act on below.
+        .padding(.top, 12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .overlay(alignment: .top) { Rectangle().fill(Theme.rule).frame(height: 1) }
 
         // The file gets its own card: it's a thing you save, not a paragraph, and a
         // raw fenced block in a chat bubble reads as noise.
@@ -430,8 +439,8 @@ struct CoachView: View {
             Button {
                 store.requestLog(reply.prescriptions.map { ExerciseEntry(name: $0.name, sets: $0.sets) })
             } label: {
-                Label(trainedToday ? "Load for next session · \(reply.prescriptions.count) exercises"
-                                   : "Log the session · \(reply.prescriptions.count) exercises",
+                Label(trainedToday ? "load for next session · \(reply.prescriptions.count) exercises"
+                                   : "log the session · \(reply.prescriptions.count) exercises",
                       systemImage: "list.bullet.rectangle.portrait")
                     .font(.subheadline.weight(.bold))
                     .frame(maxWidth: .infinity)
@@ -468,7 +477,7 @@ struct CoachView: View {
             let button = Button {
                 store.requestLog([ExerciseEntry(name: rx.name, sets: rx.sets)])
             } label: {
-                Label(trainedToday ? "Load" : "Log", systemImage: quiet ? "plus" : "plus.circle.fill")
+                Label(trainedToday ? "load" : "log", systemImage: quiet ? "plus" : "plus.circle.fill")
                     .font(.subheadline.weight(quiet ? .semibold : .bold))
             }
             .tint(Theme.accent)
@@ -530,7 +539,7 @@ struct CoachView: View {
             } label: {
                 HStack(spacing: 8) {
                     if savingProgram { ProgressView().controlSize(.small) }
-                    Text(saved ? "Saved to \(store.programPath)" : "Save as my programme")
+                    Text(saved ? "saved to \(store.programPath)" : "save as my programme")
                         .font(.subheadline.weight(.bold))
                 }
                 .frame(maxWidth: .infinity)
@@ -629,7 +638,7 @@ struct CoachView: View {
             } label: {
                 HStack(spacing: 8) {
                     if savingResearch { ProgressView().controlSize(.small) }
-                    Text(saved ? "Added to \(store.researchPath)" : "Add to evidence")
+                    Text(saved ? "added to \(store.researchPath)" : "add to evidence")
                         .font(.subheadline.weight(.bold))
                 }
                 .frame(maxWidth: .infinity)
@@ -675,7 +684,7 @@ struct CoachView: View {
             } label: {
                 HStack(spacing: 8) {
                     if savingMemory { ProgressView().controlSize(.small) }
-                    Text(saved ? "Remembered in \(store.coachingPath)" : "Remember")
+                    Text(saved ? "remembered in \(store.coachingPath)" : "remember")
                         .font(.subheadline.weight(.bold))
                 }
                 .frame(maxWidth: .infinity)
@@ -720,7 +729,7 @@ struct CoachView: View {
             } label: {
                 HStack(spacing: 8) {
                     if savingGoals { ProgressView().controlSize(.small) }
-                    Text(saved ? "Saved to \(store.goalsPath)" : "Save to \(store.goalsPath)")
+                    Text(saved ? "saved to \(store.goalsPath)" : "save to \(store.goalsPath)")
                         .font(.subheadline.weight(.bold))
                 }
                 .frame(maxWidth: .infinity)
@@ -785,7 +794,7 @@ struct CoachView: View {
                     }
                 } label: {
                     HStack(spacing: 4) {
-                        Text(model.label).font(.subheadline.weight(.semibold))
+                        Text(model.label.lowercased()).font(.subheadline.weight(.semibold))
                         Image(systemName: "chevron.up.chevron.down").font(.caption2.weight(.semibold))
                     }
                     .pill()
@@ -812,7 +821,7 @@ struct CoachView: View {
                     .lineLimit(1...5)
                     .focused($inputFocused)
                     .padding(.horizontal, 14).padding(.vertical, 10)
-                    .background(Theme.surface, in: RoundedRectangle(cornerRadius: Theme.corner))
+                    .background(Theme.surface, in: RoundedRectangle(cornerRadius: Theme.corner, style: .continuous))
                     .onSubmit { ask(draft) }
 
                 Button {
@@ -822,7 +831,7 @@ struct CoachView: View {
                         .symbolEffect(.bounce, value: sent)
                         .font(.headline.weight(.bold))
                         .frame(width: 44, height: 44)
-                        .background(Theme.accent, in: Circle())
+                        .background(Theme.accent, in: RoundedRectangle(cornerRadius: Theme.corner, style: .continuous))
                         .foregroundStyle(Theme.onAccent)
                 }
                 .disabled(!coach.isResponding && draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
@@ -830,7 +839,8 @@ struct CoachView: View {
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 12)
-        .background(.bar)
+        .background(Color.black)
+        .overlay(alignment: .top) { Rectangle().fill(Theme.rule).frame(height: 1) }
     }
 
     private func ask(_ question: String) {

@@ -835,6 +835,24 @@ final class Store: ObservableObject {
         starts[key] = time
         let cutoff = time.addingTimeInterval(-7 * 86_400)
         starts = starts.filter { $0.value >= cutoff }
+        objectWillChange.send()
+        sessionStarts = starts
+    }
+
+    /// Walked into the gym: today's clock starts now, before the first set,
+    /// so the warm-up counts. A clock already running is left alone.
+    func startSession(at time: Date = Date()) {
+        noteSetLanded(on: time, at: time)
+    }
+
+    /// A start tapped by mistake. Only while the day has nothing logged: once
+    /// a set is down, the clock is that session's length.
+    func clearSessionStart(on date: Date) {
+        let key = Session.dateFormatter.string(from: date)
+        guard !sessions.contains(where: { $0.dateString == key }), draft?.sets.isEmpty ?? true else { return }
+        var starts = sessionStarts
+        guard starts.removeValue(forKey: key) != nil else { return }
+        objectWillChange.send()
         sessionStarts = starts
     }
 

@@ -46,6 +46,8 @@ struct LogView: View {
     @State private var sets: [WorkSet] = []
     /// The calendar under the date pill is open.
     @State private var pickingDate = false
+    /// The session clock's start time, and its reset, on a tap of the pill.
+    @State private var showingClock = false
 
     @State private var isBodyweight = false
     @State private var weightText = ""
@@ -143,6 +145,7 @@ struct LogView: View {
         NavigationStack {
             ScrollView {
                 VStack(spacing: 16) {
+                    dayRow
                     if !todayExercises.isEmpty { todaySessionCard }
                     if store.sessions.isEmpty && !store.isBusy { emptyLogCard }
                     if !isToday { dayBanner }
@@ -185,34 +188,6 @@ struct LogView: View {
                 .navigationTransition(.zoom(sourceID: "lift", in: pickerZoom))
             }
             .toolbar {
-                // The date as a compact pill up here, not a whole card under the
-                // title: on a gym screen that card-height belongs to the number pad.
-                ToolbarItem(placement: .topBarTrailing) {
-                    // Our own pill, not the system picker's: that one writes
-                    // "18 Oct 2026" however it's asked. A tap opens the calendar.
-                    Button { pickingDate = true } label: {
-                        Text(pillLabel)
-                            .font(.footnote.weight(.semibold))
-                            .foregroundStyle(isToday ? Color.primary : Theme.warning)
-                            .pill()
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel("Logging for \(dayLabel), change day")
-                    .popover(isPresented: $pickingDate) {
-                        DatePicker("Day",
-                                   selection: Binding(get: { date },
-                                                      set: { date = $0; dateChosen = true; pickingDate = false }),
-                                   displayedComponents: .date)
-                            .datePickerStyle(.graphical)
-                            .labelsHidden()
-                            .tint(Theme.accent)
-                            .padding()
-                            .frame(minWidth: 320)
-                            .presentationCompactAdaptation(.popover)
-                    }
-                }
-                // Our capsule, not iOS 26's glass bubble round it.
-                .sharedBackgroundVisibility(.hidden)
                 ToolbarItemGroup(placement: .keyboard) {
                     Spacer()
                     Button("Done") { focus = nil }
@@ -445,6 +420,84 @@ struct LogView: View {
         }
         .padding(.horizontal, 12).padding(.vertical, 8)
         .background(Theme.warning.opacity(0.12), in: RoundedRectangle(cornerRadius: Theme.corner))
+    }
+
+    // MARK: - Day and session clock
+
+    /// The day being logged and today's clock, side by side and the same
+    /// size: big enough to read from arm's length, one row of the page.
+    private var dayRow: some View {
+        HStack(spacing: 10) {
+            datePill
+            if isToday { sessionClockPill }
+        }
+    }
+
+    /// Our own pill, not the system picker's: that one writes "18 Oct 2026"
+    /// however it's asked. A tap opens the calendar.
+    private var datePill: some View {
+        Button { pickingDate = true } label: {
+            Label(pillLabel, systemImage: "calendar")
+                .foregroundStyle(isToday ? Color.primary : Theme.warning)
+                .rowPill()
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Logging for \(dayLabel), change day")
+        .popover(isPresented: $pickingDate) {
+            DatePicker("Day",
+                       selection: Binding(get: { date },
+                                          set: { date = $0; dateChosen = true; pickingDate = false }),
+                       displayedComponents: .date)
+                .datePickerStyle(.graphical)
+                .labelsHidden()
+                .tint(Theme.accent)
+                .padding()
+                .frame(minWidth: 320)
+                .presentationCompactAdaptation(.popover)
+        }
+    }
+
+
+    /// The day's clock, as small as the date pill beside it: "start" until
+    /// tapped (or until the first set lands), then the time in the gym. The
+    /// same start is the length Strava and Health are given.
+    @ViewBuilder private var sessionClockPill: some View {
+        if let start = store.sessionStart(on: date) {
+            Button { showingClock = true } label: {
+                TimelineView(.periodic(from: start, by: 1)) { context in
+                    let seconds = Int(context.date.timeIntervalSince(start))
+                    // Past six hours it isn't a session in progress any more.
+                    Label(seconds < 6 * 3600 ? sessionClock(seconds) : start.formatted(date: .omitted, time: .shortened),
+                          systemImage: "stopwatch")
+                        .monospacedDigit()
+                        .foregroundStyle(Theme.accent)
+                        .rowPill()
+                }
+            }
+            .confirmationDialog("Started \(start.formatted(date: .omitted, time: .shortened))",
+                                isPresented: $showingClock, titleVisibility: .visible) {
+                if todayExercises.isEmpty && sets.isEmpty {
+                    Button("Reset clock", role: .destructive) { store.clearSessionStart(on: date) }
+                }
+                Button("OK", role: .cancel) {}
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Session clock, started \(start.formatted(date: .omitted, time: .shortened))")
+        } else {
+            Button { store.startSession() } label: {
+                Label("start", systemImage: "stopwatch")
+                    .foregroundStyle(.secondary)
+                    .rowPill()
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Start the session clock")
+        }
+    }
+
+    /// "42:13", or "1:02:13" past the hour.
+    private func sessionClock(_ seconds: Int) -> String {
+        let h = seconds / 3600, m = seconds / 60 % 60, s = seconds % 60
+        return h > 0 ? String(format: "%d:%02d:%02d", h, m, s) : String(format: "%d:%02d", m, s)
     }
 
     // MARK: - Section label
@@ -1236,3 +1289,16 @@ struct LogView: View {
     }
 }
 
+private extension View {
+    /// One of the two pills at the top of the Log screen: each takes half the
+    /// row, so the date and the clock are always the same size.
+    func rowPill() -> some View {
+        self
+            .font(.title3.weight(.semibold))
+            .lineLimit(1)
+            .minimumScaleFactor(0.7)
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 12)
+            .background(Theme.raised, in: Capsule())
+    }
+}

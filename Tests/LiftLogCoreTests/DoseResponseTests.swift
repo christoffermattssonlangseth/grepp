@@ -60,6 +60,28 @@ final class DoseResponseTests: XCTestCase {
         XCTAssertEqual(weeks, 2, "since 80x8 on 25 Aug")
     }
 
+    func testBodyweightRepsSpreadOverTheSetsAreProgress() {
+        // 7,7,9 → 8,8,8 → 8,8,9: the top set goes 9, 8, 9, but every session
+        // beat the one before it.
+        let reps = [[7, 7, 9], [8, 8, 8], [8, 8, 9]]
+        let sessions = zip(["2026-08-11", "2026-08-18", "2026-08-25"], reps).map { d, r in
+            Session(date: date(d), exercises: [
+                ExerciseEntry(name: "chin-ups", sets: r.map { WorkSet(weight: nil, added: nil, reps: $0) }),
+            ])
+        }
+        let dose = DoseResponse.make(for: "chin-ups", in: sessions, map: MuscleMap(), endingOn: date("2026-09-06"), calendar: utc)!
+        XCTAssertEqual(dose.metric, .bestThree)
+        XCTAssertEqual(dose.weeks.compactMap(\.best), [23, 24, 25])
+        guard case .progressing(let delta, _, _) = dose.verdict else { return XCTFail("\(dose.verdict)") }
+        XCTAssertEqual(delta, 2)
+
+        // A fourth, easy set is not more progress than the three before it.
+        let padded = Session(date: date("2026-09-01"), exercises: [
+            ExerciseEntry(name: "chin-ups", sets: [8, 8, 9, 4].map { WorkSet(weight: nil, added: nil, reps: $0) }),
+        ])
+        XCTAssertEqual(Analytics.series("chin-ups", metric: .bestThree, in: [padded]).map(\.value), [25])
+    }
+
     func testFlatAtLowVolumeNamesVolumeAsTheLever() {
         let sessions = [
             day("2026-08-04", squat: 100), day("2026-08-11", squat: 100),

@@ -30,12 +30,13 @@ enum Analytics {
         case oneRepMax = "Est. 1RM"  // derived, for comparing across rep schemes
         case addedLoad = "Added load" // extra load on a bodyweight lift (bw+X), where weight progresses
         case maxReps = "Max reps"    // for bodyweight lifts, where reps are the progression
+        case bestThree = "Best 3 sets" // reps of the three best sets: 7,7,9 → 8,8,9 moves, one top set doesn't
         var id: String { rawValue }
 
         var unit: String {
             switch self {
             case .topSet, .oneRepMax, .addedLoad: return "kg"
-            case .maxReps: return "reps"
+            case .maxReps, .bestThree: return "reps"
             }
         }
     }
@@ -201,7 +202,7 @@ enum Analytics {
     /// you start hanging plates on (bw+X), which stays continuous from pure bodyweight.
     static func availableMetrics(_ name: String, in sessions: [Session]) -> [Metric] {
         guard isBodyweight(name, in: sessions) else { return [.topSet, .oneRepMax] }
-        return hasAddedLoad(name, in: sessions) ? [.addedLoad, .maxReps] : [.maxReps]
+        return hasAddedLoad(name, in: sessions) ? [.addedLoad, .maxReps] : [.bestThree, .maxReps]
     }
 
     /// One value per session date for the chosen metric, every line of the
@@ -229,6 +230,10 @@ enum Analytics {
                 value = sets.map { $0.added ?? ($0.weight ?? 0) }.max()
             case .maxReps:
                 value = sets.map { Double($0.reps) }.max()
+            case .bestThree:
+                // Three, not all: a fourth easy set is not progress, and the
+                // reps spread over the sets are what a bodyweight lift moves.
+                value = Double(sets.map(\.reps).sorted(by: >).prefix(3).reduce(0, +))
             }
             return value.map {
                 TrendPoint(date: session.date, value: $0, tokens: sets.map(\.token).joined(separator: " "),

@@ -25,7 +25,7 @@ final class AnalyticsTests: XCTestCase {
         XCTAssertEqual(Analytics.availableMetrics("squat", in: weighted), [.topSet, .oneRepMax])
 
         let pureBW = [session("2026-08-01", "chin-ups", [WorkSet(weight: nil, added: nil, reps: 6)])]
-        XCTAssertEqual(Analytics.availableMetrics("chin-ups", in: pureBW), [.maxReps])
+        XCTAssertEqual(Analytics.availableMetrics("chin-ups", in: pureBW), [.bestThree, .maxReps])
 
         let loadedBW = [session("2026-08-01", "chin-ups", [WorkSet(weight: nil, added: 5, reps: 6)])]
         XCTAssertEqual(Analytics.availableMetrics("chin-ups", in: loadedBW), [.addedLoad, .maxReps])

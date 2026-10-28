@@ -372,7 +372,7 @@ struct TrendsView: View {
         let values = series.map(\.value)
         let lo = values.min() ?? 0
         let hi = values.max() ?? 0
-        let minSpan = metric == .maxReps ? 6.0 : max(10, hi * 0.15)
+        let minSpan = metric.unit == "reps" ? 6.0 : max(10, hi * 0.15)
         let half = max(hi - lo, minSpan) / 2 * 1.15
         let mid = (lo + hi) / 2
         let lower = lo >= 0 ? max(0, mid - half) : mid - half

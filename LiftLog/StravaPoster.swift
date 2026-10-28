@@ -24,8 +24,10 @@ enum StravaPoster {
         guard isEnabled else { throw PosterError.off }
         let clocked = store.sessionStart(on: session.date)
         let start = clocked ?? StravaPost.defaultStart(for: session)
-        // Today's clock runs to now; an older day gets the hour default.
-        let end = clocked != nil && Calendar.current.isDateInToday(start) ? Date() : nil
+        // A stopped clock ends at the stop; today's running one runs to now;
+        // an older day gets the hour default.
+        let end = clocked == nil ? nil
+            : store.sessionEnd(on: session.date) ?? (Calendar.current.isDateInToday(start) ? Date() : nil)
         let elapsed = StravaPost.elapsed(start: clocked, end: end)
         let name = StravaPost.name(for: session)
         let description = StravaPost.description(for: session, elapsed: end != nil ? elapsed : nil)

@@ -48,6 +48,8 @@ struct LogView: View {
     @State private var pickingDate = false
     /// The session clock's start time, and its reset, on a tap of the pill.
     @State private var showingClock = false
+    /// The rest target's wheel is open.
+    @State private var pickingRest = false
 
     @State private var isBodyweight = false
     @State private var weightText = ""
@@ -463,26 +465,48 @@ struct LogView: View {
     /// same start is the length Strava and Health are given.
     @ViewBuilder private var sessionClockPill: some View {
         if let start = store.sessionStart(on: date) {
-            Button { showingClock = true } label: {
-                TimelineView(.periodic(from: start, by: 1)) { context in
-                    let seconds = Int(context.date.timeIntervalSince(start))
-                    // Past six hours it isn't a session in progress any more.
-                    Label(seconds < 6 * 3600 ? sessionClock(seconds) : start.formatted(date: .omitted, time: .shortened),
-                          systemImage: "stopwatch")
-                        .monospacedDigit()
-                        .foregroundStyle(Theme.accent)
-                        .rowPill()
+            let stopped = store.sessionEnd(on: date)
+            let started = start.formatted(date: .omitted, time: .shortened)
+            HStack(spacing: 6) {
+                Button { showingClock = true } label: {
+                    TimelineView(.periodic(from: start, by: 1)) { context in
+                        let seconds = Int((stopped ?? context.date).timeIntervalSince(start))
+                        // Past six hours it isn't a session in progress any more.
+                        Label(seconds < 6 * 3600 ? sessionClock(seconds) : started, systemImage: "stopwatch")
+                            .monospacedDigit()
+                            .foregroundStyle(stopped == nil ? Theme.accent : Color.primary)
+                            .frame(maxWidth: .infinity)
+                    }
+                }
+                .accessibilityLabel(stopped == nil ? "Session clock, started \(started)" : "Session stopped, started \(started)")
+                // Its own button, one tap: done is done.
+                if stopped == nil {
+                    Button { store.stopSession(on: date) } label: {
+                        Image(systemName: "stop.fill")
+                            .font(.footnote.weight(.bold))
+                            .foregroundStyle(Theme.accent)
+                            .frame(width: 24, height: 24)
+                            .contentShape(Rectangle())
+                    }
+                    .accessibilityLabel("Stop the session clock")
                 }
             }
-            .confirmationDialog("Started \(start.formatted(date: .omitted, time: .shortened))",
+            .buttonStyle(.plain)
+            // Clear of the capsule's curve, not sitting on it.
+            .padding(.horizontal, 14)
+            .rowPill()
+            .confirmationDialog(stopped.map { "Started \(started), stopped \($0.formatted(date: .omitted, time: .shortened))" } ?? "Started \(started)",
                                 isPresented: $showingClock, titleVisibility: .visible) {
+                if stopped != nil {
+                    Button("Resume") { store.resumeSession(on: date) }
+                } else {
+                    Button("Stop session") { store.stopSession(on: date) }
+                }
                 if todayExercises.isEmpty && sets.isEmpty {
                     Button("Reset clock", role: .destructive) { store.clearSessionStart(on: date) }
                 }
                 Button("OK", role: .cancel) {}
             }
-            .buttonStyle(.plain)
-            .accessibilityLabel("Session clock, started \(start.formatted(date: .omitted, time: .shortened))")
         } else {
             Button { store.startSession() } label: {
                 Label("start", systemImage: "stopwatch")
@@ -806,25 +830,33 @@ struct LogView: View {
         }
     }
 
-    /// 1:00 / 1:30 / 2:00 / 3:00 — the rests people actually take.
+    /// Any rest, set on a wheel: minutes and seconds in fives, up to ten
+    /// minutes. The pill opens it; the wheel writes as it turns.
     private var restTargetMenu: some View {
-        Menu {
-            ForEach([60, 90, 120, 180], id: \.self) { seconds in
-                Button { restTarget = seconds } label: {
-                    if seconds == restTarget {
-                        Label(clock(seconds), systemImage: "checkmark")
-                    } else {
-                        Text(clock(seconds))
-                    }
-                }
-            }
-        } label: {
+        Button { pickingRest = true } label: {
             Label(clock(restTarget), systemImage: "timer")
                 .font(.footnote.weight(.heavy))
                 .monospacedDigit()
                 .padding(.horizontal, 10)
                 .frame(height: 34)
                 .background(Theme.raised, in: RoundedRectangle(cornerRadius: Theme.corner, style: .continuous))
+        }
+        .popover(isPresented: $pickingRest) {
+            HStack(spacing: 0) {
+                Picker("Minutes", selection: Binding(get: { restTarget / 60 },
+                                                     set: { restTarget = max(5, $0 * 60 + restTarget % 60) })) {
+                    ForEach(0...10, id: \.self) { Text("\($0) min").tag($0) }
+                }
+                Picker("Seconds", selection: Binding(get: { restTarget % 60 / 5 * 5 },
+                                                     set: { restTarget = max(5, restTarget / 60 * 60 + $0) })) {
+                    ForEach(Array(stride(from: 0, to: 60, by: 5)), id: \.self) { Text(String(format: "%02d s", $0)).tag($0) }
+                }
+            }
+            .pickerStyle(.wheel)
+            .monospacedDigit()
+            .frame(width: 260, height: 180)
+            .padding(.horizontal)
+            .presentationCompactAdaptation(.popover)
         }
         .buttonStyle(.plain)
         .accessibilityLabel("Rest target")

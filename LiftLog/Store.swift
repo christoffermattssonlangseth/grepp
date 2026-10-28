@@ -242,6 +242,7 @@ final class Store: ObservableObject {
     private let draftKey = "session_draft"
     private let plansKey = "plan_records"
     private let sessionStartsKey = "session_starts"
+    private let sessionEndsKey = "session_ends"
     private let stravaPostsKey = "strava_posts"
     private let healthWorkoutsKey = "health_workouts"
     private var defaults: UserDefaults { .standard }
@@ -652,6 +653,9 @@ final class Store: ObservableObject {
             var starts = sessionStarts
             if let start = starts.removeValue(forKey: from) { starts[to] = start }
             sessionStarts = starts
+            var ends = sessionEnds
+            if let end = ends.removeValue(forKey: from) { ends[to] = end }
+            sessionEnds = ends
             if stravaPosts.removeValue(forKey: from) != nil {
                 defaults.set(try? JSONEncoder().encode(stravaPosts), forKey: stravaPostsKey)
             }
@@ -830,6 +834,8 @@ final class Store: ObservableObject {
     /// A set landed under `date`: start that day's clock if it isn't running.
     func noteSetLanded(on date: Date, at time: Date = Date()) {
         let key = Session.dateFormatter.string(from: date)
+        // A set after the stop: the session wasn't over after all.
+        if sessionEnds[key] != nil { resumeSession(on: date) }
         var starts = sessionStarts
         guard starts[key] == nil else { return }
         starts[key] = time
@@ -837,6 +843,7 @@ final class Store: ObservableObject {
         starts = starts.filter { $0.value >= cutoff }
         objectWillChange.send()
         sessionStarts = starts
+        sessionEnds = sessionEnds.filter { starts[$0.key] != nil }
     }
 
     /// Walked into the gym: today's clock starts now, before the first set,
@@ -854,10 +861,46 @@ final class Store: ObservableObject {
         guard starts.removeValue(forKey: key) != nil else { return }
         objectWillChange.send()
         sessionStarts = starts
+        var ends = sessionEnds
+        ends.removeValue(forKey: key)
+        sessionEnds = ends
     }
 
     func sessionStart(on date: Date) -> Date? {
         sessionStarts[Session.dateFormatter.string(from: date)]
+    }
+
+    /// When each day's session was stopped, if it was: the end Strava and
+    /// Health are given instead of "now". Pruned with the starts.
+    private var sessionEnds: [String: Date] {
+        get { (defaults.data(forKey: sessionEndsKey)).flatMap { try? JSONDecoder().decode([String: Date].self, from: $0) } ?? [:] }
+        set { defaults.set(try? JSONEncoder().encode(newValue), forKey: sessionEndsKey) }
+    }
+
+    func sessionEnd(on date: Date) -> Date? {
+        sessionEnds[Session.dateFormatter.string(from: date)]
+    }
+
+    /// Done for the day: the clock stops here. Health's workout is saved again
+    /// to end at the stop rather than at the last lift.
+    func stopSession(on date: Date, at time: Date = Date()) {
+        let key = Session.dateFormatter.string(from: date)
+        guard let start = sessionStarts[key], time > start else { return }
+        objectWillChange.send()
+        var ends = sessionEnds
+        ends[key] = time
+        sessionEnds = ends
+        if let session = sessions.first(where: { $0.dateString == key }) {
+            Task { await HealthWriter.sync(session, store: self) }
+        }
+    }
+
+    /// Stopped too soon: the clock runs on from the original start.
+    func resumeSession(on date: Date) {
+        var ends = sessionEnds
+        guard ends.removeValue(forKey: Session.dateFormatter.string(from: date)) != nil else { return }
+        objectWillChange.send()
+        sessionEnds = ends
     }
 
     /// Strava activity ids for days already posted, keyed by the log's date,

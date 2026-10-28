@@ -61,7 +61,8 @@ enum HealthWriter {
     private static func save(_ session: Session, store: Store) async {
         guard isEnabled, isAvailable, status == .sharingAuthorized,
               let start = store.sessionStart(on: session.date) else { return }
-        let now = Date()
+        // A stopped session ends at the stop, not at the last lift.
+        let now = store.sessionEnd(on: session.date) ?? Date()
         guard now.timeIntervalSince(start) >= 60 else { return }
         // The same length Strava is given: a lift added hours after the
         // session (a forgotten one, logged that evening) must not stretch a

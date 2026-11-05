@@ -55,6 +55,8 @@ struct LogView: View {
     @State private var weightText = ""
     @State private var addedText = ""
     @State private var repsText = ""
+    /// The set BarVelo just measured, shown over the fields until it's landed.
+    @State private var measured: VelocitySet?
 
     @State private var showingPicker = false
     /// The lift card the picker grows out of, and shrinks back into.
@@ -238,6 +240,7 @@ struct LogView: View {
             .onChange(of: store.draftRevision) { _, _ in takeInOutsideDraft() }
             .onChange(of: store.editRequest) { _, _ in applyEditRequest() }
             .onChange(of: store.prescriptionRequest) { _, _ in applyPrescription() }
+            .onChange(of: store.velocityRequest) { _, _ in applyVelocity() }
         }
     }
 
@@ -342,6 +345,59 @@ struct LogView: View {
         weightText = set.weight.map { WorkSet.formatWeight($0) } ?? ""
         addedText = set.added.flatMap { $0 > 0 ? WorkSet.formatWeight($0) : nil } ?? ""
         repsText = String(set.reps)
+    }
+
+    /// A set BarVelo measured: its load and reps into the fields, for the
+    /// usual tap. Only onto the same lift, or an empty input area — a set
+    /// measured for one lift is never landed on another. The speeds are in
+    /// velocity.md either way; the Store wrote them.
+    private func applyVelocity() {
+        guard let v = store.velocityRequest else { return }
+        store.velocityRequest = nil
+        let sameLift = VelocitySet.kebab(name) == v.lift
+        guard sameLift || (name.isEmpty && sets.isEmpty) else { return }
+        if !sameLift { switchLift(to: v.lift) }
+        isBodyweight = v.load == nil
+        weightText = v.load.map { WorkSet.formatWeight($0) } ?? ""
+        addedText = ""
+        repsText = String(v.reps)
+        measured = v
+    }
+
+    private var barVeloInstalled: Bool {
+        UIApplication.shared.canOpenURL(VelocitySet.measureURL(lift: "", load: nil, reps: nil))
+    }
+
+    /// Film the next set in BarVelo, which comes back with the speeds.
+    private var measureCard: some View {
+        VStack(spacing: 8) {
+            if let measured {
+                HStack(spacing: 6) {
+                    Image(systemName: "gauge.with.dots.needle.67percent")
+                    Text(measured.summary).monospacedDigit()
+                }
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(Theme.accent)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            if !name.isEmpty, barVeloInstalled {
+                Button {
+                    UIApplication.shared.open(VelocitySet.measureURL(
+                        lift: VelocitySet.kebab(name),
+                        load: isBodyweight ? nil : parsedWeight,
+                        reps: parsedReps ?? plan.flatMap { sets.count < $0.count ? $0[sets.count].reps : nil }))
+                } label: {
+                    HStack(spacing: 5) {
+                        Image(systemName: "gauge.with.dots.needle.33percent")
+                        Text("measure bar speed")
+                    }
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                .buttonStyle(.plain)
+            }
+        }
     }
 
     /// Pull a "edit this past entry" request from History into the input area.
@@ -741,6 +797,8 @@ struct LogView: View {
                     addSetButton.buttonStyle(.panel)
                 }
 
+                measureCard
+
                 // Muted, secondary control — only relevant for the odd bodyweight lift.
                 Button {
                     isBodyweight.toggle()
@@ -1096,6 +1154,7 @@ struct LogView: View {
         }
         // Only now do the typed reps go: a Cancel in the day dialog keeps them.
         repsText = ""
+        measured = nil
         focus = nil
         // The day's clock starts only for today's session — a set corrected on
         // a past day must not make that day "the session in progress".

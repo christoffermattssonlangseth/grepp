@@ -61,6 +61,9 @@ final class Store: ObservableObject {
     @AppStorage("gh_goals_path") var goalsPath = "goals.md"
     @AppStorage("gh_research_path") var researchPath = "research.md"
     @AppStorage("gh_program_path") var programPath = "program.md"
+    /// Bar speeds measured by BarVelo, one line per set. Written by the
+    /// handoff, read by the coach; never edited in the brief screen.
+    @AppStorage("gh_velocity_path") var velocityPath = "velocity.md"
 
     /// Claude workspace for the Coach tab. An identifier, not a secret, so it sits
     /// in UserDefaults beside the repo config. Only needed when the API key spans
@@ -147,14 +150,40 @@ final class Store: ObservableObject {
         selectedTab = 3
     }
 
+    /// A set BarVelo measured and handed back. The Log tab consumes it: the
+    /// load and rep count go into the fields, landed with the usual tap.
+    @Published var velocityRequest: VelocitySet?
+
+    /// Take a `grepp://velocity` handoff: open the Log tab with the set, and
+    /// keep the speeds in velocity.md. The file is written whether or not the
+    /// set is landed — it's what the bar did, not what the log says. A sync
+    /// already running (the app just came back to the front) is waited out
+    /// rather than refused.
+    func receiveVelocity(_ set: VelocitySet) {
+        velocityRequest = set
+        selectedTab = 0
+        Task {
+            var waited = 0
+            while isBusy, waited < 40 {   // up to ten seconds
+                try? await Task.sleep(nanoseconds: 250_000_000)
+                waited += 1
+            }
+            await update(.velocity) { VelocitySet.appending(set, to: $0) }
+        }
+    }
+
     /// The outcome of a `commit`, so callers don't have to sniff `status` text.
     enum CommitResult { case pushed, queued, failed }
 
     /// The four files that make up the coach's standing brief. One identity for
     /// each, so a screen can read, edit and save either without special-casing.
     enum BriefFile: String, CaseIterable, Identifiable {
-        case coaching, goals, program, research
+        case coaching, goals, program, research, velocity
         var id: String { rawValue }
+
+        /// The files the brief screen edits. velocity.md is a measurement log
+        /// that BarVelo writes, not something the lifter types.
+        static var editable: [BriefFile] { allCases.filter { $0 != .velocity } }
 
         var title: String {
             switch self {
@@ -162,6 +191,7 @@ final class Store: ObservableObject {
             case .goals: return "What I'm working toward"
             case .program: return "The programme I'm running"
             case .research: return "What the evidence says"
+            case .velocity: return "Bar speed"
             }
         }
 
@@ -175,6 +205,8 @@ final class Store: ObservableObject {
                 return "Days under ## headings, one lift per bullet with its set scheme, no loads. Ask the coach to write one."
             case .research:
                 return "One finding per line, tagged [R1], [R2]… The coach cites the tags. Easier to fill from Coach: hand it a paper."
+            case .velocity:
+                return "One line per set measured with BarVelo: mean concentric velocity per rep, and the loss across the set."
             }
         }
     }
@@ -185,6 +217,7 @@ final class Store: ObservableObject {
         case .goals: return goalsPath
         case .research: return researchPath
         case .program: return programPath
+        case .velocity: return velocityPath
         }
     }
 
@@ -194,6 +227,7 @@ final class Store: ObservableObject {
         case .goals: return brief.goals
         case .research: return brief.research
         case .program: return brief.program
+        case .velocity: return brief.velocity
         }
     }
 
@@ -238,6 +272,7 @@ final class Store: ObservableObject {
     private var goalsCacheKey: String { "\(keyPrefix)_goals_cache" }
     private var researchCacheKey: String { "\(keyPrefix)_research_cache" }
     private var programCacheKey: String { "\(keyPrefix)_program_cache" }
+    private var velocityCacheKey: String { "\(keyPrefix)_velocity_cache" }
     private var pendingKey: String { "\(keyPrefix)\(location)_pending" }
     private let draftKey = "session_draft"
     private let plansKey = "plan_records"
@@ -277,7 +312,8 @@ final class Store: ObservableObject {
         brief = CoachContext.Brief(coaching: defaults.string(forKey: coachingCacheKey) ?? "",
                                    goals: defaults.string(forKey: goalsCacheKey) ?? "",
                                    research: defaults.string(forKey: researchCacheKey) ?? "",
-                                   program: defaults.string(forKey: programCacheKey) ?? "")
+                                   program: defaults.string(forKey: programCacheKey) ?? "",
+                                   velocity: defaults.string(forKey: velocityCacheKey) ?? "")
         // Show cached content + any queued writes immediately, before the network load.
         sessions = WorkoutParser.applying(pending, to: cachedSessions())
     }
@@ -365,6 +401,7 @@ final class Store: ObservableObject {
             case .goals: brief.goals = content
             case .research: brief.research = content
             case .program: brief.program = content
+            case .velocity: brief.velocity = content
             }
             defaults.set(content, forKey: cacheKey(for: file))
             briefStatus = "Saved \(path) ✓"
@@ -422,6 +459,7 @@ final class Store: ObservableObject {
         case .goals: return goalsCacheKey
         case .research: return researchCacheKey
         case .program: return programCacheKey
+        case .velocity: return velocityCacheKey
         }
     }
 
@@ -434,7 +472,8 @@ final class Store: ObservableObject {
             coaching: await companion(at: coachingPath, cacheKey: coachingCacheKey) ?? brief.coaching,
             goals: await companion(at: goalsPath, cacheKey: goalsCacheKey) ?? brief.goals,
             research: await companion(at: researchPath, cacheKey: researchCacheKey) ?? brief.research,
-            program: await companion(at: programPath, cacheKey: programCacheKey) ?? brief.program
+            program: await companion(at: programPath, cacheKey: programCacheKey) ?? brief.program,
+            velocity: await companion(at: velocityPath, cacheKey: velocityCacheKey) ?? brief.velocity
         )
     }
 

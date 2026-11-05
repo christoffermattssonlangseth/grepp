@@ -28,6 +28,8 @@ struct ContentView: View {
         // The widgets open the app on the Log tab.
         .onOpenURL { url in
             if url == WidgetSnapshot.logURL { store.selectedTab = 0 }
+            // A set BarVelo measured, coming back.
+            if let measured = VelocitySet(url: url) { store.receiveVelocity(measured) }
         }
         // A fresh install: ask where the log lives before anything tries to load it,
         // then, once the log can be written, the setup questions.

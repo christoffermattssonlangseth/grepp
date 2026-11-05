@@ -30,7 +30,7 @@ struct BriefView: View {
             != store.text(for: file).trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
-    private var hasUnsavedChanges: Bool { Store.BriefFile.allCases.contains(where: isDirty) }
+    private var hasUnsavedChanges: Bool { Store.BriefFile.editable.contains(where: isDirty) }
 
     /// What starting the interview would throw away, if anything — said before
     /// it goes, the way Done asks about unsaved edits.
@@ -53,7 +53,7 @@ struct BriefView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 16) {
                     intro
-                    ForEach(Store.BriefFile.allCases) { file in
+                    ForEach(Store.BriefFile.editable) { file in
                         card(for: file)
                     }
                 }
@@ -85,7 +85,7 @@ struct BriefView: View {
     /// Seeded once on open — never on every store change, which would wipe an edit
     /// in progress the moment a background reload landed.
     private func seedDrafts() {
-        for file in Store.BriefFile.allCases where drafts[file] == nil {
+        for file in Store.BriefFile.editable where drafts[file] == nil {
             drafts[file] = store.text(for: file)
         }
     }

@@ -201,6 +201,24 @@ first. Nothing is read back from Strava. A switch in Settings ▸ Strava turns
 all of it off — no button, no marks, nothing posted — and keeps the
 connection for when it comes back.
 
+**Bar speed.** With BarVelo, the LiDAR bar-speed app, on the phone, a quiet
+**measure bar speed** line sits under the set fields. It's for the sets you
+choose, not every set. Tap it and BarVelo opens with the lift and load filled
+in. Film the set and tap **Send to Grepp**: you're back on the Log tab with the
+load and reps in the fields, the speeds above them (`0.52 → 0.41 m/s · loss
+21%`), and the usual tap lands the set. The speeds go into `velocity.md`
+beside the log, one line per measured set, so `training.md` never changes shape:
+
+```
+2026-11-05 squat 100x5 mcv 0.52 0.50 0.47 0.45 0.41 loss 21%
+```
+
+Coach reads the last forty lines, as bar speed rather than instructions, and
+knows an unmeasured set is unknown, not slow. BarVelo keeps no video: it reads
+each camera frame as it arrives and keeps only the numbers. The handoff is two
+URLs, `barvelo://measure` and `grepp://velocity`, specified in
+`LiftLog/Core/Velocity.swift`.
+
 **Offline.** With GitHub, a save that can't reach it is queued, shown at once, and
 replayed on the next successful load or save through the same safe path: every
 save fetches the current file, merges one exercise into it, and writes. The

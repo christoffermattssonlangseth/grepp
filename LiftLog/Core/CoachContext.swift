@@ -39,6 +39,8 @@ enum CoachContext {
         var research = ""
         /// The programme on file: days and set schemes, no loads.
         var program = ""
+        /// velocity.md: bar speeds BarVelo measured, one line per set.
+        var velocity = ""
 
         static let none = Brief()
 
@@ -247,11 +249,36 @@ enum CoachContext {
         tables, no numbered lists. Prose and the occasional short list.
 
         \(standingBrief(brief))
+        \(barSpeedBrief(brief.velocity))
         \(gym.map { $0 + "\n\n" } ?? "")\
         \(digest.map { $0 + "\n\n" + readingHistoryBrief } ?? "")
         <training-log>
         \(excerpt.text)</training-log>
         \(mode == .goalsInterview ? interviewBrief(hasGoals: !trimmed(brief.goals).text.isEmpty) : "")
+        """
+    }
+
+    /// Bar speeds BarVelo measured: data, like the log, not instructions.
+    /// The last few dozen sets, as the file spells them. Nothing measured
+    /// contributes nothing.
+    static func barSpeedBrief(_ file: String) -> String {
+        let lines = VelocitySet.recentLines(file)
+        guard !lines.isEmpty else { return "" }
+        return """
+        BAR SPEED. Some sets were filmed with BarVelo, which measures the bar with \
+        LiDAR. Each line is a date, the lift, the set as logged, the mean concentric \
+        velocity of each rep in m/s, and how much slower the last rep was than the \
+        fastest. Use it the way velocity-based training does: a lift moving faster \
+        than it did at the same load is readiness to add load; the same load slower \
+        than usual is fatigue. Loss under about 20 % kept the set well short of \
+        failure, 30–40 % took it close. Speeds are only comparable within one lift. \
+        Not every set is measured, so a lift with no line here is unknown, not slow.
+
+        <bar-speed>
+        \(lines.joined(separator: "\n"))
+        </bar-speed>
+
+
         """
     }
 

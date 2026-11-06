@@ -301,7 +301,7 @@ enum CoachContext {
         <bar-velocity>
         \(lines.joined(separator: "\n"))
         </bar-velocity>
-        \(reserveBrief(file))
+        \(reserveBrief(file))\(profileBrief(file))
 
         """
     }
@@ -320,6 +320,27 @@ enum CoachContext {
         typical miss in reps). Read a set's last-rep speed against it for \
         proximity to failure:
         \(fits.map { "- " + $0 }.joined(separator: "\n"))
+
+        """
+    }
+
+    /// Per lift with a load–velocity profile (three measured sets over loads 10%
+    /// apart, last twelve weeks): the line, an estimated 1RM, how the latest set
+    /// compared, and loads for round speeds. Nothing without a profile.
+    static func profileBrief(_ file: String) -> String {
+        let lines = VelocityRecord.byLift(VelocityRecord.parse(file)).compactMap { lift, records -> String? in
+            guard case .profile(let p) = LoadVelocityProfile.fit(records, lift: lift) else { return nil }
+            return p.coachLine(lift: lift, latest: records.last)
+        }
+        guard !lines.isEmpty else { return "" }
+        return """
+        Load–velocity profiles, fitted from this lifter's measured sets in the last \
+        twelve weeks (fastest rep against load; speed falls with load). The 1RM is \
+        where the line meets the minimum velocity threshold, the speed of a last \
+        possible rep, no max test needed; a set faster than the profile at its load \
+        is a good day, slower a tired one. Use the loads for round speeds to suggest \
+        a load that should move at a target speed, filmed the same way:
+        \(lines.map { "- " + $0 }.joined(separator: "\n"))
 
         """
     }

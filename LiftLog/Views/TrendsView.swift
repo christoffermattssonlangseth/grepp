@@ -75,6 +75,8 @@ struct TrendsView: View {
         /// Last-rep speed of each set taken to failure, oldest first.
         var failureSpeeds: [(date: Date, speed: Double)] = []
         var labelledDays = 0
+        /// Load against bar velocity over the last twelve weeks, or what it still needs.
+        var profileFit: LoadVelocityProfile.Fit = .none
     }
     @State private var figures = Figures()
     /// The bar-velocity list past its newest five.
@@ -86,6 +88,8 @@ struct TrendsView: View {
     @State private var speedScrubY: Double?
     @State private var reserveScrubX: Date?
     @State private var reserveScrubY: Double?
+    /// Where a finger is on the load–velocity chart, kg.
+    @State private var profileScrubX: Double?
     /// Reps left at or above this draw at the top of their chart, as 6+.
     private let reserveCap = 6.0
 
@@ -120,6 +124,7 @@ struct TrendsView: View {
                             chartCard
                             statsRow
                             if !figures.speeds.isEmpty { speedCard }
+                            if figures.profileFit != .none { profileCard }
                             targetCard
                             if let dose = figures.dose {
                                 doseCard(dose)
@@ -470,7 +475,8 @@ struct TrendsView: View {
                     .accessibilityElement(children: .combine)
                 }
 
-                if let r = figures.v1rm, let v1rm = r.v1rm {
+                // The profile's own 1RM, on its card, takes over from BarVelo's once there is one.
+                if !profileHasOneRepMax, let r = figures.v1rm, let v1rm = r.v1rm {
                     HStack(alignment: .firstTextBaseline, spacing: 6) {
                         Text("velocity 1RM").font(.caption).foregroundStyle(.secondary)
                         Spacer()
@@ -518,6 +524,140 @@ struct TrendsView: View {
         .onChange(of: reserveScrubX) { _, x in
             if x != nil { speedScrubX = nil; speedScrubY = nil }
         }
+    }
+
+    private var profileHasOneRepMax: Bool {
+        if case .profile(let p) = figures.profileFit { return p.oneRepMax != nil }
+        return false
+    }
+
+    // MARK: - Load–velocity profile
+
+    /// Load against the fastest rep's speed for every measured set of the last twelve
+    /// weeks, the line through them, and what it says: an estimated 1RM where it meets
+    /// the threshold, how the latest set compared, and loads for round speeds. Until
+    /// there are enough sets, a sentence saying what's missing.
+    private var profileCard: some View {
+        Panel {
+            VStack(alignment: .leading, spacing: 10) {
+                HStack(alignment: .firstTextBaseline) {
+                    Text("load–velocity profile").font(.caption).foregroundStyle(.secondary)
+                    Spacer()
+                    Text("last 12 weeks").font(.caption2).foregroundStyle(.tertiary)
+                }
+                switch figures.profileFit {
+                case .profile(let p):
+                    profileContent(p)
+                case .needsMore(let why):
+                    Text(why).font(.footnote).foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                case .none:
+                    EmptyView()
+                }
+                Text("Each dot is a measured set: its load and its fastest rep. Speed falls as load rises; where the line meets the dashed threshold, the speed of a last possible rep, is an estimated 1RM, with no max test.")
+                    .font(.caption2).foregroundStyle(.tertiary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
+
+    @ViewBuilder private func profileContent(_ p: LoadVelocityProfile) -> some View {
+        profileChart(p).frame(height: 160)
+        if let x = profileScrubX {
+            Text("at \(WorkSet.formatWeight((x / 2.5).rounded() * 2.5)) kg: \(VelocitySet.speed(p.speed(at: x))) m/s on the profile")
+                .font(.caption.monospacedDigit()).foregroundStyle(.secondary)
+        } else {
+            Text("drag along the chart to read a load").font(.caption2).foregroundStyle(.tertiary)
+        }
+        if let rm = p.oneRepMax, let t = p.threshold {
+            HStack(alignment: .firstTextBaseline, spacing: 6) {
+                Text("estimated 1RM").font(.caption).foregroundStyle(.secondary)
+                Spacer()
+                Text("\(WorkSet.formatWeight((rm / 2.5).rounded() * 2.5)) kg")
+                    .font(Theme.serif(.title3, weight: .medium)).monospacedDigit()
+                Text("at \(VelocitySet.speed(t)) m/s · \(p.thresholdIsOwn ? "yours" : "typical")")
+                    .font(.caption2).foregroundStyle(.tertiary)
+            }
+            .accessibilityElement(children: .combine)
+        }
+        if let latest = figures.speeds.last, let d = p.readiness(latest), let load = latest.load {
+            let color = d >= 3 ? Theme.progressing : (d <= -3 ? Theme.stalled : Color.secondary)
+            HStack(spacing: 6) {
+                Circle().fill(color).frame(width: 8, height: 8)
+                Text(abs(d) < 3
+                     ? "latest set, \(WorkSet.formatWeight(load)) kg: on the profile"
+                     : "latest set, \(WorkSet.formatWeight(load)) kg: \(Int(abs(d).rounded()))% \(d > 0 ? "faster" : "slower") than the profile")
+                    .font(.footnote.weight(.semibold)).foregroundStyle(color)
+            }
+            .accessibilityElement(children: .combine)
+        }
+        let table = p.loadsForSpeeds
+        if !table.isEmpty {
+            Text("for a target speed: " + table.map { "\(VelocitySet.speed($0.speed)) m/s ≈ \(WorkSet.formatWeight($0.load)) kg" }.joined(separator: " · "))
+                .font(.caption.monospacedDigit()).foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    private func profileChart(_ p: LoadVelocityProfile) -> some View {
+        let rm = p.oneRepMax
+        let xLo = p.loads.lowerBound * 0.9
+        let xHi = max(p.loads.upperBound * 1.05, (rm ?? 0) * 1.03)
+        let speeds = p.points.map(\.mcv)
+        let yLo = max(0, min(p.threshold ?? speeds.min()!, speeds.min()!) - 0.05)
+        let yHi = max(speeds.max()!, p.speed(at: xLo)) + 0.05
+        let ends: [(load: Double, speed: Double)] = [(xLo, p.speed(at: xLo)), (xHi, p.speed(at: xHi))]
+        let newest = p.points.map(\.date).max() ?? Date()
+        return Chart {
+            ForEach(Array(ends.enumerated()), id: \.offset) { _, e in
+                LineMark(x: .value("Load", e.load), y: .value("m/s", e.speed))
+                    .foregroundStyle(Theme.accent.opacity(0.7))
+                    .lineStyle(StrokeStyle(lineWidth: 1.5))
+            }
+            if let t = p.threshold {
+                RuleMark(y: .value("Threshold", t))
+                    .foregroundStyle(.secondary)
+                    .lineStyle(StrokeStyle(lineWidth: 1, dash: [4, 3]))
+                if let rm {
+                    PointMark(x: .value("Load", rm), y: .value("m/s", t))
+                        .symbol(.diamond)
+                        .foregroundStyle(Theme.accent)
+                        .symbolSize(60)
+                        .annotation(position: .top, spacing: 3) {
+                            Text("1RM").font(.caption2).foregroundStyle(.secondary)
+                        }
+                }
+            }
+            ForEach(Array(p.points.enumerated()), id: \.offset) { _, pt in
+                // Newer sets darker: the last twelve weeks fade from light to full.
+                let age = newest.timeIntervalSince(pt.date) / LoadVelocityProfile.window
+                PointMark(x: .value("Load", pt.load), y: .value("m/s", pt.mcv))
+                    .foregroundStyle(Theme.accent.opacity(1 - 0.6 * min(1, max(0, age))))
+                    .symbolSize(36)
+            }
+            if let x = profileScrubX {
+                RuleMark(x: .value("Load", x)).foregroundStyle(.secondary.opacity(0.35))
+            }
+        }
+        .chartXScale(domain: xLo...xHi)
+        .chartYScale(domain: yLo...yHi)
+        .chartXAxis {
+            AxisMarks(values: .automatic(desiredCount: 4)) { v in
+                AxisGridLine()
+                AxisValueLabel { if let kg = v.as(Double.self) { Text("\(Int(kg)) kg") } }
+            }
+        }
+        .chartYAxis {
+            AxisMarks(values: .automatic(desiredCount: 3)) {
+                AxisGridLine()
+                AxisValueLabel(format: FloatingPointFormatStyle<Double>.number.precision(.fractionLength(0...2)))
+            }
+        }
+        .chartXSelection(value: $profileScrubX)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("load–velocity profile of \(p.points.count) measured sets")
+        .accessibilityValue(p.summary(lift: exercise))
     }
 
     private func clearVelocityScrub() {
@@ -1550,6 +1690,7 @@ struct TrendsView: View {
             f.proximity = VelocityRecord.proximity(f.speeds, model: f.reserveModel)
             f.failureSpeeds = VelocityRecord.failureSpeeds(f.speeds)
             f.labelledDays = VelocityRecord.labelledDays(f.speeds)
+            f.profileFit = LoadVelocityProfile.fit(f.speeds, lift: exercise)
         }
         figures = f
     }

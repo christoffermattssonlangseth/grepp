@@ -165,17 +165,19 @@ sentence and the eight weeks to the coach as a question, and the coach's
 digest carries the same sentence, so the tab and the chat agree on a stall.
 "Bench", "Bench press" and "bench-press" are one lift everywhere. Est. 1RM is
 Epley, trusted to twelve reps and no further. A lift with sets measured in
-BarVelo also gets a **bar speed** card from velocity.md: each set as a stroke
+BarVelo also gets a **bar velocity** card from velocity.md: each set as a stroke
 from its last rep's mean concentric velocity up to its fastest, on the lift
 chart's dates; the latest set against the last day at the same load (green
-faster, amber slower, "same speed" within 0.01 m/s); the velocity 1RM when
+faster, amber slower, "same velocity" within 0.01 m/s); the velocity 1RM when
 BarVelo sent one; and the sets as a list, newest first, with loss and RPE.
 Once sets carry "fail" or "left N", the card fits the lift's own reps to
 reps in reserve (four reps within five of failure at least) and charts reps left
 at the end of each set, filled for your answer and hollow for the reading from
-speed, with the failure speed, m/s per rep, a small lookup and, over two days
-of answers, the failure speed over time; the coach gets the same fit, one line
-per lift.
+velocity, with the failure velocity, m/s per rep, a small lookup and, over two days
+of answers, the failure velocity over time; the coach gets the same fit, one line
+per lift. Drag along either chart to read a set (the day, set number, load ×
+reps, best → last m/s, loss, RPE or fail, reps left, yours or estimated); the
+same set lights up on both, and a tap on the reading opens that day in Log.
 *Volume*: a training-days grid, Monday to Sunday, with the weeks in a row
 you've hit the programme's days (two a week without one); sets per muscle for
 the week as bars against a 10–20 band with the four-week average marked; and
@@ -212,8 +214,8 @@ first. Nothing is read back from Strava. A switch in Settings ▸ Strava turns
 all of it off — no button, no marks, nothing posted — and keeps the
 connection for when it comes back.
 
-**Bar speed.** With BarVelo, the bar-speed app, on the phone, a quiet
-**measure bar speed** line sits under the set fields. It's for the sets you
+**Bar velocity.** With BarVelo, the bar-velocity app, on the phone, a quiet
+**measure bar velocity** line sits under the set fields. It's for the sets you
 choose, not every set. Tap it and BarVelo opens with the lift and load filled
 in. Film the set and tap **Send to Grepp**: you're back on the Log tab with the
 load and reps in the fields, the speeds above them (`0.52 → 0.41 m/s · loss
@@ -237,7 +239,7 @@ no signal or a relaunch loses none, and Finish never waits on them. A handoff
 Grepp can't read says so; the set is still in BarVelo's history.
 
 BarVelo can also send effort: its estimate of the reps left at the end of the
-set, from your own bar-speed history, your answer to "reps left?", and a 1RM
+set, from your own bar-velocity history, your answer to "reps left?", and a 1RM
 estimated from the lift's load–velocity profile. They go on the end of the line
 (`rir ~0` the estimate, `left 2` or `fail` your answer, `v1rm 47.5`), and the
 Log tab shows the set's RPE, 10 − reps left: `RPE 9` from your answer, `est.
@@ -247,7 +249,7 @@ RPE 8.5` from the estimate. A field Grepp can't read is dropped, not the set.
 2026-11-06 over-head-press set 2 42.5x9 mcv 0.78 0.74 0.70 0.66 0.62 0.57 0.52 0.47 0.41 loss 47% rir ~0 fail v1rm 47.5
 ```
 
-Coach reads the last forty lines, as bar speed rather than instructions, joins
+Coach reads the last forty lines, as bar velocity rather than instructions, joins
 them to the log by day, lift and set, and knows an unmeasured set is unknown,
 not slow. BarVelo keeps no video: it reads each camera frame as it arrives and
 keeps only the numbers. The handoff is two URLs, `barvelo://measure` and

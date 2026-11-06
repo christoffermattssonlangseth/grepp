@@ -61,7 +61,7 @@ final class Store: ObservableObject {
     @AppStorage("gh_goals_path") var goalsPath = "goals.md"
     @AppStorage("gh_research_path") var researchPath = "research.md"
     @AppStorage("gh_program_path") var programPath = "program.md"
-    /// Bar speeds measured by BarVelo, one line per set. Written by the
+    /// Bar velocities measured by BarVelo, one line per set. Written by the
     /// handoff, read by the coach; never edited in the brief screen.
     @AppStorage("gh_velocity_path") var velocityPath = "velocity.md"
 
@@ -240,7 +240,7 @@ final class Store: ObservableObject {
             case .goals: return "What I'm working toward"
             case .program: return "The programme I'm running"
             case .research: return "What the evidence says"
-            case .velocity: return "Bar speed"
+            case .velocity: return "Bar velocity"
             }
         }
 
@@ -779,7 +779,7 @@ final class Store: ObservableObject {
     /// queue it locally when offline. Shared by `commit`, `delete` and `move`.
     @discardableResult
     private func perform(_ write: PendingWrite) async -> CommitResult {
-        // Bar speed being written is no reason to refuse a lift: it's brief.
+        // Bar velocity being written is no reason to refuse a lift: it's brief.
         await waitForVelocityFlush()
         guard !isBusy else { status = "Still syncing — try again in a moment."; return .failed }
         followLocation()

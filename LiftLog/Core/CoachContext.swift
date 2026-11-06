@@ -39,7 +39,7 @@ enum CoachContext {
         var research = ""
         /// The programme on file: days and set schemes, no loads.
         var program = ""
-        /// velocity.md: bar speeds BarVelo measured, one line per set.
+        /// velocity.md: bar velocities BarVelo measured, one line per set.
         var velocity = ""
 
         static let none = Brief()
@@ -249,7 +249,7 @@ enum CoachContext {
         tables, no numbered lists. Prose and the occasional short list.
 
         \(standingBrief(brief))
-        \(barSpeedBrief(brief.velocity))
+        \(barVelocityBrief(brief.velocity))
         \(gym.map { $0 + "\n\n" } ?? "")\
         \(digest.map { $0 + "\n\n" + readingHistoryBrief } ?? "")
         <training-log>
@@ -258,14 +258,14 @@ enum CoachContext {
         """
     }
 
-    /// Bar speeds BarVelo measured: data, like the log, not instructions.
+    /// Bar velocities BarVelo measured: data, like the log, not instructions.
     /// The last few dozen sets, as the file spells them. Nothing measured
     /// contributes nothing.
-    static func barSpeedBrief(_ file: String) -> String {
+    static func barVelocityBrief(_ file: String) -> String {
         let lines = VelocitySet.recentLines(file)
         guard !lines.isEmpty else { return "" }
         return """
-        BAR SPEED. Some sets were filmed with BarVelo, which tracks the bar with the \
+        BAR VELOCITY. Some sets were filmed with BarVelo, which tracks the bar with the \
         phone camera. Each line is a date, the lift as the log spells it, which of \
         that day's sets of the lift it was ("set 3" = the third set of that lift on \
         that day in the training log, counting along the day's lines of it in \
@@ -284,7 +284,7 @@ enum CoachContext {
         of it, 30–40 % is close (about one or two reps left), more is near or at \
         failure; presses lose more speed before failing than squats and pulls. \
         Some lines go on to effort. "rir ~N" is BarVelo's estimate of the reps \
-        left at the end of the set, from this lifter's own bar-speed history; it \
+        left at the end of the set, from this lifter's own bar-velocity history; it \
         is less certain the further the set stopped from failure. "left N" (N \
         more reps were possible) or "fail" (the set ended on a failed rep) is the \
         lifter's own report and outranks the estimate. RPE = 10 − reps in \
@@ -294,9 +294,9 @@ enum CoachContext {
         within one lift and camera setup. Not every set is measured, so a lift with \
         no line here is unknown, not slow.
 
-        <bar-speed>
+        <bar-velocity>
         \(lines.joined(separator: "\n"))
-        </bar-speed>
+        </bar-velocity>
         \(reserveBrief(file))
 
         """
@@ -311,7 +311,7 @@ enum CoachContext {
         }
         guard !fits.isEmpty else { return "" }
         return """
-        Speed to reps in reserve, fitted from this lifter's own labelled reps \
+        Velocity to reps in reserve, fitted from this lifter's own labelled reps \
         (reserve = reps left after that rep; same camera setup only; ± is the \
         typical miss in reps). Read a set's last-rep speed against it for \
         proximity to failure:

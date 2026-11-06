@@ -95,7 +95,7 @@ final class VelocityLogTests: XCTestCase {
 
     func testSkipsHeaderProseAndMalformedLines() {
         let file = """
-        # Bar speed
+        # Bar velocity
 
         One line per set, measured by BarVelo: the day, the lift, …
         \(squat0927)
@@ -157,7 +157,7 @@ final class VelocityLogTests: XCTestCase {
 
         let same = try XCTUnwrap(compare(["2026-09-20 squat 110x5 mcv 0.41", squat1006]))
         XCTAssertTrue(same.isSame)
-        XCTAssertEqual(same.sentence(day: short), "at 110 kg: same speed as 20 Sep")
+        XCTAssertEqual(same.sentence(day: short), "at 110 kg: same velocity as 20 Sep")
 
         // The most recent earlier one at the load, not the first.
         let recent = try XCTUnwrap(compare(["2026-09-01 squat 110x5 mcv 0.30", "2026-09-20 squat 110x5 mcv 0.40", squat1006]))

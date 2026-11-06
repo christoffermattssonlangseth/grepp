@@ -76,8 +76,8 @@ final class VelocityReserveTests: XCTestCase {
     }
 
     func testCoachLine() {
-        let file = "# Bar speed\n\n" + ohp1006 + "\n2026-10-06 squat set 1 100x3 mcv 0.40 0.35 0.30\n"
-        let brief = CoachContext.barSpeedBrief(file)
+        let file = "# Bar velocity\n\n" + ohp1006 + "\n2026-10-06 squat set 1 100x3 mcv 0.40 0.35 0.30\n"
+        let brief = CoachContext.barVelocityBrief(file)
         XCTAssertTrue(brief.contains(ohp1006), brief)
         XCTAssertTrue(brief.contains("- over-head-press: failure ≈ 0.27 m/s, 0.039 m/s per rep in reserve, 1 labelled set, ±0.6 reps"), brief)
         XCTAssertFalse(brief.contains("- squat:"), brief)

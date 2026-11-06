@@ -168,9 +168,9 @@ struct SettingsView: View {
                     labeled("evidence file", text: $store.researchPath, placeholder: "research.md")
                     labeled("programme file", text: $store.programPath, placeholder: "program.md")
                     // BarVelo is optional: the field only appears once it's installed or
-                    // a bar-speed file exists. Grepp works the same without it.
+                    // a bar-velocity file exists. Grepp works the same without it.
                     if usesBarVelo {
-                        labeled("bar speed file", text: $store.velocityPath, placeholder: "velocity.md")
+                        labeled("bar velocity file", text: $store.velocityPath, placeholder: "velocity.md")
                     }
                     Text(coachingHint)
                         .font(.caption)
@@ -408,7 +408,7 @@ struct SettingsView: View {
     }
 
     /// Whether the coaching notes were found, and what to do about it.
-    /// BarVelo installed, or bar speed already in the repo.
+    /// BarVelo installed, or bar velocity already in the repo.
     private var usesBarVelo: Bool {
         !store.brief.velocity.isEmpty
             || UIApplication.shared.canOpenURL(VelocitySet.measureURL(lift: "", load: nil, reps: nil))
@@ -420,13 +420,13 @@ struct SettingsView: View {
                      store.brief.research.isEmpty ? nil : store.researchPath,
                      store.brief.velocity.isEmpty ? nil : store.velocityPath].compactMap { $0 }
         // velocity.md isn't typed: BarVelo writes it, set by set, and the coach reads it.
-        let speed = " **\(store.velocityPath)** holds the sets BarVelo measured; the coach reads it as bar speed, with reps in reserve where known."
+        let velocityNote = " **\(store.velocityPath)** holds the sets BarVelo measured; the coach reads it as bar velocity, with reps in reserve where known."
         if found.isEmpty || found == [store.velocityPath] {
             let none = "No brief files yet. Write them from Your brief, or put them beside your log — **\(store.coachingPath)** for how you like to train and what to work around, **\(store.goalsPath)** for what you're aiming at — and they become the coach's standing brief."
-            return LocalizedStringKey(none + (found.isEmpty ? "" : speed))
+            return LocalizedStringKey(none + (found.isEmpty ? "" : velocityNote))
         }
         let list = found.count > 1 ? found.dropLast().joined(separator: ", ") + " and " + found.last! : found[0]
-        return LocalizedStringKey("Loaded \(list). Edit them in Your brief or beside the log, then reload below." + speed)
+        return LocalizedStringKey("Loaded \(list). Edit them in Your brief or beside the log, then reload below." + velocityNote)
     }
 
     /// Post every day not yet on Strava, oldest first, one at a time — Strava

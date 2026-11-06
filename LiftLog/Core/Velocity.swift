@@ -1,6 +1,6 @@
 import Foundation
 
-/// A set measured by BarVelo, the bar-speed app, handed back to Grepp.
+/// A set measured by BarVelo, the bar-velocity app, handed back to Grepp.
 ///
 /// The handoff is two URLs and nothing else, so neither app needs the other's
 /// code, account or container. This is contract version 1; BarVelo
@@ -20,7 +20,7 @@ import Foundation
 ///
 /// Three fields BarVelo may add, all optional within version 1, so a link
 /// without them reads as before. `rir` is BarVelo's estimate of the reps in
-/// reserve after the set's last rep, one number from the lifter's own bar-speed
+/// reserve after the set's last rep, one number from the lifter's own bar-velocity
 /// history; `left` is the lifter's own answer to "reps left?" after the set, a
 /// count or `fail` for a set that ended on a failed rep; `v1rm` is a 1RM in kg
 /// estimated from the lift's load–velocity profile. Each is extra: one that
@@ -343,13 +343,15 @@ struct VelocitySet: Equatable, Codable {
     /// line the file already has is not added again: a write that went through
     /// but whose answer was lost is retried, and must not log the set twice.
     /// Speeds to the hundredth on every rep make two real sets one line only
-    /// in theory.
+    /// in theory. A file that already has a heading keeps it: files written
+    /// before the rename open with `# Bar speed` (backward compatibility),
+    /// and nothing here or in `recentLines` reads the heading, only dated lines.
     static func appending(_ sets: [VelocitySet], to file: String) -> String {
         let current = file.trimmingCharacters(in: .whitespacesAndNewlines)
         var present = Set(current.split(whereSeparator: \.isNewline).map { $0.trimmingCharacters(in: .whitespaces) })
         let new = sets.map(\.line).filter { present.insert($0).inserted }
         guard !new.isEmpty else { return file }
-        let header = "# Bar speed\n\nOne line per set, measured by BarVelo: the day, the lift, which of the day's sets of it (set 3 = its third set in training.md), the set as logged, mean concentric velocity per rep in m/s, the last rep's loss against the fastest, and, when BarVelo sent them, its estimate of the reps in reserve at the end of the set (rir ~N), the reps the lifter said were left (left N, or fail), and a 1RM estimated from bar speed (v1rm).\n"
+        let header = "# Bar velocity\n\nOne line per set, measured by BarVelo: the day, the lift, which of the day's sets of it (set 3 = its third set in training.md), the set as logged, mean concentric velocity per rep in m/s, the last rep's loss against the fastest, and, when BarVelo sent them, its estimate of the reps in reserve at the end of the set (rir ~N), the reps the lifter said were left (left N, or fail), and a 1RM estimated from bar velocity (v1rm).\n"
         return (current.isEmpty ? header : current) + "\n" + new.joined(separator: "\n") + "\n"
     }
 

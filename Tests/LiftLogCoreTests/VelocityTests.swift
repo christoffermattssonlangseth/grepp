@@ -212,26 +212,44 @@ final class VelocityTests: XCTestCase {
         let a = VelocitySet(date: Session.dateFormatter.date(from: "2026-11-04")!, lift: "squat", load: 100, mcv: [0.5, 0.5])
         let b = VelocitySet(date: Session.dateFormatter.date(from: "2026-11-05")!, lift: "squat", load: 105, mcv: [0.45])
         let file = VelocitySet.appending(b, to: VelocitySet.appending(a, to: ""))
-        XCTAssertEqual(file.components(separatedBy: "# Bar speed").count, 2)
+        XCTAssertEqual(file.components(separatedBy: "# Bar velocity").count, 2)
         XCTAssertEqual(VelocitySet.recentLines(file), [
             "2026-11-04 squat 100x2 mcv 0.50 0.50 loss 0%",
             "2026-11-05 squat 105x1 mcv 0.45 loss 0%",
         ])
         XCTAssertEqual(VelocitySet.recentLines(file, limit: 1).count, 1)
     }
+
+    func testFileUnderTheOldHeadingStillReadsAndAppends() {
+        // Backward compatibility: velocity.md files written before the rename
+        // open with the old heading, "# Bar speed". They keep it, get no second
+        // heading, and their lines still reach the coach and Trends.
+        let legacy = "# Bar speed\n\nOne line per set.\n\n2026-11-04 squat 100x2 mcv 0.50 0.50 loss 0%\n"
+        let b = VelocitySet(date: Session.dateFormatter.date(from: "2026-11-05")!, lift: "squat", load: 105, mcv: [0.45])
+        let file = VelocitySet.appending([b, b], to: legacy)
+        XCTAssertTrue(file.hasPrefix("# Bar speed\n"))
+        XCTAssertFalse(file.contains("# Bar velocity"))
+        XCTAssertEqual(VelocitySet.appending(b, to: file), file)
+        XCTAssertEqual(VelocitySet.recentLines(file), [
+            "2026-11-04 squat 100x2 mcv 0.50 0.50 loss 0%",
+            "2026-11-05 squat 105x1 mcv 0.45 loss 0%",
+        ])
+        XCTAssertEqual(VelocityRecord.parse(file).count, 2)
+        XCTAssertTrue(CoachContext.barVelocityBrief(file).contains("<bar-velocity>\n2026-11-04 squat"))
+    }
 }
 
 final class VelocityCoachTests: XCTestCase {
     func testCoachSeesMeasuredSetsOnlyWhenThereAreSome() {
-        XCTAssertEqual(CoachContext.barSpeedBrief(""), "")
-        XCTAssertEqual(CoachContext.barSpeedBrief("# Bar speed\n\nprose only\n"), "")
+        XCTAssertEqual(CoachContext.barVelocityBrief(""), "")
+        XCTAssertEqual(CoachContext.barVelocityBrief("# Bar velocity\n\nprose only\n"), "")
 
-        let file = "# Bar speed\n\n2026-11-05 squat 100x5 mcv 0.52 0.50 0.47 0.45 0.41 loss 21%\n"
+        let file = "# Bar velocity\n\n2026-11-05 squat 100x5 mcv 0.52 0.50 0.47 0.45 0.41 loss 21%\n"
         let excerpt = CoachContext.excerpt(from: [Session(date: Session.dateFormatter.date(from: "2026-11-05")!,
                                                          exercises: [ExerciseEntry(name: "squat", sets: [WorkSet(weight: 100, added: nil, reps: 5)])])])
         let prompt = CoachContext.systemPrompt(for: excerpt, brief: CoachContext.Brief(velocity: file))
-        XCTAssertTrue(prompt.contains("<bar-speed>\n2026-11-05 squat 100x5 mcv 0.52"), prompt)
-        XCTAssertFalse(CoachContext.systemPrompt(for: excerpt, brief: .none).contains("<bar-speed>"))
+        XCTAssertTrue(prompt.contains("<bar-velocity>\n2026-11-05 squat 100x5 mcv 0.52"), prompt)
+        XCTAssertFalse(CoachContext.systemPrompt(for: excerpt, brief: .none).contains("<bar-velocity>"))
         // The coach is told how to join a line to its set.
         XCTAssertTrue(prompt.contains("Join a line to the log by day, lift and set number"), prompt)
         XCTAssertTrue(prompt.contains("treat the line as unjoined"), prompt)
@@ -339,7 +357,7 @@ final class VelocityEffortTests: XCTestCase {
     }
 
     func testCoachReadsEffort() {
-        let brief = CoachContext.barSpeedBrief(
+        let brief = CoachContext.barVelocityBrief(
             "2026-11-06 over-head-press set 2 42.5x9 mcv 0.78 0.41 loss 47% rir ~0 fail v1rm 47.5\n")
         XCTAssertTrue(brief.contains("rir ~0 fail v1rm 47.5"), brief)
         XCTAssertTrue(brief.contains("outranks the estimate"), brief)

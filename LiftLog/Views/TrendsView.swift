@@ -67,7 +67,7 @@ struct TrendsView: View {
         var speeds: [VelocityRecord] = []
         var speedComparison: VelocityRecord.Comparison?
         var v1rm: VelocityRecord?
-        /// Bar speed against reps in reserve, from the lift's `fail` / `left N`
+        /// Bar velocity against reps in reserve, from the lift's `fail` / `left N`
         /// sets; nil until there are enough of them.
         var reserveModel: ReserveModel?
         /// Reps left at the end of each measured set, own or read off speed.
@@ -77,8 +77,17 @@ struct TrendsView: View {
         var labelledDays = 0
     }
     @State private var figures = Figures()
-    /// The bar-speed list past its newest five.
+    /// The bar-velocity list past its newest five.
     @State private var showingAllSpeeds = false
+    /// Where a finger is on the bar-velocity chart (date, m/s) and on the
+    /// reps-left chart (date, reps), if on either. One at a time: a finger on
+    /// one clears the other, and the set it picks is highlighted on both.
+    @State private var speedScrubX: Date?
+    @State private var speedScrubY: Double?
+    @State private var reserveScrubX: Date?
+    @State private var reserveScrubY: Double?
+    /// Reps left at or above this draw at the top of their chart, as 6+.
+    private let reserveCap = 6.0
 
     /// How much of a long history the lift chart shows at once; the rest is a
     /// flick away. Four months is a training block.
@@ -142,6 +151,7 @@ struct TrendsView: View {
                 scrub = nil
                 weekScrub = nil
                 showingAllSpeeds = false
+                clearVelocityScrub()
                 clampMetric()
                 recompute()
             }
@@ -407,7 +417,7 @@ struct TrendsView: View {
             (records > 0 ? ", \(records) \(records == 1 ? "record" : "records")" : "")
     }
 
-    // MARK: - Bar speed
+    // MARK: - Bar velocity
 
     /// The lift's sets measured with BarVelo: each a stroke from its last rep
     /// up to its fastest, on the same dates as the chart above; the latest
@@ -418,10 +428,12 @@ struct TrendsView: View {
         let shown = all.filter { domain.contains($0.date) }
         let newest = Array(all.reversed())
         let listed = showingAllSpeeds ? newest : Array(newest.prefix(5))
+        let reserves = figures.proximity.filter { domain.contains($0.date) }
+        let picked = pickedSet(shown, reserves)
         return Panel {
             VStack(alignment: .leading, spacing: 10) {
                 HStack(alignment: .firstTextBaseline) {
-                    Text("bar speed · m/s").font(.caption).foregroundStyle(.secondary)
+                    Text("bar velocity · m/s").font(.caption).foregroundStyle(.secondary)
                     Spacer()
                     Text("\(all.count) measured \(all.count == 1 ? "set" : "sets")")
                         .font(.caption2).foregroundStyle(.tertiary)
@@ -434,8 +446,16 @@ struct TrendsView: View {
                         .frame(height: 140)
                         .frame(maxWidth: .infinity)
                 } else {
-                    speedChart(shown, domain: domain, latest: all.last)
+                    speedChart(shown, domain: domain, latest: all.last, picked: picked)
                         .frame(height: 140)
+                    // The set under the finger, and the way into that day —
+                    // outside the plot, as on the lift chart.
+                    if let picked, speedScrubX != nil {
+                        velocityReading(picked)
+                    } else if picked == nil {
+                        Text("drag along the chart to read a set")
+                            .font(.caption2).foregroundStyle(.tertiary)
+                    }
                 }
 
                 if let c = figures.speedComparison {
@@ -481,31 +501,111 @@ struct TrendsView: View {
                     }
                 }
 
-                Text("MCV is the bar's mean speed on the way up, rep by rep, from BarVelo: the big dot is the fastest rep, the small one the last. Only measured sets appear.")
+                Text("MCV is the bar's mean velocity on the way up, rep by rep, from BarVelo: the big dot is the fastest rep, the small one the last. Only measured sets appear.")
                     .font(.caption2).foregroundStyle(.tertiary)
                     .fixedSize(horizontal: false, vertical: true)
 
                 if figures.reserveModel != nil || figures.proximity.contains(where: \.isOwn) {
                     Divider().padding(.vertical, 2)
-                    reserveSection(domain: domain)
+                    reserveSection(reserves, domain: domain, picked: picked)
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .onChange(of: speedScrubX) { _, x in
+            if x != nil { reserveScrubX = nil; reserveScrubY = nil }
+        }
+        .onChange(of: reserveScrubX) { _, x in
+            if x != nil { speedScrubX = nil; speedScrubY = nil }
+        }
+    }
+
+    private func clearVelocityScrub() {
+        speedScrubX = nil; speedScrubY = nil
+        reserveScrubX = nil; reserveScrubY = nil
+    }
+
+    /// The measured set under the finger, on whichever chart it's on: the
+    /// nearest day with a set, then of that day's sets the one nearest the
+    /// finger's height — a drag snaps to sets that were lifted.
+    private func pickedSet(_ shown: [VelocityRecord], _ reserves: [VelocityRecord.Proximity]) -> VelocityRecord? {
+        if let x = speedScrubX {
+            let y = speedScrubY
+            return Self.nearest(shown, to: x, date: { $0.date }) { r in
+                y.map { min(abs(r.best - $0), abs(r.lastRep - $0)) } ?? 0
+            }
+        }
+        if let x = reserveScrubX {
+            let y = reserveScrubY
+            let cap = reserveCap
+            return Self.nearest(reserves, to: x, date: { $0.date }) { p in
+                y.map { abs(min(p.reserve, cap) - $0) } ?? 0
+            }?.record
+        }
+        return nil
+    }
+
+    private static func nearest<T>(_ items: [T], to x: Date, date: (T) -> Date, distance: (T) -> Double) -> T? {
+        guard let day = items.map(date).min(by: { abs($0.timeIntervalSince(x)) < abs($1.timeIntervalSince(x)) })
+        else { return nil }
+        return items.filter { date($0) == day }.min { distance($0) < distance($1) }
+    }
+
+    /// One measured set in a line: `6 Oct · set 3 · 110×12 · 0.42 → 0.32 m/s
+    /// · −24% · RPE 9 · 1 left (yours)`. Reps left come from the lifter's
+    /// answer, else the fit's reading of the last rep; a failed set has none
+    /// to add.
+    private func velocityReadingText(_ r: VelocityRecord) -> String {
+        var parts = [r.date.formatted(.dateTime.day().month(.abbreviated)), r.detail]
+        if r.left != .failed, let p = figures.proximity.first(where: { $0.record == r }) {
+            parts.append(p.isOwn ? "\(Int(p.reserve)) left (yours)"
+                                 : "≈\(VelocitySet.tenth((p.reserve * 2).rounded() / 2)) left (est.)")
+        }
+        return parts.joined(separator: " · ")
+    }
+
+    /// The picked set's reading, as a button into that day in Log.
+    private func velocityReading(_ r: VelocityRecord) -> some View {
+        let text = velocityReadingText(r)
+        // The lift as the log spelled it that day, when the chart above has it.
+        let name = figures.series.first { Calendar.current.isDate($0.date, inSameDayAs: r.date) }?.name ?? ""
+        return Button {
+            store.requestEdit(exercise: name.isEmpty ? r.lift : name, on: r.date)
+        } label: {
+            Label(text, systemImage: "arrow.up.right")
+                .font(.caption.weight(.semibold).monospacedDigit())
+                .lineLimit(2)
+                .minimumScaleFactor(0.7)
+                .multilineTextAlignment(.leading)
+        }
+        .buttonStyle(.panel)
+        .controlSize(.small)
+        .accessibilityLabel("open \(r.date.formatted(.dateTime.day().month(.wide))) in Log")
+        .accessibilityValue(text)
+    }
+
+    /// VoiceOver's way along a chart: swipe up or down for the next or
+    /// previous set, the way a finger drags.
+    private func step<T>(_ items: [T], from current: Int?, _ direction: AccessibilityAdjustmentDirection) -> T? {
+        guard !items.isEmpty else { return nil }
+        switch direction {
+        case .increment: return items[current.map { min($0 + 1, items.count - 1) } ?? items.count - 1]
+        case .decrement: return items[current.map { max($0 - 1, 0) } ?? items.count - 1]
+        @unknown default: return nil
         }
     }
 
     /// How close each measured set ended to failure, the lifter's own answer
     /// or the speed's reading of it; what the speed says about failure; and,
-    /// once there are answers on two days, the failure speed over time.
+    /// once there are answers on two days, the failure velocity over time.
     @ViewBuilder
-    private func reserveSection(domain: ClosedRange<Date>) -> some View {
-        let shown = figures.proximity.filter { domain.contains($0.date) }
+    private func reserveSection(_ shown: [VelocityRecord.Proximity], domain: ClosedRange<Date>, picked: VelocityRecord?) -> some View {
         HStack(alignment: .firstTextBaseline) {
             Text("reps left at the end of the set").font(.caption).foregroundStyle(.secondary)
             Spacer()
             HStack(spacing: 8) {
                 Label { Text("yours") } icon: { Circle().fill(Theme.accent).frame(width: 7, height: 7) }
-                Label { Text("from speed") } icon: { Circle().strokeBorder(Theme.accent, lineWidth: 1.5).frame(width: 7, height: 7) }
+                Label { Text("from velocity") } icon: { Circle().strokeBorder(Theme.accent, lineWidth: 1.5).frame(width: 7, height: 7) }
             }
             .labelStyle(CompactLegend())
             .font(.caption2).foregroundStyle(.tertiary)
@@ -517,8 +617,11 @@ struct TrendsView: View {
                 .frame(height: 110)
                 .frame(maxWidth: .infinity)
         } else {
-            reserveChart(shown, domain: domain)
+            reserveChart(shown, domain: domain, picked: picked)
                 .frame(height: 110)
+            if let picked, reserveScrubX != nil {
+                velocityReading(picked)
+            }
         }
 
         if let m = figures.reserveModel {
@@ -531,14 +634,14 @@ struct TrendsView: View {
                 .lineLimit(1)
                 .minimumScaleFactor(0.7)
         } else {
-            Text("Not enough answered sets to read reps left from speed yet: it takes four reps within five of failure.")
+            Text("Not enough answered sets to read reps left from velocity yet: it takes four reps within five of failure.")
                 .font(.footnote).foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
         }
 
         if figures.labelledDays >= 2, figures.failureSpeeds.count >= 2 {
             HStack(alignment: .center, spacing: 8) {
-                Text("failure speed").font(.caption).foregroundStyle(.secondary)
+                Text("failure velocity").font(.caption).foregroundStyle(.secondary)
                 failureSparkline(figures.failureSpeeds)
                     .frame(height: 28)
                 if let last = figures.failureSpeeds.last {
@@ -547,7 +650,7 @@ struct TrendsView: View {
                 }
             }
             .accessibilityElement(children: .ignore)
-            .accessibilityLabel("failure speed over \(figures.failureSpeeds.count) sets taken to failure")
+            .accessibilityLabel("failure velocity over \(figures.failureSpeeds.count) sets taken to failure")
             .accessibilityValue(figures.failureSpeeds.map { VelocitySet.speed($0.speed) }.joined(separator: ", ") + " m/s")
         }
 
@@ -558,20 +661,30 @@ struct TrendsView: View {
 
     /// Reps left, 0 to 6+, on the same dates as the speed chart: filled for
     /// the lifter's answer, hollow for the speed's reading.
-    private func reserveChart(_ shown: [VelocityRecord.Proximity], domain: ClosedRange<Date>) -> some View {
-        let cap = 6.0
+    private func reserveChart(_ shown: [VelocityRecord.Proximity], domain: ClosedRange<Date>,
+                              picked: VelocityRecord?) -> some View {
+        let cap = reserveCap
         return Chart {
+            if let picked {
+                RuleMark(x: .value("Date", picked.date))
+                    .foregroundStyle(.secondary.opacity(0.35))
+            }
             ForEach(Array(shown.enumerated()), id: \.offset) { _, p in
+                let isPicked = p.record == picked
+                let size: CGFloat = isPicked ? 12 : 8
                 PointMark(x: .value("Date", p.date), y: .value("Reps left", min(p.reserve, cap)))
                     .symbol {
                         if p.isOwn {
-                            Circle().fill(Theme.accent).frame(width: 8, height: 8)
+                            Circle().fill(Theme.accent).frame(width: size, height: size)
                         } else {
-                            Circle().strokeBorder(Theme.accent, lineWidth: 1.5).frame(width: 8, height: 8)
+                            Circle().strokeBorder(Theme.accent, lineWidth: isPicked ? 2 : 1.5).frame(width: size, height: size)
                         }
                     }
+                    .opacity(picked == nil || isPicked ? 1 : 0.5)
             }
         }
+        .chartXSelection(value: $reserveScrubX)
+        .chartYSelection(value: $reserveScrubY)
         .chartXScale(domain: domain)
         .chartYScale(domain: 0...cap)
         .chartXAxis {
@@ -589,23 +702,31 @@ struct TrendsView: View {
             }
         }
         .chartYAxisLabel("reps left")
+        .accessibilityElement(children: .ignore)
         .accessibilityLabel("reps left at the end of \(shown.count) measured \(shown.count == 1 ? "set" : "sets")")
-        .accessibilityValue(shown.last.map {
-            "latest \(VelocitySet.tenth(($0.reserve * 2).rounded() / 2)) \($0.isOwn ? "by your answer" : "from speed")"
+        .accessibilityValue(picked.map { velocityReadingText($0) } ?? shown.last.map {
+            "latest \(VelocitySet.tenth(($0.reserve * 2).rounded() / 2)) \($0.isOwn ? "by your answer" : "from velocity")"
         } ?? "")
+        .accessibilityHint("swipe up or down to read a set")
+        .accessibilityAdjustableAction { direction in
+            let current = picked.flatMap { r in shown.firstIndex { $0.record == r } }
+            guard let p = step(shown, from: current, direction) else { return }
+            reserveScrubX = p.date
+            reserveScrubY = min(p.reserve, cap)
+        }
     }
 
-    /// The failure speed of each set taken to failure, as a line.
+    /// The failure velocity of each set taken to failure, as a line.
     private func failureSparkline(_ points: [(date: Date, speed: Double)]) -> some View {
         let lo = points.map(\.speed).min() ?? 0
         let hi = points.map(\.speed).max() ?? 1
         let pad = max(hi - lo, 0.04) / 2
         return Chart {
             ForEach(Array(points.enumerated()), id: \.offset) { _, p in
-                LineMark(x: .value("Date", p.date), y: .value("Failure speed", p.speed))
+                LineMark(x: .value("Date", p.date), y: .value("Failure velocity", p.speed))
                     .foregroundStyle(Theme.accent.opacity(0.6))
                     .interpolationMethod(.monotone)
-                PointMark(x: .value("Date", p.date), y: .value("Failure speed", p.speed))
+                PointMark(x: .value("Date", p.date), y: .value("Failure velocity", p.speed))
                     .foregroundStyle(Theme.accent)
                     .symbolSize(14)
             }
@@ -615,26 +736,37 @@ struct TrendsView: View {
         .chartYAxis(.hidden)
     }
 
-    private func speedChart(_ shown: [VelocityRecord], domain: ClosedRange<Date>, latest: VelocityRecord?) -> some View {
+    private func speedChart(_ shown: [VelocityRecord], domain: ClosedRange<Date>, latest: VelocityRecord?,
+                            picked: VelocityRecord?) -> some View {
         let lo = shown.map(\.lastRep).min() ?? 0
         let hi = shown.map(\.best).max() ?? 1
         let half = max(hi - lo, 0.2) / 2 * 1.2
         let mid = (lo + hi) / 2
         let lower = max(0, mid - half)
         return Chart {
+            // Drag along the strokes to read a set off them.
+            if let picked {
+                RuleMark(x: .value("Date", picked.date))
+                    .foregroundStyle(.secondary.opacity(0.35))
+            }
             ForEach(Array(shown.enumerated()), id: \.offset) { _, r in
+                let isPicked = r == picked
+                let faded = picked != nil && !isPicked
                 RuleMark(x: .value("Date", r.date),
                          yStart: .value("Last rep", r.lastRep),
                          yEnd: .value("Fastest rep", r.best))
-                    .lineStyle(StrokeStyle(lineWidth: 1.5, lineCap: .round))
-                    .foregroundStyle(Theme.accent.opacity(0.4))
+                    .lineStyle(StrokeStyle(lineWidth: isPicked ? 2.5 : 1.5, lineCap: .round))
+                    .foregroundStyle(Theme.accent.opacity(isPicked ? 0.8 : 0.4))
+                    .opacity(faded ? 0.5 : 1)
                 PointMark(x: .value("Date", r.date), y: .value("Last rep", r.lastRep))
                     .foregroundStyle(Theme.accent.opacity(0.6))
-                    .symbolSize(12)
-                let isLatest = r == latest
+                    .symbolSize(isPicked ? 28 : 12)
+                    .opacity(faded ? 0.5 : 1)
+                let isLatest = r == latest && picked == nil
                 PointMark(x: .value("Date", r.date), y: .value("Fastest rep", r.best))
                     .foregroundStyle(Theme.accent)
-                    .symbolSize(36)
+                    .symbolSize(isPicked ? 90 : 36)
+                    .opacity(faded ? 0.5 : 1)
                     .annotation(position: .top, spacing: 3,
                                 overflowResolution: .init(x: .fit(to: .plot), y: .disabled)) {
                         if isLatest {
@@ -659,11 +791,20 @@ struct TrendsView: View {
                 AxisValueLabel(format: FloatingPointFormatStyle<Double>.number.precision(.fractionLength(0...2)))
             }
         }
-        .accessibilityLabel("bar speed of \(shown.count) measured \(shown.count == 1 ? "set" : "sets")")
-        .accessibilityValue(shown.last.map { "latest \($0.detail)" } ?? "")
+        .chartXSelection(value: $speedScrubX)
+        .chartYSelection(value: $speedScrubY)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("bar velocity of \(shown.count) measured \(shown.count == 1 ? "set" : "sets")")
+        .accessibilityValue(picked.map { velocityReadingText($0) } ?? shown.last.map { "latest \($0.detail)" } ?? "")
+        .accessibilityHint("swipe up or down to read a set")
+        .accessibilityAdjustableAction { direction in
+            guard let r = step(shown, from: picked.flatMap { shown.firstIndex(of: $0) }, direction) else { return }
+            speedScrubX = r.date
+            speedScrubY = r.best
+        }
     }
 
-    /// The dates the bar-speed chart spans: the window the chart above shows
+    /// The dates the bar-velocity chart spans: the window the chart above shows
     /// when it scrolls, its whole span when it doesn't, so a day sits under
     /// itself; widened to the measured sets when the lift chart has none.
     private func speedDomain(_ records: [VelocityRecord]) -> ClosedRange<Date> {

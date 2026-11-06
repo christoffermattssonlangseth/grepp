@@ -1,6 +1,6 @@
 import Foundation
 
-/// Bar speed against reps in reserve, from the lifter's own answers.
+/// Bar velocity against reps in reserve, from the lifter's own answers.
 ///
 /// `mcv` lists only completed reps. `fail` means the last listed rep had
 /// nothing left; `left N` means N more were possible after it. So in a

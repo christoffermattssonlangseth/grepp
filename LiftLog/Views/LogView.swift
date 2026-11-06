@@ -429,7 +429,7 @@ struct LogView: View {
                 } label: {
                     HStack(spacing: 5) {
                         Image(systemName: "gauge.with.dots.needle.33percent")
-                        Text("measure bar speed")
+                        Text("measure bar velocity")
                     }
                     .font(.caption)
                     .foregroundStyle(.secondary)
@@ -999,7 +999,7 @@ struct LogView: View {
                             Image(systemName: "gauge.with.dots.needle.67percent")
                                 .font(.caption)
                                 .foregroundStyle(Theme.accent)
-                                .accessibilityLabel("Bar speed measured")
+                                .accessibilityLabel("Bar velocity measured")
                         }
                         if let record = record(at: idx) { RecordBadge(record: record) }
                         Spacer()

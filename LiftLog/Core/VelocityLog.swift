@@ -197,14 +197,14 @@ struct VelocityRecord: Equatable {
         /// The same as a share of the earlier, in percent.
         var percent: Double
 
-        /// Within ±0.01 m/s: the same speed, as far as a camera can tell.
+        /// Within ±0.01 m/s: the same velocity, as far as a camera can tell.
         var isSame: Bool { abs(delta) <= 0.01 + 1e-9 }
         var isFaster: Bool { !isSame && delta > 0 }
 
         /// `at 110 kg: 0.03 m/s faster than 29 Sep`, the day as `day` spells it.
         func sentence(day: (Date) -> String) -> String {
             let when = day(earlier.date)
-            if isSame { return "at \(latest.loadLabel): same speed as \(when)" }
+            if isSame { return "at \(latest.loadLabel): same velocity as \(when)" }
             return "at \(latest.loadLabel): \(VelocitySet.speed(abs(delta))) m/s \(delta > 0 ? "faster" : "slower") than \(when)"
         }
     }

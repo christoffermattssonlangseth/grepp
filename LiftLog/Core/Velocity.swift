@@ -264,7 +264,7 @@ struct VelocitySet: Equatable, Codable {
 
         let load: Double?
         if let raw = value("load"), !raw.isEmpty, raw.lowercased() != "bw" {
-            guard let kg = Double(raw), kg > 0 else { return nil }
+            guard let kg = Double(raw), kg > 0, kg <= 1000 else { return nil }
             load = kg
         } else {
             load = nil
@@ -272,7 +272,7 @@ struct VelocitySet: Equatable, Codable {
         // Added load means something only on a bodyweight lift; 0 is none.
         var added: Double?
         if let raw = value("added"), !raw.isEmpty {
-            guard let kg = Double(raw), kg >= 0 else { return nil }
+            guard let kg = Double(raw), kg >= 0, kg <= 1000 else { return nil }
             added = kg > 0 && load == nil ? kg : nil
         }
 
@@ -287,9 +287,9 @@ struct VelocitySet: Equatable, Codable {
             ?? Calendar.current.startOfDay(for: Date())
 
         // The effort fields are extras: one that doesn't read is dropped.
-        self.rirEstimate = value("rir").flatMap(Double.init).flatMap { $0 >= 0 && $0.isFinite ? $0 : nil }
+        self.rirEstimate = value("rir").flatMap(Double.init).flatMap { $0 >= 0 && $0 <= 50 ? $0 : nil }
         self.left = value("left").flatMap(Left.init)
-        self.v1rm = value("v1rm").flatMap(Double.init).flatMap { $0 > 0 && $0.isFinite ? $0 : nil }
+        self.v1rm = value("v1rm").flatMap(Double.init).flatMap { $0 > 0 && $0 <= 1000 ? $0 : nil }
         self.scale = value("scale").flatMap(Double.init).flatMap { $0 >= 0 && $0 < 0.5 ? $0 : nil }
         self.rulers = Self.rulerNames(value("rulers") ?? "")
     }
@@ -297,7 +297,8 @@ struct VelocitySet: Equatable, Codable {
     /// `scale ±1.2% height,plate,rack`, `scale height`, or nil with neither.
     static func scaleToken(scale: Double?, rulers: [String]) -> String? {
         var t: [String] = []
-        if let scale { t.append(String(format: "±%.1f%%", scale * 100)) }
+        // Never "±0.0%", which would read as perfect agreement: 0.1% at the least.
+        if let scale { t.append(String(format: "±%.1f%%", max(scale, 0.001) * 100)) }
         if !rulers.isEmpty { t.append(rulers.joined(separator: ",")) }
         return t.isEmpty ? nil : "scale " + t.joined(separator: " ")
     }
@@ -404,6 +405,22 @@ struct VelocitySet: Equatable, Codable {
 /// everything pending and drops only what that write carried, so a line
 /// added during the write waits for the next.
 struct VelocityOutbox: Codable, Equatable {
+    private enum CodingKeys: String, CodingKey { case entries }
+
+    /// One entry that no longer reads (from a build that wrote it differently)
+    /// costs that line, not the whole queue.
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        var list = try c.nestedUnkeyedContainer(forKey: .entries)
+        var out: [Entry] = []
+        while !list.isAtEnd {
+            if let e = try? list.decode(Entry.self) { out.append(e) } else { _ = try? list.decode(Skip.self) }
+        }
+        entries = out
+    }
+    init() {}
+    private struct Skip: Decodable {}
+
     struct Entry: Codable, Equatable {
         var id = UUID()
         var set: VelocitySet

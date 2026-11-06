@@ -57,6 +57,8 @@ struct LogView: View {
     @State private var repsText = ""
     /// The set BarVelo just measured, shown over the fields until it's landed.
     @State private var measured: VelocitySet?
+    /// BarVelo counted a different number of reps than were typed or planned.
+    @State private var repsNote: String?
     /// Measurements landed, by the id of the set they were landed as, waiting
     /// for Finish to number them and send them to velocity.md. A set removed
     /// takes its measurement with it; a lift discarded takes them all, since
@@ -385,7 +387,14 @@ struct LogView: View {
         isBodyweight = v.load == nil
         weightText = v.load.map { WorkSet.formatWeight($0) } ?? ""
         addedText = v.added.map { WorkSet.formatWeight($0) } ?? ""
-        repsText = String(v.reps)
+        // The reps typed or planned before filming stand: a camera can miss or add a
+        // rep, and one tap would land its count. A different count is shown instead.
+        if let planned = Int(repsText.trimmingCharacters(in: .whitespaces)), planned > 0 {
+            repsNote = planned == v.reps ? nil : "BarVelo counted \(v.reps) · you had \(planned)"
+        } else {
+            repsText = String(v.reps)
+            repsNote = nil
+        }
         measured = v
     }
 
@@ -394,6 +403,7 @@ struct LogView: View {
     private func releaseMeasured() {
         guard let held = measured else { return }
         measured = nil
+        repsNote = nil
         store.enqueueVelocity([held])
     }
 
@@ -412,6 +422,12 @@ struct LogView: View {
                 .font(.subheadline.weight(.semibold))
                 .foregroundStyle(Theme.accent)
                 .frame(maxWidth: .infinity, alignment: .leading)
+                if let repsNote {
+                    Text(repsNote)
+                        .font(.caption)
+                        .foregroundStyle(Theme.warning)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
                 if measured.isFromNewerBarVelo {
                     Text("BarVelo is newer than Grepp — update Grepp")
                         .font(.caption)
@@ -420,6 +436,8 @@ struct LogView: View {
                 }
             }
             if !name.isEmpty, barVeloInstalled {
+                // A barbell lift without its weight would come back as bodyweight.
+                let needsWeight = !isBodyweight && parsedWeight == nil
                 Button {
                     UIApplication.shared.open(VelocitySet.measureURL(
                         lift: MuscleMap.canonical(name),
@@ -429,13 +447,14 @@ struct LogView: View {
                 } label: {
                     HStack(spacing: 5) {
                         Image(systemName: "gauge.with.dots.needle.33percent")
-                        Text("measure bar velocity")
+                        Text(needsWeight ? "measure bar velocity · enter the weight first" : "measure bar velocity")
                     }
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .frame(maxWidth: .infinity, alignment: .leading)
                 }
                 .buttonStyle(.plain)
+                .disabled(needsWeight)
             }
         }
     }
@@ -1211,6 +1230,7 @@ struct LogView: View {
             }
         }
         measured = nil
+        repsNote = nil
         focus = nil
         // The day's clock starts only for today's session — a set corrected on
         // a past day must not make that day "the session in progress".

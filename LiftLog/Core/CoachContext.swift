@@ -330,7 +330,7 @@ enum CoachContext {
     static func profileBrief(_ file: String) -> String {
         let lines = VelocityRecord.byLift(VelocityRecord.parse(file)).compactMap { lift, records -> String? in
             guard case .profile(let p) = LoadVelocityProfile.fit(records, lift: lift) else { return nil }
-            return p.coachLine(lift: lift, latest: records.last)
+            return p.coachLine(lift: lift, readiness: LoadVelocityProfile.readiness(records, lift: lift))
         }
         guard !lines.isEmpty else { return "" }
         return """

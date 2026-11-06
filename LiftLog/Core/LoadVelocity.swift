@@ -16,8 +16,12 @@ import Foundation
 ///   day; slower, a tired one.
 /// - **Loads for a target speed**: the load that should move at, say, 0.50 m/s.
 ///
-/// Fitness moves the line, so only the last twelve weeks count. A profile needs
-/// three sets over loads at least 10% apart; with less, `fit` says what's missing.
+/// Fitness moves the line, so only sets from the last twelve weeks (counted from
+/// today) count. A profile needs three sets over loads at least 10% apart whose
+/// speeds fall near a line; with less, `fit` says what's missing. A 1RM and loads
+/// for target speeds are only given when the line is clear (r² ≥ 0.7) and the 1RM
+/// is no more than 30% beyond the heaviest load lifted: three sets close in load
+/// can otherwise put it at five hundred kilos.
 struct LoadVelocityProfile: Equatable {
     struct Point: Equatable {
         var date: Date
@@ -25,8 +29,14 @@ struct LoadVelocityProfile: Equatable {
         var mcv: Double
     }
 
-    /// Sets older than this, counted back from the newest, are left out.
-    static let window: TimeInterval = 84 * 86_400
+    /// Sets older than this many days, counted back from today, are left out.
+    static let windowDays = 84
+    static let window: TimeInterval = Double(windowDays) * 86_400
+    /// Below this the sets don't make a line at all; below `clearFit` no 1RM.
+    static let minFit = 0.5
+    static let clearFit = 0.7
+    /// A 1RM further than this beyond the heaviest load is an extrapolation too far.
+    static let maxReach = 1.3
     static let minSets = 3
     /// The loads must span at least this share of the heaviest.
     static let minSpread = 0.10
@@ -48,14 +58,20 @@ struct LoadVelocityProfile: Equatable {
     var loads: ClosedRange<Double> { points.map(\.load).min()!...points.map(\.load).max()! }
 
     func speed(at load: Double) -> Double { intercept + slope * load }
+    /// Clear enough to read a 1RM and target loads off.
+    var isClear: Bool { rSquared >= Self.clearFit }
     func load(at speed: Double) -> Double { (speed - intercept) / slope }
 
     /// The load at which the line meets the threshold, kg; nil without one or
     /// when it lands somewhere a 1RM can't be (below the loads lifted).
     var oneRepMax: Double? {
-        guard let threshold else { return nil }
-        let l = load(at: threshold)
-        return l.isFinite && l >= loads.upperBound ? l : nil
+        guard let threshold, isClear else { return nil }
+        let l = load(at: threshold), top = loads.upperBound
+        guard l.isFinite else { return nil }
+        if l >= top { return l <= Self.maxReach * top ? l : nil }
+        // The line puts the 1RM below a load already lifted (a heavy set near the
+        // threshold): the 1RM is at least that load.
+        return top
     }
 
     /// How much faster (+) or slower (−) a set moved than the line predicts at
@@ -68,13 +84,23 @@ struct LoadVelocityProfile: Equatable {
 
     /// Typical speeds of a last possible rep, m/s, used until the lifter has their
     /// own. Group values vary between studies and people; they only seed the 1RM.
+    /// Keyed by Grepp's own name for the lift (`ohp` is the overhead press, `dl`
+    /// the deadlift); other lifts, a leg press or a split squat, get none.
     static func typicalThreshold(_ lift: String) -> Double? {
-        let l = lift.lowercased()
-        if l.contains("squat") { return 0.30 }
-        if l.contains("bench") { return 0.17 }
-        if l.contains("deadlift") { return 0.15 }
-        if l.contains("press") { return 0.19 }
-        return nil
+        switch MuscleMap.canonical(lift) {
+        case "squat", "front-squat": return 0.30
+        case "bench-press": return 0.17
+        case "deadlift": return 0.15
+        case "over-head-press": return 0.19
+        default: return nil
+        }
+    }
+
+    /// Whether `date` is within the window, by calendar days back from `now`.
+    static func recent(_ date: Date, now: Date) -> Bool {
+        let cal = Calendar.current
+        let days = cal.dateComponents([.day], from: cal.startOfDay(for: date), to: cal.startOfDay(for: now)).day ?? 0
+        return days <= windowDays
     }
 
     /// What the records make of the lift.
@@ -87,10 +113,14 @@ struct LoadVelocityProfile: Equatable {
     }
 
     /// One lift's profile from its measured sets (`VelocityRecord.records(for:in:)`).
-    static func fit(_ records: [VelocityRecord], lift: String) -> Fit {
+    static func fit(_ records: [VelocityRecord], lift: String, now: Date = Date()) -> Fit {
         let loaded = records.filter { ($0.load ?? 0) > 0 && $0.best > 0 }
         guard let newest = loaded.map(\.date).max() else { return .none }
-        let recent = loaded.filter { newest.timeIntervalSince($0.date) <= window }
+        let recent = loaded.filter { Self.recent($0.date, now: now) }
+        guard !recent.isEmpty else {
+            return .needsMore("No measured sets in the last 12 weeks; the latest was on "
+                + newest.formatted(.dateTime.day().month(.abbreviated).year()) + ".")
+        }
         let points = recent.map { Point(date: $0.date, load: $0.load!, mcv: $0.best) }
         let loads = points.map(\.load)
         let lo = loads.min()!, hi = loads.max()!
@@ -114,11 +144,16 @@ struct LoadVelocityProfile: Equatable {
         let mean = points.map(\.mcv).reduce(0, +) / Double(points.count)
         let ssTot = points.map { ($0.mcv - mean) * ($0.mcv - mean) }.reduce(0, +)
         let ssRes = points.map { p in (p.mcv - (a + b * p.load)) * (p.mcv - (a + b * p.load)) }.reduce(0, +)
-        let own = VelocityRecord.failureSpeeds(records).filter { newest.timeIntervalSince($0.date) <= window }.map(\.speed)
+        let r2 = ssTot > 0 ? max(0, 1 - ssRes / ssTot) : 0
+        if r2 < minFit {
+            return .needsMore("The sets so far don't fall on a line yet (r² \(String(format: "%.2f", r2)) over \(range)); "
+                + "a few more sets at clearly different loads will settle it.")
+        }
+        let own = VelocityRecord.failureSpeeds(records).filter { Self.recent($0.date, now: now) }.map(\.speed)
         let threshold = own.isEmpty ? typicalThreshold(lift) : own.sorted()[own.count / 2]
         return .profile(LoadVelocityProfile(
             intercept: a, slope: b, points: points,
-            rSquared: ssTot > 0 ? max(0, 1 - ssRes / ssTot) : 0,
+            rSquared: r2,
             scatter: points.count > 2 ? (ssRes / Double(points.count - 2)).squareRoot() : 0,
             threshold: threshold, thresholdIsOwn: !own.isEmpty))
     }
@@ -138,6 +173,7 @@ struct LoadVelocityProfile: Equatable {
     /// Loads, to the nearest 2.5 kg, for up to three round speeds (every 0.05 m/s)
     /// within the speeds the profile saw: `[(0.50, 92.5), (0.45, 100), (0.40, 107.5)]`.
     var loadsForSpeeds: [(speed: Double, load: Double)] {
+        guard isClear else { return [] }
         let speeds = points.map(\.mcv)
         let first = Int((speeds.min()! * 20).rounded(.up)), last = Int((speeds.max()! * 20).rounded(.down))
         var steps = first <= last ? Array(first...last) : [Int((speeds.reduce(0, +) / Double(speeds.count) * 20).rounded())]
@@ -162,8 +198,27 @@ struct LoadVelocityProfile: Equatable {
         return s + "."
     }
 
+    /// The latest day with a loaded set, judged against the profile fitted without
+    /// that day (a set can't be judged against a line it pulled), using the day's
+    /// first loaded set, the least tired: the set and how much faster (+) or slower
+    /// (−) it moved than predicted, percent.
+    static func readiness(_ records: [VelocityRecord], lift: String, now: Date = Date())
+        -> (record: VelocityRecord, percent: Double)? {
+        let loaded = records.filter { ($0.load ?? 0) > 0 && $0.best > 0 }
+        guard let day = loaded.map(\.date).max(), Self.recent(day, now: now),
+              let first = loaded.first(where: { $0.date == day }),
+              case .profile(let p) = fit(records.filter { $0.date < day }, lift: lift, now: now),
+              let d = p.readiness(first) else { return nil }
+        return (first, d)
+    }
+
+    /// "on the profile" within ±3%, else "6% faster than the profile".
+    static func readinessText(_ d: Double) -> String {
+        abs(d) < 3 ? "on the profile" : "\(Int(abs(d).rounded()))% \(d > 0 ? "faster" : "slower") than the profile"
+    }
+
     /// The coach's line.
-    func coachLine(lift: String, latest: VelocityRecord?) -> String {
+    func coachLine(lift: String, readiness: (record: VelocityRecord, percent: Double)?) -> String {
         var parts = ["\(lift): v = \(String(format: "%.2f", intercept)) − \(String(format: "%.4f", -slope))·kg",
                      "\(points.count) sets, \(WorkSet.formatWeight(loads.lowerBound))–\(WorkSet.formatWeight(loads.upperBound)) kg",
                      "r² \(String(format: "%.2f", rSquared)), ±\(VelocitySet.speed(scatter)) m/s"]
@@ -171,8 +226,8 @@ struct LoadVelocityProfile: Equatable {
             parts.append("est. 1RM ≈ \(WorkSet.formatWeight((rm / 2.5).rounded() * 2.5)) kg at "
                          + "\(VelocitySet.speed(t)) m/s (\(thresholdIsOwn ? "own" : "typical") threshold)")
         }
-        if let latest, let d = readiness(latest), let load = latest.load {
-            parts.append("latest set at \(WorkSet.formatWeight(load)) kg \(String(format: "%+.0f", d))% vs profile")
+        if let (r, d) = readiness, let load = r.load {
+            parts.append("latest day's first set, \(WorkSet.formatWeight(load)) kg: \(Self.readinessText(d))")
         }
         let table = loadsForSpeeds.map { "\(VelocitySet.speed($0.speed)) m/s ≈ \(WorkSet.formatWeight($0.load)) kg" }
         if !table.isEmpty { parts.append("loads: " + table.joined(separator: ", ")) }

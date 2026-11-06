@@ -141,14 +141,16 @@ struct VelocityRecord: Equatable {
             case "fail":
                 left = .failed
             case "v1rm":
-                if let v = value.flatMap(Double.init), v > 0, v.isFinite { v1rm = v; i += 1 }
+                if let v = value.flatMap(Double.init), v > 0, v <= 1000 { v1rm = v; i += 1 }
             case "scale":
                 // `scale ±1.2% height,plate,rack`: either part may be missing.
                 if let v = value, v.hasPrefix("±"),
                    let p = Double(v.dropFirst().replacingOccurrences(of: "%", with: "")), p >= 0, p < 50 {
                     scale = p / 100; i += 1
                 }
-                if let v = tokens[safe: i + 1], v.contains(",") || ["height", "plate", "rack"].contains(v.lowercased()) {
+                // Then the rulers: any word list that isn't the next field.
+                if let v = tokens[safe: i + 1],
+                   !["loss", "rir", "left", "fail", "v1rm", "scale", "mcv"].contains(v.lowercased()) {
                     let names = VelocitySet.rulerNames(v)
                     if !names.isEmpty { rulers = names; i += 1 }
                 }

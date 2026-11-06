@@ -77,6 +77,8 @@ struct TrendsView: View {
         var labelledDays = 0
         /// Load against bar velocity over the last twelve weeks, or what it still needs.
         var profileFit: LoadVelocityProfile.Fit = .none
+        /// The latest day's first loaded set against the profile without that day.
+        var profileReadiness: (record: VelocityRecord, percent: Double)?
     }
     @State private var figures = Figures()
     /// The bar-velocity list past its newest five.
@@ -565,7 +567,8 @@ struct TrendsView: View {
     @ViewBuilder private func profileContent(_ p: LoadVelocityProfile) -> some View {
         profileChart(p).frame(height: 160)
         if let x = profileScrubX {
-            Text("at \(WorkSet.formatWeight((x / 2.5).rounded() * 2.5)) kg: \(VelocitySet.speed(p.speed(at: x))) m/s on the profile")
+            let kg = (x / 2.5).rounded() * 2.5
+            Text("at \(WorkSet.formatWeight(kg)) kg: \(VelocitySet.speed(max(0, p.speed(at: kg)))) m/s on the profile")
                 .font(.caption.monospacedDigit()).foregroundStyle(.secondary)
         } else {
             Text("drag along the chart to read a load").font(.caption2).foregroundStyle(.tertiary)
@@ -581,13 +584,11 @@ struct TrendsView: View {
             }
             .accessibilityElement(children: .combine)
         }
-        if let latest = figures.speeds.last, let d = p.readiness(latest), let load = latest.load {
+        if let (r, d) = figures.profileReadiness, let load = r.load {
             let color = d >= 3 ? Theme.progressing : (d <= -3 ? Theme.stalled : Color.secondary)
             HStack(spacing: 6) {
                 Circle().fill(color).frame(width: 8, height: 8)
-                Text(abs(d) < 3
-                     ? "latest set, \(WorkSet.formatWeight(load)) kg: on the profile"
-                     : "latest set, \(WorkSet.formatWeight(load)) kg: \(Int(abs(d).rounded()))% \(d > 0 ? "faster" : "slower") than the profile")
+                Text("\(r.date.formatted(.dateTime.day().month(.abbreviated))), first set at \(WorkSet.formatWeight(load)) kg: \(LoadVelocityProfile.readinessText(d))")
                     .font(.footnote.weight(.semibold)).foregroundStyle(color)
             }
             .accessibilityElement(children: .combine)
@@ -1691,6 +1692,7 @@ struct TrendsView: View {
             f.failureSpeeds = VelocityRecord.failureSpeeds(f.speeds)
             f.labelledDays = VelocityRecord.labelledDays(f.speeds)
             f.profileFit = LoadVelocityProfile.fit(f.speeds, lift: exercise)
+            f.profileReadiness = LoadVelocityProfile.readiness(f.speeds, lift: exercise)
         }
         figures = f
     }

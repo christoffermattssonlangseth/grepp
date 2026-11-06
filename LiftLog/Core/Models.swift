@@ -43,6 +43,8 @@ struct WorkSet: Identifiable, Equatable, Codable {
     }
 
     static func formatWeight(_ w: Double) -> String {
+        // A number no bar carries (a hand-edited 1e30, inf) is printed, never trapped on.
+        guard w.isFinite, abs(w) < 1e9 else { return String(describing: w) }
         if w == w.rounded() { return String(Int(w)) }
         // Change plates go down to 1.25 kg, so two decimals: 81.25 must stay
         // 81.25, not round to 81.2. Rounded there and trailing zeros trimmed,

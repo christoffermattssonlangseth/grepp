@@ -63,8 +63,14 @@ struct TrendsView: View {
         /// ever: a young log's averages are over the weeks it has.
         var weeksCovered = 0
         var unmapped: [String] = []
+        /// The lift's sets measured with BarVelo, oldest first, from velocity.md.
+        var speeds: [VelocityRecord] = []
+        var speedComparison: VelocityRecord.Comparison?
+        var v1rm: VelocityRecord?
     }
     @State private var figures = Figures()
+    /// The bar-speed list past its newest five.
+    @State private var showingAllSpeeds = false
 
     /// How much of a long history the lift chart shows at once; the rest is a
     /// flick away. Four months is a training block.
@@ -96,6 +102,7 @@ struct TrendsView: View {
                             if figures.metrics.count > 1 { metricPicker }
                             chartCard
                             statsRow
+                            if !figures.speeds.isEmpty { speedCard }
                             targetCard
                             if let dose = figures.dose {
                                 doseCard(dose)
@@ -126,6 +133,7 @@ struct TrendsView: View {
             .onChange(of: exercise) { _, _ in
                 scrub = nil
                 weekScrub = nil
+                showingAllSpeeds = false
                 clampMetric()
                 recompute()
             }
@@ -135,6 +143,8 @@ struct TrendsView: View {
             }
             .onChange(of: muscleMap) { _, _ in recompute() }
             .onChange(of: store.brief.goals) { _, _ in recompute() }
+            // A sync, or a measured set written at Finish, changes velocity.md.
+            .onChange(of: store.brief.velocity) { _, _ in recompute() }
             .onChange(of: mode) { _, _ in scrub = nil }
             // Every number here is relative to today: coming back after a
             // night, or sitting here past midnight, must not show yesterday's.
@@ -387,6 +397,152 @@ struct TrendsView: View {
         return "\(metric.rawValue) over \(series.count) sessions from \(from) to \(to), " +
             "from \(WorkSet.formatWeight(first.value)) to \(WorkSet.formatWeight(last.value)) \(metric.unit)" +
             (records > 0 ? ", \(records) \(records == 1 ? "record" : "records")" : "")
+    }
+
+    // MARK: - Bar speed
+
+    /// The lift's sets measured with BarVelo: each a stroke from its last rep
+    /// up to its fastest, on the same dates as the chart above; the latest
+    /// against the last time at its load; the sets as a list.
+    private var speedCard: some View {
+        let all = figures.speeds
+        let domain = speedDomain(all)
+        let shown = all.filter { domain.contains($0.date) }
+        let newest = Array(all.reversed())
+        let listed = showingAllSpeeds ? newest : Array(newest.prefix(5))
+        return Panel {
+            VStack(alignment: .leading, spacing: 10) {
+                HStack(alignment: .firstTextBaseline) {
+                    Text("bar speed · m/s").font(.caption).foregroundStyle(.secondary)
+                    Spacer()
+                    Text("\(all.count) measured \(all.count == 1 ? "set" : "sets")")
+                        .font(.caption2).foregroundStyle(.tertiary)
+                        .monospacedDigit()
+                }
+
+                if shown.isEmpty {
+                    Text("No measured sets in this stretch of the chart above.")
+                        .font(.footnote).foregroundStyle(.secondary)
+                        .frame(height: 140)
+                        .frame(maxWidth: .infinity)
+                } else {
+                    speedChart(shown, domain: domain, latest: all.last)
+                        .frame(height: 140)
+                }
+
+                if let c = figures.speedComparison {
+                    let color = c.isSame ? Color.secondary : (c.isFaster ? Theme.progressing : Theme.stalled)
+                    HStack(spacing: 6) {
+                        Circle().fill(color).frame(width: 8, height: 8)
+                        Text(c.sentence { $0.formatted(.dateTime.day().month(.abbreviated)) })
+                            .font(.footnote.weight(.semibold))
+                            .foregroundStyle(color)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    .accessibilityElement(children: .combine)
+                }
+
+                if let r = figures.v1rm, let v1rm = r.v1rm {
+                    HStack(alignment: .firstTextBaseline, spacing: 6) {
+                        Text("velocity 1RM").font(.caption).foregroundStyle(.secondary)
+                        Spacer()
+                        Text("\(WorkSet.formatWeight(v1rm)) kg")
+                            .font(Theme.serif(.title3, weight: .medium))
+                            .monospacedDigit()
+                        Text(r.date, format: .dateTime.day().month(.abbreviated))
+                            .font(.caption2).foregroundStyle(.tertiary)
+                    }
+                    .accessibilityElement(children: .combine)
+                }
+
+                VStack(alignment: .leading, spacing: 4) {
+                    ForEach(Array(listed.enumerated()), id: \.offset) { _, r in
+                        Text("\(r.date.formatted(.dateTime.day().month(.abbreviated))) · \(r.detail)")
+                            .font(.caption.monospacedDigit())
+                            .foregroundStyle(.primary)
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.7)
+                    }
+                    if all.count > 5 {
+                        Button(showingAllSpeeds ? "show fewer" : "show all \(all.count)") {
+                            withAnimation(.snappy) { showingAllSpeeds.toggle() }
+                        }
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(Theme.accent)
+                        .buttonStyle(.plain)
+                    }
+                }
+
+                Text("MCV is the bar's mean speed on the way up, rep by rep, from BarVelo: the big dot is the fastest rep, the small one the last. Only measured sets appear.")
+                    .font(.caption2).foregroundStyle(.tertiary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
+
+    private func speedChart(_ shown: [VelocityRecord], domain: ClosedRange<Date>, latest: VelocityRecord?) -> some View {
+        let lo = shown.map(\.lastRep).min() ?? 0
+        let hi = shown.map(\.best).max() ?? 1
+        let half = max(hi - lo, 0.2) / 2 * 1.2
+        let mid = (lo + hi) / 2
+        let lower = max(0, mid - half)
+        return Chart {
+            ForEach(Array(shown.enumerated()), id: \.offset) { _, r in
+                RuleMark(x: .value("Date", r.date),
+                         yStart: .value("Last rep", r.lastRep),
+                         yEnd: .value("Fastest rep", r.best))
+                    .lineStyle(StrokeStyle(lineWidth: 1.5, lineCap: .round))
+                    .foregroundStyle(Theme.accent.opacity(0.4))
+                PointMark(x: .value("Date", r.date), y: .value("Last rep", r.lastRep))
+                    .foregroundStyle(Theme.accent.opacity(0.6))
+                    .symbolSize(12)
+                let isLatest = r == latest
+                PointMark(x: .value("Date", r.date), y: .value("Fastest rep", r.best))
+                    .foregroundStyle(Theme.accent)
+                    .symbolSize(36)
+                    .annotation(position: .top, spacing: 3,
+                                overflowResolution: .init(x: .fit(to: .plot), y: .disabled)) {
+                        if isLatest {
+                            Text(r.loadLabel)
+                                .font(.caption2.monospacedDigit())
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+            }
+        }
+        .chartXScale(domain: domain)
+        .chartYScale(domain: lower...(mid + half))
+        .chartXAxis {
+            AxisMarks(values: .automatic(desiredCount: 4)) {
+                AxisGridLine()
+                AxisValueLabel(format: .dateTime.month(.abbreviated).day())
+            }
+        }
+        .chartYAxis {
+            AxisMarks(values: .automatic(desiredCount: 3)) {
+                AxisGridLine()
+                AxisValueLabel(format: FloatingPointFormatStyle<Double>.number.precision(.fractionLength(0...2)))
+            }
+        }
+        .accessibilityLabel("bar speed of \(shown.count) measured \(shown.count == 1 ? "set" : "sets")")
+        .accessibilityValue(shown.last.map { "latest \($0.detail)" } ?? "")
+    }
+
+    /// The dates the bar-speed chart spans: the window the chart above shows
+    /// when it scrolls, its whole span when it doesn't, so a day sits under
+    /// itself; widened to the measured sets when the lift chart has none.
+    private func speedDomain(_ records: [VelocityRecord]) -> ClosedRange<Date> {
+        let series = figures.series
+        if scrolls(series) {
+            return scrollX...scrollX.addingTimeInterval(window)
+        }
+        let dates = records.map(\.date) + (series.count >= 2 ? series.map(\.date) : [])
+        let first = dates.min() ?? Date()
+        let last = dates.max() ?? Date()
+        // One day alone, or two close together, still gets some width.
+        let pad = max(0, 6 * 86_400 - last.timeIntervalSince(first)) / 2
+        return first.addingTimeInterval(-pad)...last.addingTimeInterval(pad)
     }
 
     // MARK: - Target
@@ -1112,6 +1268,9 @@ struct TrendsView: View {
             // Already read with every other lift; reading it again walked the log twice.
             f.dose = f.all[exercise] ?? f.all.first { Analytics.matches($0.key, exercise) }?.value
             f.nextStep = f.dose?.nextStep(in: store.sessions)
+            f.speeds = VelocityRecord.records(for: exercise, in: VelocityRecord.parse(store.brief.velocity))
+            f.speedComparison = VelocityRecord.sameLoadComparison(f.speeds)
+            f.v1rm = VelocityRecord.latestV1RM(f.speeds)
         }
         figures = f
     }

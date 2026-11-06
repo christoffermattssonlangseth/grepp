@@ -164,7 +164,12 @@ show it. The lift picker carries the same dots. One tap sends that
 sentence and the eight weeks to the coach as a question, and the coach's
 digest carries the same sentence, so the tab and the chat agree on a stall.
 "Bench", "Bench press" and "bench-press" are one lift everywhere. Est. 1RM is
-Epley, trusted to twelve reps and no further.
+Epley, trusted to twelve reps and no further. A lift with sets measured in
+BarVelo also gets a **bar speed** card from velocity.md: each set as a stroke
+from its last rep's mean concentric velocity up to its fastest, on the lift
+chart's dates; the latest set against the last day at the same load (green
+faster, amber slower, "same speed" within 0.01 m/s); the velocity 1RM when
+BarVelo sent one; and the sets as a list, newest first, with loss and RPE.
 *Volume*: a training-days grid, Monday to Sunday, with the weeks in a row
 you've hit the programme's days (two a week without one); sets per muscle for
 the week as bars against a 10–20 band with the four-week average marked; and

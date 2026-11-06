@@ -126,7 +126,10 @@ struct VelocitySet: Equatable, Codable {
     /// How hard the set was, RPE 5…10, as 10 − reps in reserve. From the
     /// lifter's answer when there is one (`fail` is 10), else from BarVelo's
     /// estimate, to the half. Nil with neither.
-    var rpe: Double? {
+    var rpe: Double? { Self.rpe(left: left, rirEstimate: rirEstimate) }
+
+    /// The RPE rule on its own, for a set read back from velocity.md too.
+    static func rpe(left: Left?, rirEstimate: Double?) -> Double? {
         switch left {
         case .failed: return 10
         case .reps(let n): return Double(max(5, 10 - n))
@@ -209,10 +212,10 @@ struct VelocitySet: Equatable, Codable {
         return text
     }
 
-    private static func speed(_ v: Double) -> String { String(format: "%.2f", v) }
+    static func speed(_ v: Double) -> String { String(format: "%.2f", v) }
 
     /// At most one decimal, a whole number without its `.0`: `4.5`, `4`.
-    private static func tenth(_ v: Double) -> String {
+    static func tenth(_ v: Double) -> String {
         let s = String(format: "%.1f", v)
         return s.hasSuffix(".0") ? String(s.dropLast(2)) : s
     }

@@ -170,6 +170,12 @@ from its last rep's mean concentric velocity up to its fastest, on the lift
 chart's dates; the latest set against the last day at the same load (green
 faster, amber slower, "same speed" within 0.01 m/s); the velocity 1RM when
 BarVelo sent one; and the sets as a list, newest first, with loss and RPE.
+Once sets carry "fail" or "left N", the card fits the lift's own reps to
+reps in reserve (four reps within five of failure at least) and charts reps left
+at the end of each set, filled for your answer and hollow for the reading from
+speed, with the failure speed, m/s per rep, a small lookup and, over two days
+of answers, the failure speed over time; the coach gets the same fit, one line
+per lift.
 *Volume*: a training-days grid, Monday to Sunday, with the weeks in a row
 you've hit the programme's days (two a week without one); sets per muscle for
 the week as bars against a 10–20 band with the four-week average marked; and

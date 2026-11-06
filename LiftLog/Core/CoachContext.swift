@@ -297,7 +297,25 @@ enum CoachContext {
         <bar-speed>
         \(lines.joined(separator: "\n"))
         </bar-speed>
+        \(reserveBrief(file))
 
+        """
+    }
+
+    /// Per lift with enough "fail" / "left N" answers: the speed at failure
+    /// and the speed per rep in reserve, fitted from the lifter's own reps,
+    /// so a set's last-rep speed reads as reps left. Nothing without a fit.
+    static func reserveBrief(_ file: String) -> String {
+        let fits = VelocityRecord.byLift(VelocityRecord.parse(file)).compactMap { lift, records in
+            ReserveModel.fit(records).map { $0.coachLine(lift: lift) }
+        }
+        guard !fits.isEmpty else { return "" }
+        return """
+        Speed to reps in reserve, fitted from this lifter's own labelled reps \
+        (reserve = reps left after that rep; same camera setup only; ± is the \
+        typical miss in reps). Read a set's last-rep speed against it for \
+        proximity to failure:
+        \(fits.map { "- " + $0 }.joined(separator: "\n"))
 
         """
     }

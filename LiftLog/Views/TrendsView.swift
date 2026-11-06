@@ -67,6 +67,14 @@ struct TrendsView: View {
         var speeds: [VelocityRecord] = []
         var speedComparison: VelocityRecord.Comparison?
         var v1rm: VelocityRecord?
+        /// Bar speed against reps in reserve, from the lift's `fail` / `left N`
+        /// sets; nil until there are enough of them.
+        var reserveModel: ReserveModel?
+        /// Reps left at the end of each measured set, own or read off speed.
+        var proximity: [VelocityRecord.Proximity] = []
+        /// Last-rep speed of each set taken to failure, oldest first.
+        var failureSpeeds: [(date: Date, speed: Double)] = []
+        var labelledDays = 0
     }
     @State private var figures = Figures()
     /// The bar-speed list past its newest five.
@@ -476,9 +484,135 @@ struct TrendsView: View {
                 Text("MCV is the bar's mean speed on the way up, rep by rep, from BarVelo: the big dot is the fastest rep, the small one the last. Only measured sets appear.")
                     .font(.caption2).foregroundStyle(.tertiary)
                     .fixedSize(horizontal: false, vertical: true)
+
+                if figures.reserveModel != nil || figures.proximity.contains(where: \.isOwn) {
+                    Divider().padding(.vertical, 2)
+                    reserveSection(domain: domain)
+                }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
         }
+    }
+
+    /// How close each measured set ended to failure, the lifter's own answer
+    /// or the speed's reading of it; what the speed says about failure; and,
+    /// once there are answers on two days, the failure speed over time.
+    @ViewBuilder
+    private func reserveSection(domain: ClosedRange<Date>) -> some View {
+        let shown = figures.proximity.filter { domain.contains($0.date) }
+        HStack(alignment: .firstTextBaseline) {
+            Text("reps left at the end of the set").font(.caption).foregroundStyle(.secondary)
+            Spacer()
+            HStack(spacing: 8) {
+                Label { Text("yours") } icon: { Circle().fill(Theme.accent).frame(width: 7, height: 7) }
+                Label { Text("from speed") } icon: { Circle().strokeBorder(Theme.accent, lineWidth: 1.5).frame(width: 7, height: 7) }
+            }
+            .labelStyle(CompactLegend())
+            .font(.caption2).foregroundStyle(.tertiary)
+        }
+
+        if shown.isEmpty {
+            Text("No sets with reps left in this stretch of the chart above.")
+                .font(.footnote).foregroundStyle(.secondary)
+                .frame(height: 110)
+                .frame(maxWidth: .infinity)
+        } else {
+            reserveChart(shown, domain: domain)
+                .frame(height: 110)
+        }
+
+        if let m = figures.reserveModel {
+            Text(m.summary(lift: Theme.readableName(exercise)))
+                .font(.footnote)
+                .fixedSize(horizontal: false, vertical: true)
+            Text(m.lookup.map { "\(VelocitySet.speed($0.speed)) m/s → \($0.reserve) left" }.joined(separator: " · "))
+                .font(.caption.monospacedDigit())
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+                .minimumScaleFactor(0.7)
+        } else {
+            Text("Not enough answered sets to read reps left from speed yet: it takes four reps within five of failure.")
+                .font(.footnote).foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+
+        if figures.labelledDays >= 2, figures.failureSpeeds.count >= 2 {
+            HStack(alignment: .center, spacing: 8) {
+                Text("failure speed").font(.caption).foregroundStyle(.secondary)
+                failureSparkline(figures.failureSpeeds)
+                    .frame(height: 28)
+                if let last = figures.failureSpeeds.last {
+                    Text("\(VelocitySet.speed(last.speed)) m/s")
+                        .font(.caption.monospacedDigit())
+                }
+            }
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel("failure speed over \(figures.failureSpeeds.count) sets taken to failure")
+            .accessibilityValue(figures.failureSpeeds.map { VelocitySet.speed($0.speed) }.joined(separator: ", ") + " m/s")
+        }
+
+        Text("Estimates assume the same filming setup. Answer “reps left?” in BarVelo, or mark failed sets, to sharpen them.")
+            .font(.caption2).foregroundStyle(.tertiary)
+            .fixedSize(horizontal: false, vertical: true)
+    }
+
+    /// Reps left, 0 to 6+, on the same dates as the speed chart: filled for
+    /// the lifter's answer, hollow for the speed's reading.
+    private func reserveChart(_ shown: [VelocityRecord.Proximity], domain: ClosedRange<Date>) -> some View {
+        let cap = 6.0
+        return Chart {
+            ForEach(Array(shown.enumerated()), id: \.offset) { _, p in
+                PointMark(x: .value("Date", p.date), y: .value("Reps left", min(p.reserve, cap)))
+                    .symbol {
+                        if p.isOwn {
+                            Circle().fill(Theme.accent).frame(width: 8, height: 8)
+                        } else {
+                            Circle().strokeBorder(Theme.accent, lineWidth: 1.5).frame(width: 8, height: 8)
+                        }
+                    }
+            }
+        }
+        .chartXScale(domain: domain)
+        .chartYScale(domain: 0...cap)
+        .chartXAxis {
+            AxisMarks(values: .automatic(desiredCount: 4)) {
+                AxisGridLine()
+                AxisValueLabel(format: .dateTime.month(.abbreviated).day())
+            }
+        }
+        .chartYAxis {
+            AxisMarks(values: [0, 2, 4, 6]) { value in
+                AxisGridLine()
+                AxisValueLabel {
+                    if let v = value.as(Double.self) { Text(v >= cap ? "6+" : "\(Int(v))") }
+                }
+            }
+        }
+        .chartYAxisLabel("reps left")
+        .accessibilityLabel("reps left at the end of \(shown.count) measured \(shown.count == 1 ? "set" : "sets")")
+        .accessibilityValue(shown.last.map {
+            "latest \(VelocitySet.tenth(($0.reserve * 2).rounded() / 2)) \($0.isOwn ? "by your answer" : "from speed")"
+        } ?? "")
+    }
+
+    /// The failure speed of each set taken to failure, as a line.
+    private func failureSparkline(_ points: [(date: Date, speed: Double)]) -> some View {
+        let lo = points.map(\.speed).min() ?? 0
+        let hi = points.map(\.speed).max() ?? 1
+        let pad = max(hi - lo, 0.04) / 2
+        return Chart {
+            ForEach(Array(points.enumerated()), id: \.offset) { _, p in
+                LineMark(x: .value("Date", p.date), y: .value("Failure speed", p.speed))
+                    .foregroundStyle(Theme.accent.opacity(0.6))
+                    .interpolationMethod(.monotone)
+                PointMark(x: .value("Date", p.date), y: .value("Failure speed", p.speed))
+                    .foregroundStyle(Theme.accent)
+                    .symbolSize(14)
+            }
+        }
+        .chartYScale(domain: (lo - pad)...(hi + pad))
+        .chartXAxis(.hidden)
+        .chartYAxis(.hidden)
     }
 
     private func speedChart(_ shown: [VelocityRecord], domain: ClosedRange<Date>, latest: VelocityRecord?) -> some View {
@@ -1271,6 +1405,10 @@ struct TrendsView: View {
             f.speeds = VelocityRecord.records(for: exercise, in: VelocityRecord.parse(store.brief.velocity))
             f.speedComparison = VelocityRecord.sameLoadComparison(f.speeds)
             f.v1rm = VelocityRecord.latestV1RM(f.speeds)
+            f.reserveModel = ReserveModel.fit(f.speeds)
+            f.proximity = VelocityRecord.proximity(f.speeds, model: f.reserveModel)
+            f.failureSpeeds = VelocityRecord.failureSpeeds(f.speeds)
+            f.labelledDays = VelocityRecord.labelledDays(f.speeds)
         }
         figures = f
     }
@@ -1442,5 +1580,15 @@ private struct TargetSheet: View {
         let result = await store.addTarget(line)
         saving = false
         if result == .pushed { dismiss() } else { failed = true }
+    }
+}
+
+/// A legend entry: a small mark, then its word, tight.
+private struct CompactLegend: LabelStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        HStack(spacing: 3) {
+            configuration.icon
+            configuration.title
+        }
     }
 }

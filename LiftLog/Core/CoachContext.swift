@@ -283,7 +283,14 @@ enum CoachContext {
         loss within a set is proximity to failure: under about 20 % stays well short \
         of it, 30–40 % is close (about one or two reps left), more is near or at \
         failure; presses lose more speed before failing than squats and pulls. \
-        Speeds are only comparable \
+        Some lines go on to effort. "rir ~N" is BarVelo's estimate of the reps \
+        left at the end of the set, from this lifter's own bar-speed history; it \
+        is less certain the further the set stopped from failure. "left N" (N \
+        more reps were possible) or "fail" (the set ended on a failed rep) is the \
+        lifter's own report and outranks the estimate. RPE = 10 − reps in \
+        reserve. "v1rm" is a 1RM in kg estimated from the lift's load–velocity \
+        profile: comparable across sessions for that lift, and typically more \
+        conservative than a 1RM estimated from reps. Speeds are only comparable \
         within one lift and camera setup. Not every set is measured, so a lift with \
         no line here is unknown, not slow.
 

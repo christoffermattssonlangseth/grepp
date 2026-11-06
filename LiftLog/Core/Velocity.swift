@@ -18,6 +18,15 @@ import Foundation
 /// BarVelo older than versions and reads as 1; a higher `v` is read as far as
 /// it goes, and the Log tab says to update Grepp.
 ///
+/// Three fields BarVelo may add, all optional within version 1, so a link
+/// without them reads as before. `rir` is BarVelo's estimate of the reps in
+/// reserve after the set's last rep, one number from the lifter's own bar-speed
+/// history; `left` is the lifter's own answer to "reps left?" after the set, a
+/// count or `fail` for a set that ended on a failed rep; `v1rm` is a 1RM in kg
+/// estimated from the lift's load–velocity profile. Each is extra: one that
+/// doesn't read is dropped, never a
+/// reason to refuse the speeds.
+///
 /// What it becomes is a load and rep count in the Log tab's fields, landed with
 /// the usual tap. The measurement then rides on that set, by its id, until the
 /// lift is finished; at Finish, whether the save went out or was queued
@@ -25,6 +34,7 @@ import Foundation
 /// `training.md` — that file's format is untouched:
 ///
 ///     2026-11-05 squat set 3 100x5 mcv 0.52 0.50 0.47 0.45 0.41 loss 21%
+///     2026-11-06 over-head-press set 2 42.5x9 mcv 0.78 … 0.41 loss 47% rir ~0 fail v1rm 47.5
 ///
 /// The line names its set the way training.md has it: the day, the lift as the
 /// log spells it, which of the day's sets of that lift (counting along the day's
@@ -55,6 +65,50 @@ struct VelocitySet: Equatable, Codable {
     var logged: WorkSet?
     /// The contract version the URL said it spoke; 1 when it didn't say.
     var version: Int = 1
+    /// BarVelo's estimate of the reps in reserve after the last rep. Nil
+    /// when it sent none.
+    var rirEstimate: Double?
+    /// The lifter's own answer to "reps left?". Outranks `rirEstimate`.
+    var left: Left?
+    /// A 1RM in kg estimated from the lift's load–velocity profile.
+    var v1rm: Double?
+
+    /// What the lifter said was left in the tank after the set.
+    enum Left: Equatable, Codable {
+        /// Could have done this many more.
+        case reps(Int)
+        /// The set ended on a failed rep.
+        case failed
+
+        /// Read `left=`: a count ≥ 0, or `fail`. Nil for anything else.
+        init?(_ raw: String) {
+            if raw.lowercased() == "fail" { self = .failed; return }
+            guard let n = Int(raw), n >= 0 else { return nil }
+            self = .reps(n)
+        }
+
+        /// As the URL and the velocity.md line spell it: `2` or `fail`.
+        var token: String {
+            switch self {
+            case .reps(let n): return String(n)
+            case .failed: return "fail"
+            }
+        }
+
+        // Saved as its token, so a queued line reads plainly.
+        init(from decoder: Decoder) throws {
+            let c = try decoder.singleValueContainer()
+            guard let left = Left(try c.decode(String.self)) else {
+                throw DecodingError.dataCorruptedError(in: c, debugDescription: "not a reps-left answer")
+            }
+            self = left
+        }
+
+        func encode(to encoder: Encoder) throws {
+            var c = encoder.singleValueContainer()
+            try c.encode(token)
+        }
+    }
 
     /// The version of the handoff this build speaks.
     static let contractVersion = 1
@@ -68,6 +122,22 @@ struct VelocitySet: Equatable, Codable {
         guard let best = mcv.max(), best > 0, let last = mcv.last else { return nil }
         return max(0, (best - last) / best)
     }
+
+    /// How hard the set was, RPE 5…10, as 10 − reps in reserve. From the
+    /// lifter's answer when there is one (`fail` is 10), else from BarVelo's
+    /// estimate, to the half. Nil with neither.
+    var rpe: Double? {
+        switch left {
+        case .failed: return 10
+        case .reps(let n): return Double(max(5, 10 - n))
+        case nil:
+            guard let rirEstimate else { return nil }
+            return min(10, max(5, ((10 - rirEstimate) * 2).rounded() / 2))
+        }
+    }
+
+    /// The RPE came from BarVelo's estimate, not the lifter's answer.
+    var rpeIsEstimated: Bool { left == nil && rpe != nil }
 
     /// The set as `training.md` spells it: `100x5`, `bwx5`, `bw+10x5`. As
     /// logged, once landed.
@@ -122,18 +192,30 @@ struct VelocitySet: Equatable, Codable {
         if let setNumber { parts.append("set \(setNumber)") }
         parts += [token, "mcv " + mcv.map(Self.speed).joined(separator: " ")]
         if let loss { parts.append("loss \(Int((loss * 100).rounded()))%") }
+        // `~`: an estimate, to the whole rep, not a count.
+        if let rirEstimate { parts.append("rir ~\(Int(rirEstimate.rounded()))") }
+        if let left { parts.append(left == .failed ? "fail" : "left \(left.token)") }
+        if let v1rm { parts.append("v1rm " + WorkSet.formatWeight(v1rm)) }
         return parts.joined(separator: " ")
     }
 
-    /// One line for a person: `0.52 → 0.41 m/s · loss 21%`.
+    /// One line for a person: `0.52 → 0.41 m/s · loss 21% · RPE 9`, the RPE
+    /// `est. RPE 8.5` when it is BarVelo's estimate.
     var summary: String {
         guard let first = mcv.first, let last = mcv.last else { return "no reps measured" }
         var text = mcv.count == 1 ? "\(Self.speed(first)) m/s" : "\(Self.speed(first)) → \(Self.speed(last)) m/s"
         if let loss, mcv.count > 1 { text += " · loss \(Int((loss * 100).rounded()))%" }
+        if let rpe { text += " · \(rpeIsEstimated ? "est. " : "")RPE \(Self.tenth(rpe))" }
         return text
     }
 
     private static func speed(_ v: Double) -> String { String(format: "%.2f", v) }
+
+    /// At most one decimal, a whole number without its `.0`: `4.5`, `4`.
+    private static func tenth(_ v: Double) -> String {
+        let s = String(format: "%.1f", v)
+        return s.hasSuffix(".0") ? String(s.dropLast(2)) : s
+    }
 
     // MARK: - URLs
 
@@ -189,6 +271,30 @@ struct VelocitySet: Equatable, Codable {
         self.rom = rom
         self.date = value("date").flatMap { Session.dateFormatter.date(from: $0) }
             ?? Calendar.current.startOfDay(for: Date())
+
+        // The effort fields are extras: one that doesn't read is dropped.
+        self.rirEstimate = value("rir").flatMap(Double.init).flatMap { $0 >= 0 && $0.isFinite ? $0 : nil }
+        self.left = value("left").flatMap(Left.init)
+        self.v1rm = value("v1rm").flatMap(Double.init).flatMap { $0 > 0 && $0.isFinite ? $0 : nil }
+    }
+
+    /// Read a saved one. Fields added since the first queued lines may be
+    /// missing from an old payload, and read as absent.
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        _date = try c.decode(DayCoded.self, forKey: .date)
+        lift = try c.decode(String.self, forKey: .lift)
+        load = try c.decodeIfPresent(Double.self, forKey: .load)
+        added = try c.decodeIfPresent(Double.self, forKey: .added)
+        mcv = try c.decode([Double].self, forKey: .mcv)
+        peak = try c.decodeIfPresent([Double].self, forKey: .peak) ?? []
+        rom = try c.decodeIfPresent([Double].self, forKey: .rom) ?? []
+        setNumber = try c.decodeIfPresent(Int.self, forKey: .setNumber)
+        logged = try c.decodeIfPresent(WorkSet.self, forKey: .logged)
+        version = try c.decodeIfPresent(Int.self, forKey: .version) ?? 1
+        rirEstimate = try c.decodeIfPresent(Double.self, forKey: .rirEstimate)
+        left = try? c.decodeIfPresent(Left.self, forKey: .left)
+        v1rm = try c.decodeIfPresent(Double.self, forKey: .v1rm)
     }
 
     init(date: Date, lift: String, load: Double?, added: Double? = nil, mcv: [Double], peak: [Double] = [], rom: [Double] = []) {
@@ -240,7 +346,7 @@ struct VelocitySet: Equatable, Codable {
         var present = Set(current.split(whereSeparator: \.isNewline).map { $0.trimmingCharacters(in: .whitespaces) })
         let new = sets.map(\.line).filter { present.insert($0).inserted }
         guard !new.isEmpty else { return file }
-        let header = "# Bar speed\n\nOne line per set, measured by BarVelo: the day, the lift, which of the day's sets of it (set 3 = its third set in training.md), the set as logged, mean concentric velocity per rep in m/s, and the last rep's loss against the fastest.\n"
+        let header = "# Bar speed\n\nOne line per set, measured by BarVelo: the day, the lift, which of the day's sets of it (set 3 = its third set in training.md), the set as logged, mean concentric velocity per rep in m/s, the last rep's loss against the fastest, and, when BarVelo sent them, its estimate of the reps in reserve at the end of the set (rir ~N), the reps the lifter said were left (left N, or fail), and a 1RM estimated from bar speed (v1rm).\n"
         return (current.isEmpty ? header : current) + "\n" + new.joined(separator: "\n") + "\n"
     }
 

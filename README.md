@@ -225,6 +225,17 @@ in a queue on the phone until `velocity.md` takes them, so a sync in progress,
 no signal or a relaunch loses none, and Finish never waits on them. A handoff
 Grepp can't read says so; the set is still in BarVelo's history.
 
+BarVelo can also send effort: its estimate of the reps left at the end of the
+set, from your own bar-speed history, your answer to "reps left?", and a 1RM
+estimated from the lift's load–velocity profile. They go on the end of the line
+(`rir ~0` the estimate, `left 2` or `fail` your answer, `v1rm 47.5`), and the
+Log tab shows the set's RPE, 10 − reps left: `RPE 9` from your answer, `est.
+RPE 8.5` from the estimate. A field Grepp can't read is dropped, not the set.
+
+```
+2026-11-06 over-head-press set 2 42.5x9 mcv 0.78 0.74 0.70 0.66 0.62 0.57 0.52 0.47 0.41 loss 47% rir ~0 fail v1rm 47.5
+```
+
 Coach reads the last forty lines, as bar speed rather than instructions, joins
 them to the log by day, lift and set, and knows an unmeasured set is unknown,
 not slow. BarVelo keeps no video: it reads each camera frame as it arrives and

@@ -238,3 +238,112 @@ final class VelocityCoachTests: XCTestCase {
         XCTAssertFalse(prompt.contains("LiDAR"))
     }
 }
+
+final class VelocityEffortTests: XCTestCase {
+
+    private func url(_ s: String) -> URL { URL(string: s)! }
+    private let day = Session.dateFormatter.date(from: "2026-11-06")!
+
+    // MARK: - Effort
+
+    private let ohp = "grepp://velocity?v=1&lift=over-head-press&load=42.5&mcv=0.78,0.74,0.70,0.66,0.62,0.57,0.52,0.47,0.41&date=2026-11-06"
+
+    func testReadsEffortFields() throws {
+        let v = try XCTUnwrap(VelocitySet(url: url(ohp + "&rir=0.3&left=fail&v1rm=47.5")))
+        XCTAssertEqual(v.rirEstimate, 0.3)
+        XCTAssertEqual(v.left, .failed)
+        XCTAssertEqual(v.v1rm, 47.5)
+        let two = try XCTUnwrap(VelocitySet(url: url(ohp + "&left=2")))
+        XCTAssertEqual(two.left, .reps(2))
+        XCTAssertNil(two.rirEstimate)
+        XCTAssertNil(two.v1rm)
+    }
+
+    func testEffortFieldsAbsentReadAsBefore() throws {
+        let v = try XCTUnwrap(VelocitySet(url: url(ohp)))
+        XCTAssertNil(v.rirEstimate)
+        XCTAssertNil(v.left)
+        XCTAssertNil(v.v1rm)
+        XCTAssertNil(v.rpe)
+        XCTAssertEqual(v.line, "2026-11-06 over-head-press 42.5x9 mcv 0.78 0.74 0.70 0.66 0.62 0.57 0.52 0.47 0.41 loss 47%")
+        XCTAssertEqual(v.summary, "0.78 → 0.41 m/s · loss 47%")
+    }
+
+    func testBadEffortFieldsAreDroppedNotRefused() throws {
+        for extra in ["&rir=-1&left=-2&v1rm=0", "&rir=abc&left=many&v1rm=heavy", "&rir=1,2&left=1.5&v1rm=-40", "&rir=&left=&v1rm="] {
+            let v = try XCTUnwrap(VelocitySet(url: url(ohp + extra)), extra)
+            XCTAssertNil(v.rirEstimate, extra)
+            XCTAssertNil(v.left, extra)
+            XCTAssertNil(v.v1rm, extra)
+            XCTAssertEqual(v.reps, 9)
+        }
+        XCTAssertEqual(VelocitySet(url: url(ohp + "&left=FAIL"))?.left, .failed)
+        XCTAssertEqual(VelocitySet(url: url(ohp + "&left=0"))?.left, .reps(0))
+    }
+
+    func testEffortLine() throws {
+        let failed = try XCTUnwrap(VelocitySet(url: url(ohp + "&rir=0.3&left=fail&v1rm=47.5")))
+            .landed(as: WorkSet(weight: 42.5, reps: 9), number: 2, lift: "over-head-press", on: day)
+        XCTAssertEqual(failed.line,
+            "2026-11-06 over-head-press set 2 42.5x9 mcv 0.78 0.74 0.70 0.66 0.62 0.57 0.52 0.47 0.41 loss 47% rir ~0 fail v1rm 47.5")
+        let left = try XCTUnwrap(VelocitySet(url: url(ohp + "&rir=1.6&left=2&v1rm=51.25")))
+        XCTAssertTrue(left.line.hasSuffix("loss 47% rir ~2 left 2 v1rm 51.25"), left.line)
+        let whole = try XCTUnwrap(VelocitySet(url: url(ohp + "&v1rm=50.0")))
+        XCTAssertTrue(whole.line.hasSuffix("loss 47% v1rm 50"), whole.line)
+        let estimateOnly = try XCTUnwrap(VelocitySet(url: url(ohp + "&rir=2.5")))
+        XCTAssertTrue(estimateOnly.line.hasSuffix("loss 47% rir ~3"), estimateOnly.line)
+    }
+
+    func testRPEFromAnswerThenEstimate() throws {
+        func set(_ extra: String) throws -> VelocitySet { try XCTUnwrap(VelocitySet(url: url(ohp + extra))) }
+        XCTAssertEqual(try set("&left=fail").rpe, 10)
+        XCTAssertEqual(try set("&left=0").rpe, 10)
+        XCTAssertEqual(try set("&left=2").rpe, 8)
+        XCTAssertEqual(try set("&left=7").rpe, 5)               // floored at 5
+        XCTAssertEqual(try set("&left=1&rir=4").rpe, 9)         // the lifter outranks the estimate
+        XCTAssertFalse(try set("&left=1&rir=4").rpeIsEstimated)
+        XCTAssertEqual(try set("&rir=1.2").rpe, 9)              // 8.8 → 9
+        XCTAssertEqual(try set("&rir=1.4").rpe, 8.5)            // 8.6 → 8.5
+        XCTAssertEqual(try set("&rir=0").rpe, 10)
+        XCTAssertEqual(try set("&rir=8").rpe, 5)                // clamped
+        XCTAssertTrue(try set("&rir=1.4").rpeIsEstimated)
+        XCTAssertNil(try set("&v1rm=50").rpe)
+
+        XCTAssertEqual(try set("&left=1").summary, "0.78 → 0.41 m/s · loss 47% · RPE 9")
+        XCTAssertEqual(try set("&rir=1.4").summary, "0.78 → 0.41 m/s · loss 47% · est. RPE 8.5")
+        let single = try XCTUnwrap(VelocitySet(url: url("grepp://velocity?lift=squat&load=140&mcv=0.30&left=fail")))
+        XCTAssertEqual(single.summary, "0.30 m/s · RPE 10")
+    }
+
+    func testEffortCodableRoundTripAndOldPayloads() throws {
+        for extra in ["&rir=0.3&left=fail&v1rm=47.5", "&left=2", "&rir=1.2", ""] {
+            let v = try XCTUnwrap(VelocitySet(url: url(ohp + extra)))
+            let back = try JSONDecoder().decode(VelocitySet.self, from: JSONEncoder().encode(v))
+            XCTAssertEqual(back, v, extra)
+            XCTAssertEqual(back.line, v.line, extra)
+        }
+        // Queued before the effort fields, and before version, peak and rom.
+        let old = #"{"date":"2026-11-05","lift":"squat","load":100,"mcv":[0.52,0.41],"peak":[],"rom":[],"setNumber":3,"version":1}"#
+        let v = try JSONDecoder().decode(VelocitySet.self, from: Data(old.utf8))
+        XCTAssertNil(v.rirEstimate)
+        XCTAssertNil(v.left)
+        XCTAssertNil(v.v1rm)
+        XCTAssertEqual(v.line, "2026-11-05 squat set 3 100x2 mcv 0.52 0.41 loss 21%")
+        let oldest = #"{"date":"2026-11-05","lift":"squat","load":100,"mcv":[0.52,0.41]}"#
+        let o = try JSONDecoder().decode(VelocitySet.self, from: Data(oldest.utf8))
+        XCTAssertEqual(o.version, 1)
+        XCTAssertEqual(o.peak, [])
+        // An outbox entry from before survives, too.
+        let box = #"{"entries":[{"id":"6F1C2C1E-1D2B-4C3A-9F7E-0A1B2C3D4E5F","set":\#(old)}]}"#
+        XCTAssertEqual(try JSONDecoder().decode(VelocityOutbox.self, from: Data(box.utf8)).count, 1)
+    }
+
+    func testCoachReadsEffort() {
+        let brief = CoachContext.barSpeedBrief(
+            "2026-11-06 over-head-press set 2 42.5x9 mcv 0.78 0.41 loss 47% rir ~0 fail v1rm 47.5\n")
+        XCTAssertTrue(brief.contains("rir ~0 fail v1rm 47.5"), brief)
+        XCTAssertTrue(brief.contains("outranks the estimate"), brief)
+        XCTAssertTrue(brief.contains("RPE = 10 − reps in reserve"), brief)
+        XCTAssertTrue(brief.contains("load–velocity"), brief)
+    }
+}

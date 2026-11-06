@@ -4,6 +4,8 @@ struct ContentView: View {
     @EnvironmentObject var store: Store
     @State private var showingFirstRun = false
     @State private var showingIntake = false
+    /// A `grepp://velocity` came back that couldn't be read.
+    @State private var unreadableVelocity = false
     @AppStorage(Prefs.intakePending) private var intakePending = false
 
     var body: some View {
@@ -28,8 +30,13 @@ struct ContentView: View {
         // The widgets open the app on the Log tab.
         .onOpenURL { url in
             if url == WidgetSnapshot.logURL { store.selectedTab = 0 }
-            // A set BarVelo measured, coming back.
-            if let measured = VelocitySet(url: url) { store.receiveVelocity(measured) }
+            // A set BarVelo measured, coming back. One that can't be read is
+            // said out loud: the lifter just did the set and is waiting for it.
+            if let measured = VelocitySet(url: url) {
+                store.receiveVelocity(measured)
+            } else if url.scheme?.lowercased() == "grepp", url.host?.lowercased() == "velocity" {
+                unreadableVelocity = true
+            }
         }
         // A fresh install: ask where the log lives before anything tries to load it,
         // then, once the log can be written, the setup questions.
@@ -39,6 +46,11 @@ struct ContentView: View {
         }
         .fullScreenCover(isPresented: $showingFirstRun, onDismiss: offerIntake) {
             FirstRunView().environmentObject(store)
+        }
+        .alert("Couldn't read the set from BarVelo", isPresented: $unreadableVelocity) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text("It's saved in BarVelo's history.")
         }
         .sheet(isPresented: $showingIntake) {
             IntakeView().environmentObject(store)

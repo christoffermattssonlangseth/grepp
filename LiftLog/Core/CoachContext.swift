@@ -272,7 +272,9 @@ enum CoachContext {
         order), the set as logged, the mean concentric velocity of each rep in m/s, \
         and how much slower the last rep was than the fastest. Join a line to the \
         log by day, lift and set number; older lines without "set N" match by day, \
-        lift and load × reps only, and are ambiguous when sets repeat. If a line has \
+        lift and load × reps only, and are ambiguous when sets repeat. If a line's \
+        load × reps disagrees with that numbered set in the log, the log was changed \
+        after the speeds were written: treat the line as unjoined. If a line has \
         fewer speeds than logged reps, the camera missed a rep: trust the log for \
         the reps and the speeds for how they moved. Use it the way velocity-based \
         training does: a lift moving faster than it did at the same load is \

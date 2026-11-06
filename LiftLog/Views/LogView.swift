@@ -57,6 +57,11 @@ struct LogView: View {
     @State private var repsText = ""
     /// The set BarVelo just measured, shown over the fields until it's landed.
     @State private var measured: VelocitySet?
+    /// Measurements landed, by the id of the set they were landed as, waiting
+    /// for Finish to number them and send them to velocity.md. A set removed
+    /// takes its measurement with it; a lift discarded takes them all, since
+    /// speeds for a set never logged have nothing to name.
+    @State private var measurements: [UUID: VelocitySet] = [:]
 
     @State private var showingPicker = false
     /// The lift card the picker grows out of, and shrinks back into.
@@ -204,7 +209,9 @@ struct LogView: View {
             // medium one, which reads as "more" without a second haptic vocabulary.
             .sensoryFeedback(.impact(weight: .heavy, intensity: 1), trigger: recordSet)
             .refreshable { await store.load() }
-            .onAppear { restoreDraft(); refreshDay(); applyEditRequest(); applyPrescription() }
+            // A handoff that arrived before this screen existed (BarVelo
+            // opening a cold app) is taken once the draft is back.
+            .onAppear { restoreDraft(); applyVelocity(); refreshDay(); applyEditRequest(); applyPrescription() }
             .confirmationDialog(
                 "Discard \(sets.count) landed \(sets.count == 1 ? "set" : "sets") of \(Theme.readableName(name))?",
                 isPresented: Binding(get: { pendingReplace != nil }, set: { if !$0 { pendingReplace = nil } }),
@@ -241,6 +248,11 @@ struct LogView: View {
             .onChange(of: store.editRequest) { _, _ in applyEditRequest() }
             .onChange(of: store.prescriptionRequest) { _, _ in applyPrescription() }
             .onChange(of: store.velocityRequest) { _, _ in applyVelocity() }
+            // By id: three 100×5s read the same, but only one was filmed.
+            .onChange(of: sets.map(\.id)) { _, ids in
+                let kept = measurements.filter { ids.contains($0.key) }
+                if kept.count != measurements.count { measurements = kept }
+            }
         }
     }
 
@@ -249,7 +261,8 @@ struct LogView: View {
         let draft = SessionDraft(date: date, name: name, sets: sets, isBodyweight: isBodyweight,
                                  weightText: weightText, addedText: addedText, repsText: repsText,
                                  plan: plan, queue: queue, restStart: restStart,
-                                 dateChosen: dateChosen, target: editing)
+                                 dateChosen: dateChosen, target: editing,
+                                 measured: measured, measurements: measurements.isEmpty ? nil : measurements)
         return draft.isEmpty ? nil : draft
     }
 
@@ -270,6 +283,8 @@ struct LogView: View {
         weightText = d.weightText; addedText = d.addedText; repsText = d.repsText
         plan = d.plan
         queue = d.queue
+        measured = d.measured
+        measurements = d.measurements ?? [:]
         if let start = d.restStart, Date().timeIntervalSince(start) < 30 * 60 { restStart = start }
         // Whether or not a rest came back, the lock screen must agree: this is
         // what clears a Live Activity left over from a session that just stopped.
@@ -323,6 +338,7 @@ struct LogView: View {
     /// purpose: between the last set of one lift and the first of the next you're
     /// resting too, and the clock that started at that last set should keep going.
     private func load(prescription rx: ExerciseEntry) {
+        releaseMeasured()
         name = rx.name
         // Already done today: the plan adds to what's logged rather than
         // replacing it, so the sets on file come along and the plan follows them.
@@ -348,25 +364,37 @@ struct LogView: View {
     }
 
     /// A set BarVelo measured: its load and reps into the fields, for the
-    /// usual tap, which writes the speeds to velocity.md as that set. Only onto
-    /// the same lift, or an empty input area — a set measured for one lift is
-    /// never landed on another; then, and for a measurement replaced before it
-    /// was landed, the speeds are kept at once with no set number.
+    /// usual tap, which puts the speeds on that set until Finish writes them to
+    /// velocity.md. Only onto the same lift, under any spelling, or an empty
+    /// input area — a set measured for one lift is never landed on another;
+    /// then, and for a measurement replaced before it was landed, the speeds
+    /// are queued at once with no set number. The same handoff twice is one set.
     private func applyVelocity() {
         guard let v = store.velocityRequest else { return }
         store.velocityRequest = nil
-        let sameLift = VelocitySet.kebab(name) == v.lift
+        guard v != measured, !measurements.values.contains(v) else { return }
+        let sameLift = !name.isEmpty && Analytics.matches(name, v.lift)
         guard sameLift || (name.isEmpty && sets.isEmpty) else {
-            store.logVelocity(v)
+            store.enqueueVelocity([v])
             return
         }
-        if let earlier = measured { store.logVelocity(earlier) }
-        if !sameLift { switchLift(to: v.lift) }
+        releaseMeasured()
+        // The lift as this log spells it, when it has before: BarVelo sends
+        // the canonical name, which may not be the lifter's.
+        if !sameLift { switchLift(to: loggedToday(v.lift)?.name ?? store.lastEntry(for: v.lift, before: date)?.name ?? v.lift) }
         isBodyweight = v.load == nil
         weightText = v.load.map { WorkSet.formatWeight($0) } ?? ""
-        addedText = ""
+        addedText = v.added.map { WorkSet.formatWeight($0) } ?? ""
         repsText = String(v.reps)
         measured = v
+    }
+
+    /// A measurement held but not landed, when the lift it was for goes:
+    /// kept, unnumbered, rather than dropped or landed on the next lift.
+    private func releaseMeasured() {
+        guard let held = measured else { return }
+        measured = nil
+        store.enqueueVelocity([held])
     }
 
     private var barVeloInstalled: Bool {
@@ -384,12 +412,19 @@ struct LogView: View {
                 .font(.subheadline.weight(.semibold))
                 .foregroundStyle(Theme.accent)
                 .frame(maxWidth: .infinity, alignment: .leading)
+                if measured.isFromNewerBarVelo {
+                    Text("BarVelo is newer than Grepp — update Grepp")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
             }
             if !name.isEmpty, barVeloInstalled {
                 Button {
                     UIApplication.shared.open(VelocitySet.measureURL(
-                        lift: VelocitySet.kebab(name),
+                        lift: MuscleMap.canonical(name),
                         load: isBodyweight ? nil : parsedWeight,
+                        added: isBodyweight ? parsedAdded : nil,
                         reps: parsedReps ?? plan.flatMap { sets.count < $0.count ? $0[sets.count].reps : nil }))
                 } label: {
                     HStack(spacing: 5) {
@@ -960,6 +995,12 @@ struct LogView: View {
                             .background(Theme.accent, in: RoundedRectangle(cornerRadius: Theme.corner, style: .continuous))
                         Text(set.loadLabel)
                             .font(.body.weight(.semibold))
+                        if measurements[set.id] != nil {
+                            Image(systemName: "gauge.with.dots.needle.67percent")
+                                .font(.caption)
+                                .foregroundStyle(Theme.accent)
+                                .accessibilityLabel("Bar speed measured")
+                        }
                         if let record = record(at: idx) { RecordBadge(record: record) }
                         Spacer()
                         Text("× \(set.reps)").font(.title3.weight(.heavy))
@@ -1159,15 +1200,15 @@ struct LogView: View {
         }
         // Only now do the typed reps go: a Cancel in the day dialog keeps them.
         repsText = ""
-        // Measured in BarVelo: the speeds go to velocity.md as this very set.
-        if let measured {
-            let lift = MuscleMap.key(name)
-            let lines = todayExercises.filter { Analytics.matches($0.name, lift) }
-            let key = Session.dateFormatter.string(from: date)
-            let number = VelocitySet.setNumber(dayLinesOfLift: lines,
-                                               editingOccurrence: editing?.day == key ? editing?.occurrence : nil,
-                                               inHand: sets.count)
-            store.logVelocity(measured.landed(as: set, number: number, lift: lift, on: date))
+        // Measured in BarVelo: the speeds ride on this very set, and Finish
+        // numbers them by where it sits then. Measured for another lift, they
+        // are kept without a set.
+        if let held = measured {
+            if Analytics.matches(name, held.lift) {
+                measurements[set.id] = held
+            } else {
+                store.enqueueVelocity([held])
+            }
         }
         measured = nil
         focus = nil
@@ -1296,6 +1337,7 @@ struct LogView: View {
     /// updates that line, never replaces it blind.
     private func switchLift(to picked: String) {
         if picked.caseInsensitiveCompare(name) != .orderedSame {
+            releaseMeasured()
             let done = loggedToday(picked)
             editing = lineRef(done)
             sets = done?.sets ?? []
@@ -1326,6 +1368,7 @@ struct LogView: View {
 
     /// Load an already-logged exercise back into the input area so its sets can be edited.
     private func loadForEditing(_ ex: ExerciseEntry) {
+        releaseMeasured()
         name = ex.name
         sets = ex.sets
         isBodyweight = ex.sets.first?.isBodyweight ?? false
@@ -1348,6 +1391,10 @@ struct LogView: View {
         // The line it was opened from, if that was on this day; moved to
         // another day since, it's a fresh log there.
         let line = editing?.day == key ? editing : nil
+        let day = date
+        // The day's lines of the lift before the save, in case the saved line
+        // can't be found after it.
+        let linesBefore = todayExercises.filter { Analytics.matches($0.name, entry.name) }
         let result = await store.commit(entry, on: date, replacing: line,
                            message: "Log \(entry.name) \(key)")
         // Reset on a push OR an offline queue — both keep the entry; only a hard
@@ -1369,12 +1416,21 @@ struct LogView: View {
             dateChosen = false
             // The line now reads as just written: the next update of this
             // lift replaces it, wherever on the day it sits.
-            editing = todaySession.flatMap { s in
-                let same = s.exercises.filter { Analytics.matches($0.name, entry.name) }
-                let hits = same.indices.filter { same[$0].sets == entry.sets }
-                let pick = hits.first { $0 == (line?.occurrence ?? 0) } ?? hits.last
-                return pick.map { LineRef(same[$0], in: s) }
-            }
+            let same = todaySession.map { s in s.exercises.filter { Analytics.matches($0.name, entry.name) } } ?? []
+            let hits = same.indices.filter { same[$0].sets == entry.sets }
+            let pick = hits.first { $0 == (line?.occurrence ?? 0) } ?? hits.last
+            editing = todaySession.flatMap { s in pick.map { LineRef(same[$0], in: s) } }
+            // The speeds measured on this lift's sets, numbered now that the
+            // line is saved (or queued): by where each set sits in it, after
+            // the sets on the day's earlier lines of the lift. Queued for
+            // velocity.md, which a busy or offline store writes later; never
+            // a reason for Finish to fail.
+            store.enqueueVelocity(VelocitySet.numbered(
+                measurements, committed: committed,
+                dayLinesOfLift: pick == nil ? linesBefore : same,
+                occurrence: pick ?? line?.occurrence,
+                lift: entry.name, on: day))
+            for set in committed { measurements[set.id] = nil }
             // A set landed while the save was in flight — from the pad or the
             // lock screen — is not thrown away: the lift stays in hand with
             // every set shown, one more update away.
@@ -1383,6 +1439,7 @@ struct LogView: View {
                 // Straight on to the next prescribed lift, fields already filled.
                 load(prescription: queue.removeFirst())
             } else {
+                releaseMeasured()
                 name = ""; sets = []; weightText = ""; addedText = ""; repsText = ""; isBodyweight = false
                 plan = nil
                 editing = nil

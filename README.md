@@ -206,24 +206,32 @@ connection for when it comes back.
 choose, not every set. Tap it and BarVelo opens with the lift and load filled
 in. Film the set and tap **Send to Grepp**: you're back on the Log tab with the
 load and reps in the fields, the speeds above them (`0.52 → 0.41 m/s · loss
-21%`), and the usual tap lands the set. At that tap the speeds go into
-`velocity.md` beside the log, one line per measured set, so `training.md` never
-changes shape:
+21%`), and the usual tap lands the set, marked with a small gauge. At
+**Finish** the speeds go into `velocity.md` beside the log, one line per
+measured set, so `training.md` never changes shape:
 
 ```
 2026-11-05 squat set 3 100x5 mcv 0.52 0.50 0.47 0.45 0.41 loss 21%
 ```
 
-`set 3` is the day's third set of that lift in `training.md`, so a 3×5 at one
-load still says which set was filmed; `100x5` is the set as you logged it, even
-if you changed the reps. Speeds that arrive while another lift is in hand are
-kept at once, without a set number.
+`set 3` is the day's third set of that lift in `training.md`, counted when the
+lift is saved, so a 3×5 at one load still says which set was filmed and a set
+deleted before Finish doesn't throw the count off; `100x5` is the set as you
+logged it, even if you changed the reps (`bw+10x5` for a weighted chin-up).
+A measured set deleted, or a lift discarded unfinished, leaves no line. Speeds
+that arrive while another lift is in hand, or that are replaced by a newer
+measurement before they're landed, are kept without a set number. Lines wait
+in a queue on the phone until `velocity.md` takes them, so a sync in progress,
+no signal or a relaunch loses none, and Finish never waits on them. A handoff
+Grepp can't read says so; the set is still in BarVelo's history.
 
 Coach reads the last forty lines, as bar speed rather than instructions, joins
 them to the log by day, lift and set, and knows an unmeasured set is unknown,
 not slow. BarVelo keeps no video: it reads each camera frame as it arrives and
 keeps only the numbers. The handoff is two URLs, `barvelo://measure` and
-`grepp://velocity`, specified in `LiftLog/Core/Velocity.swift`.
+`grepp://velocity`, version 1 of a contract specified in
+`LiftLog/Core/Velocity.swift`; a newer BarVelo is read as far as it goes, with
+a note to update Grepp.
 
 **Offline.** With GitHub, a save that can't reach it is queued, shown at once, and
 replayed on the next successful load or save through the same safe path: every

@@ -154,26 +154,71 @@ final class Store: ObservableObject {
     /// load and rep count go into the fields, landed with the usual tap.
     @Published var velocityRequest: VelocitySet?
 
+    /// Handoffs already taken this run. The same URL delivered twice — a
+    /// relaunch replaying it, a double tap in BarVelo — is one set, not two.
+    private var receivedVelocity: [VelocitySet] = []
+
     /// Take a `grepp://velocity` handoff: open the Log tab with the set. The
-    /// Log tab writes the speeds to velocity.md when the set lands, numbered as
-    /// the day's nth set of the lift (`logVelocity`), or at once, unnumbered, if
-    /// it can't take the set.
+    /// Log tab rides the speeds on the set they're landed as, and at Finish
+    /// numbers them as the day's nth set of the lift and queues them for
+    /// velocity.md (`enqueueVelocity`); a set it can't take is queued at once,
+    /// unnumbered.
     func receiveVelocity(_ set: VelocitySet) {
+        guard !receivedVelocity.contains(set) else { selectedTab = 0; return }
+        receivedVelocity = Array((receivedVelocity + [set]).suffix(20))
         velocityRequest = set
         selectedTab = 0
+        if set.isFromNewerBarVelo { status = "BarVelo is newer than Grepp — update Grepp." }
     }
 
-    /// One measured set into velocity.md. A sync already running (the app just
-    /// came back to the front) is waited out rather than refused.
-    func logVelocity(_ set: VelocitySet) {
-        Task {
-            var waited = 0
-            while isBusy, waited < 40 {   // up to ten seconds
-                try? await Task.sleep(nanoseconds: 250_000_000)
-                waited += 1
-            }
-            await update(.velocity) { VelocitySet.appending(set, to: $0) }
+    /// The velocity.md lines waiting to be written, kept per backend like the
+    /// log's own queue, and persisted so a relaunch doesn't lose them.
+    private var velocityOutbox: VelocityOutbox {
+        get {
+            defaults.data(forKey: velocityOutboxKey)
+                .flatMap { try? JSONDecoder().decode(VelocityOutbox.self, from: $0) } ?? VelocityOutbox()
         }
+        set { defaults.set(try? JSONEncoder().encode(newValue), forKey: velocityOutboxKey) }
+    }
+    /// The outbox's write in flight, so a save that wants the store waits for
+    /// it rather than being refused as "still syncing".
+    private var velocityFlush: Task<Void, Never>?
+
+    /// Measured sets for velocity.md. Queued first, always, and written as
+    /// soon as the store is free; never a reason for anything else to fail.
+    func enqueueVelocity(_ sets: [VelocitySet]) {
+        guard !sets.isEmpty else { return }
+        var box = velocityOutbox
+        box.add(sets)
+        velocityOutbox = box
+        flushVelocityOutbox()
+    }
+
+    /// Write everything waiting in the outbox to velocity.md in one update, and
+    /// drop what it carried only once it's in. Busy, offline or failed, the
+    /// lines stay for the next try: after the next save or load that reaches
+    /// the backend, or the app's return to the front.
+    func flushVelocityOutbox() {
+        guard velocityFlush == nil, !isBusy, !needsSetup, !velocityOutbox.isEmpty else { return }
+        velocityFlush = Task {
+            // Again while lines were added during a write that went through.
+            while !isBusy, case let batch = velocityOutbox, !batch.isEmpty {
+                guard await write(.velocity, merging: true, { batch.appending(to: $0) }) == .pushed else { break }
+                var box = velocityOutbox
+                box.remove(delivered: batch)
+                velocityOutbox = box
+            }
+            velocityFlush = nil
+        }
+    }
+
+    /// The same, once whatever holds the store now has let go of it.
+    private func flushVelocityOutboxSoon() {
+        Task { flushVelocityOutbox() }
+    }
+
+    private func waitForVelocityFlush() async {
+        if let velocityFlush { await velocityFlush.value }
     }
 
     /// The outcome of a `commit`, so callers don't have to sniff `status` text.
@@ -278,6 +323,7 @@ final class Store: ObservableObject {
     private var programCacheKey: String { "\(keyPrefix)_program_cache" }
     private var velocityCacheKey: String { "\(keyPrefix)_velocity_cache" }
     private var pendingKey: String { "\(keyPrefix)\(location)_pending" }
+    private var velocityOutboxKey: String { "\(keyPrefix)_velocity_outbox" }
     private let draftKey = "session_draft"
     private let plansKey = "plan_records"
     private let sessionStartsKey = "session_starts"
@@ -356,7 +402,8 @@ final class Store: ObservableObject {
     /// looking at it, so a plain failure you can retry beats a silent queue.
     @discardableResult
     func save(_ text: String, to file: BriefFile) async -> CommitResult {
-        await write(file, merging: false) { _ in text }
+        await waitForVelocityFlush()
+        return await write(file, merging: false) { _ in text }
     }
 
     /// Change one brief file by merging into what it holds *now*: fetch it,
@@ -367,7 +414,8 @@ final class Store: ObservableObject {
     /// read the write doesn't happen: a failure beats writing over it blind.
     @discardableResult
     func update(_ file: BriefFile, _ change: (String) -> String) async -> CommitResult {
-        await write(file, merging: true, change)
+        await waitForVelocityFlush()
+        return await write(file, merging: true, change)
     }
 
     /// The one write path for brief files. `merging` retries on a version
@@ -581,6 +629,7 @@ final class Store: ObservableObject {
         // and only the first may start the next one. Main actor, so nothing
         // runs between this check and `loadTask` being set below.
         while let running = loadTask { await running.value }
+        await waitForVelocityFlush()
         guard !isBusy, !needsSetup else { return }   // don't overlap with an in-flight save
         followLocation()
         // The task clears itself, so every waiter wakes to it gone.
@@ -608,6 +657,7 @@ final class Store: ObservableObject {
     /// Back on screen: sync what's waiting, and retry a load that didn't
     /// land. A clean load with nothing queued isn't repeated every time.
     func resume() async {
+        flushVelocityOutbox()
         // A load already running (the launch one) is this one.
         guard loadTask == nil, !pending.isEmpty || loadFailed else { return }
         await load()
@@ -642,6 +692,7 @@ final class Store: ObservableObject {
             loadFailed = false
             await loadBrief()
             await flushPending()
+            flushVelocityOutboxSoon()
         } catch let error where isOffline(error) {
             // Offline: fall back to the cache so the app still shows history.
             sessions = WorkoutParser.applying(pending, to: cachedSessions())
@@ -728,6 +779,8 @@ final class Store: ObservableObject {
     /// queue it locally when offline. Shared by `commit`, `delete` and `move`.
     @discardableResult
     private func perform(_ write: PendingWrite) async -> CommitResult {
+        // Bar speed being written is no reason to refuse a lift: it's brief.
+        await waitForVelocityFlush()
         guard !isBusy else { status = "Still syncing — try again in a moment."; return .failed }
         followLocation()
         isBusy = true; status = "Saving…"
@@ -742,7 +795,7 @@ final class Store: ObservableObject {
             enqueue(write)
             let flowing = await flushPending()
             sessions = WorkoutParser.applying(pending, to: cachedSessions())
-            if pending.isEmpty { status = done; return .pushed }
+            if pending.isEmpty { status = done; flushVelocityOutboxSoon(); return .pushed }
             // Paused on an error is not offline: the reason stays on screen.
             if flowing { status = "Offline — saved locally, will sync (\(pending.count) queued)" }
             return .queued
@@ -753,6 +806,7 @@ final class Store: ObservableObject {
             cacheContent(WorkoutParser.serialize(base))
             sessions = WorkoutParser.applying(pending, to: cachedSessions())
             status = done
+            flushVelocityOutboxSoon()
             return .pushed
         } catch let error where isOffline(error) {
             enqueue(write)

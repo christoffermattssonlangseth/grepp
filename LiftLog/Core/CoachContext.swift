@@ -265,14 +265,25 @@ enum CoachContext {
         let lines = VelocitySet.recentLines(file)
         guard !lines.isEmpty else { return "" }
         return """
-        BAR SPEED. Some sets were filmed with BarVelo, which measures the bar with \
-        LiDAR. Each line is a date, the lift, the set as logged, the mean concentric \
-        velocity of each rep in m/s, and how much slower the last rep was than the \
-        fastest. Use it the way velocity-based training does: a lift moving faster \
-        than it did at the same load is readiness to add load; the same load slower \
-        than usual is fatigue. Loss under about 20 % kept the set well short of \
-        failure, 30–40 % took it close. Speeds are only comparable within one lift. \
-        Not every set is measured, so a lift with no line here is unknown, not slow.
+        BAR SPEED. Some sets were filmed with BarVelo, which tracks the bar with the \
+        phone camera. Each line is a date, the lift as the log spells it, which of \
+        that day's sets of the lift it was ("set 3" = the third set of that lift on \
+        that day in the training log, counting along the day's lines of it in \
+        order), the set as logged, the mean concentric velocity of each rep in m/s, \
+        and how much slower the last rep was than the fastest. Join a line to the \
+        log by day, lift and set number; older lines without "set N" match by day, \
+        lift and load × reps only, and are ambiguous when sets repeat. If a line has \
+        fewer speeds than logged reps, the camera missed a rep: trust the log for \
+        the reps and the speeds for how they moved. Use it the way velocity-based \
+        training does: a lift moving faster than it did at the same load is \
+        readiness to add load; the same load slower than usual is fatigue; across \
+        the sets of one day, falling first-rep speed is fatigue building. Velocity \
+        loss within a set is proximity to failure: under about 20 % stays well short \
+        of it, 30–40 % is close (about one or two reps left), more is near or at \
+        failure; presses lose more speed before failing than squats and pulls. \
+        Speeds are only comparable \
+        within one lift and camera setup. Not every set is measured, so a lift with \
+        no line here is unknown, not slow.
 
         <bar-speed>
         \(lines.joined(separator: "\n"))

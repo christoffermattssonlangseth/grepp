@@ -1,6 +1,6 @@
 import Foundation
 
-/// A set measured by BarVelo, the LiDAR bar-speed app, handed back to Grepp.
+/// A set measured by BarVelo, the bar-speed app, handed back to Grepp.
 ///
 /// The handoff is two URLs and nothing else, so neither app needs the other's
 /// code, account or container:
@@ -12,11 +12,19 @@ import Foundation
 /// metres, in rep order. `load` is absent for a bodyweight lift; `date` is the
 /// day the set was lifted, `yyyy-MM-dd`.
 ///
-/// What it becomes is one line in `velocity.md`, beside `training.md` — that
-/// file's format is untouched — and a load and rep count in the Log tab's
-/// fields, landed with the usual tap:
+/// What it becomes is a load and rep count in the Log tab's fields, landed with
+/// the usual tap, and at that tap one line in `velocity.md`, beside
+/// `training.md` — that file's format is untouched:
 ///
-///     2026-11-05 squat 100x5 mcv 0.52 0.50 0.47 0.45 0.41 loss 21%
+///     2026-11-05 squat set 3 100x5 mcv 0.52 0.50 0.47 0.45 0.41 loss 21%
+///
+/// The line names its set the way training.md has it: the day, the lift as the
+/// log spells it, which of the day's sets of that lift (counting along the day's
+/// lines of it, in order), and the set as logged. So the coach can put the speeds
+/// on one set of a 3×5 at the same load. A logged rep count can differ from the
+/// speeds (a rep the camera missed); the token is what was logged, the speeds
+/// what was measured. Lines from before set numbers, or speeds that arrived with
+/// no set to land on, have no `set N`.
 struct VelocitySet: Equatable {
     var date: Date
     var lift: String
@@ -24,6 +32,10 @@ struct VelocitySet: Equatable {
     var mcv: [Double]
     var peak: [Double] = []
     var rom: [Double] = []
+    /// Which of the day's sets of this lift it was, from 1. Nil until landed.
+    var setNumber: Int?
+    /// The set as it went into training.md, when it was landed.
+    var logged: WorkSet?
 
     static let measureScheme = "barvelo"
 
@@ -36,13 +48,36 @@ struct VelocitySet: Equatable {
         return max(0, (best - last) / best)
     }
 
-    /// The set as `training.md` would spell it: `100x5`, `bwx5`.
-    var token: String { WorkSet(weight: load, added: nil, reps: reps).token }
+    /// The set as `training.md` spells it: `100x5`, `bwx5`. As logged, once landed.
+    var token: String { (logged ?? WorkSet(weight: load, added: nil, reps: reps)).token }
+
+    /// This measurement as the set it was landed as: the `number`th set of `lift`
+    /// on `date` in training.md, logged as `set`.
+    func landed(as set: WorkSet, number: Int, lift: String, on date: Date) -> VelocitySet {
+        var v = self
+        v.logged = set
+        v.setNumber = number
+        v.lift = lift
+        v.date = date
+        v.load = set.weight
+        return v
+    }
+
+    /// Which set of the day's `lift` the next one landed is, counted the way
+    /// training.md lists them: the sets on the day's earlier lines of the lift,
+    /// then the line in hand's own (`inHand`, after the new set lands).
+    /// `editingOccurrence` is the line being updated (0 = the day's first line of
+    /// the lift); nil for a new line, which goes after every other.
+    static func setNumber(dayLinesOfLift: [ExerciseEntry], editingOccurrence: Int?, inHand: Int) -> Int {
+        let before = editingOccurrence.map { min($0, dayLinesOfLift.count) } ?? dayLinesOfLift.count
+        return dayLinesOfLift.prefix(before).reduce(0) { $0 + $1.sets.count } + inHand
+    }
 
     /// The `velocity.md` line.
     var line: String {
-        var parts = [Session.dateFormatter.string(from: date), lift, token,
-                     "mcv " + mcv.map(Self.speed).joined(separator: " ")]
+        var parts = [Session.dateFormatter.string(from: date), lift]
+        if let setNumber { parts.append("set \(setNumber)") }
+        parts += [token, "mcv " + mcv.map(Self.speed).joined(separator: " ")]
         if let loss { parts.append("loss \(Int((loss * 100).rounded()))%") }
         return parts.joined(separator: " ")
     }
@@ -126,7 +161,7 @@ struct VelocitySet: Equatable {
     /// `velocity.md` with one line added, after what's there.
     static func appending(_ set: VelocitySet, to file: String) -> String {
         let current = file.trimmingCharacters(in: .whitespacesAndNewlines)
-        let header = "# Bar speed\n\nOne line per set, measured by BarVelo: mean concentric velocity per rep in m/s, and the last rep's loss against the fastest.\n"
+        let header = "# Bar speed\n\nOne line per set, measured by BarVelo: the day, the lift, which of the day's sets of it (set 3 = its third set in training.md), the set as logged, mean concentric velocity per rep in m/s, and the last rep's loss against the fastest.\n"
         return (current.isEmpty ? header : current) + "\n" + set.line + "\n"
     }
 

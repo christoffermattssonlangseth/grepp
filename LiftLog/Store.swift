@@ -154,14 +154,18 @@ final class Store: ObservableObject {
     /// load and rep count go into the fields, landed with the usual tap.
     @Published var velocityRequest: VelocitySet?
 
-    /// Take a `grepp://velocity` handoff: open the Log tab with the set, and
-    /// keep the speeds in velocity.md. The file is written whether or not the
-    /// set is landed — it's what the bar did, not what the log says. A sync
-    /// already running (the app just came back to the front) is waited out
-    /// rather than refused.
+    /// Take a `grepp://velocity` handoff: open the Log tab with the set. The
+    /// Log tab writes the speeds to velocity.md when the set lands, numbered as
+    /// the day's nth set of the lift (`logVelocity`), or at once, unnumbered, if
+    /// it can't take the set.
     func receiveVelocity(_ set: VelocitySet) {
         velocityRequest = set
         selectedTab = 0
+    }
+
+    /// One measured set into velocity.md. A sync already running (the app just
+    /// came back to the front) is waited out rather than refused.
+    func logVelocity(_ set: VelocitySet) {
         Task {
             var waited = 0
             while isBusy, waited < 40 {   // up to ten seconds

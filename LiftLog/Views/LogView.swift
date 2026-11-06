@@ -348,14 +348,19 @@ struct LogView: View {
     }
 
     /// A set BarVelo measured: its load and reps into the fields, for the
-    /// usual tap. Only onto the same lift, or an empty input area — a set
-    /// measured for one lift is never landed on another. The speeds are in
-    /// velocity.md either way; the Store wrote them.
+    /// usual tap, which writes the speeds to velocity.md as that set. Only onto
+    /// the same lift, or an empty input area — a set measured for one lift is
+    /// never landed on another; then, and for a measurement replaced before it
+    /// was landed, the speeds are kept at once with no set number.
     private func applyVelocity() {
         guard let v = store.velocityRequest else { return }
         store.velocityRequest = nil
         let sameLift = VelocitySet.kebab(name) == v.lift
-        guard sameLift || (name.isEmpty && sets.isEmpty) else { return }
+        guard sameLift || (name.isEmpty && sets.isEmpty) else {
+            store.logVelocity(v)
+            return
+        }
+        if let earlier = measured { store.logVelocity(earlier) }
         if !sameLift { switchLift(to: v.lift) }
         isBodyweight = v.load == nil
         weightText = v.load.map { WorkSet.formatWeight($0) } ?? ""
@@ -1154,6 +1159,16 @@ struct LogView: View {
         }
         // Only now do the typed reps go: a Cancel in the day dialog keeps them.
         repsText = ""
+        // Measured in BarVelo: the speeds go to velocity.md as this very set.
+        if let measured {
+            let lift = MuscleMap.key(name)
+            let lines = todayExercises.filter { Analytics.matches($0.name, lift) }
+            let key = Session.dateFormatter.string(from: date)
+            let number = VelocitySet.setNumber(dayLinesOfLift: lines,
+                                               editingOccurrence: editing?.day == key ? editing?.occurrence : nil,
+                                               inHand: sets.count)
+            store.logVelocity(measured.landed(as: set, number: number, lift: lift, on: date))
+        }
         measured = nil
         focus = nil
         // The day's clock starts only for today's session — a set corrected on

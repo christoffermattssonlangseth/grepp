@@ -290,7 +290,11 @@ enum CoachContext {
         lifter's own report and outranks the estimate. RPE = 10 − reps in \
         reserve. "v1rm" is a 1RM in kg estimated from the lift's load–velocity \
         profile: comparable across sessions for that lift, and typically more \
-        conservative than a 1RM estimated from reps. Speeds are only comparable \
+        conservative than a 1RM estimated from reps. "scale ±N% height,plate,rack" \
+        says how the camera's metres were set: from the lifter's height, a plate \
+        or the rack upright, checked against each other; ±N% is how well they \
+        agreed, and absolute speeds carry that uncertainty while velocity loss, a \
+        ratio, does not. "scale height" alone was one ruler, unchecked. Speeds are only comparable \
         within one lift and camera setup. Not every set is measured, so a lift with \
         no line here is unknown, not slow.
 

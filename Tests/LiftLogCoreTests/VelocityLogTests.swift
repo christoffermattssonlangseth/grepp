@@ -69,6 +69,20 @@ final class VelocityLogTests: XCTestCase {
         XCTAssertTrue(told.detail.hasSuffix("· RPE 9"))
     }
 
+    func testScaleToken() throws {
+        let r = try record("2026-10-06 squat set 3 110x12 mcv 0.39 0.31 loss 23% scale ±1.2% height,plate,rack")
+        XCTAssertEqual(try XCTUnwrap(r.scale), 0.012, accuracy: 1e-9)
+        XCTAssertEqual(r.rulers, ["height", "plate", "rack"])
+        XCTAssertEqual(r.loss, 0.23)
+        let one = try record("2026-10-06 squat set 3 110x12 mcv 0.39 0.31 loss 23% scale height v1rm 128")
+        XCTAssertNil(one.scale)
+        XCTAssertEqual(one.rulers, ["height"])
+        XCTAssertEqual(one.v1rm, 128)      // tokens after it still read
+        let bare = try record("2026-10-06 squat set 3 110x12 mcv 0.39 0.31 scale ±0.8%")
+        XCTAssertEqual(try XCTUnwrap(bare.scale), 0.008, accuracy: 1e-9)
+        XCTAssertEqual(bare.rulers, [])
+    }
+
     func testRPEMatchesVelocitySet() throws {
         for (left, rir) in [(VelocitySet.Left?.none, 2.3), (.reps(7), 0), (.failed, 3), (nil, 12)] {
             var v = VelocitySet(date: Date(), lift: "squat", load: 100, mcv: [0.5])

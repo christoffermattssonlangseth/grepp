@@ -23,7 +23,10 @@ import Foundation
 /// reserve after the set's last rep, one number from the lifter's own bar-velocity
 /// history; `left` is the lifter's own answer to "reps left?" after the set, a
 /// count or `fail` for a set that ended on a failed rep; `v1rm` is a 1RM in kg
-/// estimated from the lift's load–velocity profile. Each is extra: one that
+/// estimated from the lift's load–velocity profile; `scale` is the relative
+/// uncertainty of the camera's metres (0.012 = ±1.2%) and `rulers` what they
+/// were measured with (`height,plate,rack`), from BarVelo's check of its rulers
+/// against each other. Each is extra: one that
 /// doesn't read is dropped, never a
 /// reason to refuse the speeds.
 ///
@@ -35,6 +38,7 @@ import Foundation
 ///
 ///     2026-11-05 squat set 3 100x5 mcv 0.52 0.50 0.47 0.45 0.41 loss 21%
 ///     2026-11-06 over-head-press set 2 42.5x9 mcv 0.78 … 0.41 loss 47% rir ~0 fail v1rm 47.5
+///     2026-11-06 squat set 3 110x12 mcv 0.39 … 0.31 loss 23% scale ±1.2% height,plate,rack
 ///
 /// The line names its set the way training.md has it: the day, the lift as the
 /// log spells it, which of the day's sets of that lift (counting along the day's
@@ -72,6 +76,12 @@ struct VelocitySet: Equatable, Codable {
     var left: Left?
     /// A 1RM in kg estimated from the lift's load–velocity profile.
     var v1rm: Double?
+    /// Relative uncertainty of the camera's scale (0.012 = ±1.2%), from how well
+    /// BarVelo's rulers agreed. Nil with one ruler, or when it sent none.
+    var scale: Double?
+    /// What the scale was measured with, most trusted first: `height`, `plate`,
+    /// `rack`. Empty when BarVelo sent none.
+    var rulers: [String] = []
 
     /// What the lifter said was left in the tank after the set.
     enum Left: Equatable, Codable {
@@ -199,6 +209,7 @@ struct VelocitySet: Equatable, Codable {
         if let rirEstimate { parts.append("rir ~\(Int(rirEstimate.rounded()))") }
         if let left { parts.append(left == .failed ? "fail" : "left \(left.token)") }
         if let v1rm { parts.append("v1rm " + WorkSet.formatWeight(v1rm)) }
+        if let s = Self.scaleToken(scale: scale, rulers: rulers) { parts.append(s) }
         return parts.joined(separator: " ")
     }
 
@@ -279,6 +290,24 @@ struct VelocitySet: Equatable, Codable {
         self.rirEstimate = value("rir").flatMap(Double.init).flatMap { $0 >= 0 && $0.isFinite ? $0 : nil }
         self.left = value("left").flatMap(Left.init)
         self.v1rm = value("v1rm").flatMap(Double.init).flatMap { $0 > 0 && $0.isFinite ? $0 : nil }
+        self.scale = value("scale").flatMap(Double.init).flatMap { $0 >= 0 && $0 < 0.5 ? $0 : nil }
+        self.rulers = Self.rulerNames(value("rulers") ?? "")
+    }
+
+    /// `scale ±1.2% height,plate,rack`, `scale height`, or nil with neither.
+    static func scaleToken(scale: Double?, rulers: [String]) -> String? {
+        var t: [String] = []
+        if let scale { t.append(String(format: "±%.1f%%", scale * 100)) }
+        if !rulers.isEmpty { t.append(rulers.joined(separator: ",")) }
+        return t.isEmpty ? nil : "scale " + t.joined(separator: " ")
+    }
+
+    /// Ruler names from `height,plate,rack`: lowercase words only, at most four;
+    /// anything else is dropped.
+    static func rulerNames(_ s: String) -> [String] {
+        let names = s.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces).lowercased() }
+            .filter { !$0.isEmpty && $0.count <= 12 && $0.allSatisfy { $0.isLetter && $0.isASCII } }
+        return Array(names.prefix(4))
     }
 
     /// Read a saved one. Fields added since the first queued lines may be
@@ -298,6 +327,8 @@ struct VelocitySet: Equatable, Codable {
         rirEstimate = try c.decodeIfPresent(Double.self, forKey: .rirEstimate)
         left = try? c.decodeIfPresent(Left.self, forKey: .left)
         v1rm = try c.decodeIfPresent(Double.self, forKey: .v1rm)
+        scale = try c.decodeIfPresent(Double.self, forKey: .scale)
+        rulers = try c.decodeIfPresent([String].self, forKey: .rulers) ?? []
     }
 
     init(date: Date, lift: String, load: Double?, added: Double? = nil, mcv: [Double], peak: [Double] = [], rom: [Double] = []) {
@@ -351,7 +382,7 @@ struct VelocitySet: Equatable, Codable {
         var present = Set(current.split(whereSeparator: \.isNewline).map { $0.trimmingCharacters(in: .whitespaces) })
         let new = sets.map(\.line).filter { present.insert($0).inserted }
         guard !new.isEmpty else { return file }
-        let header = "# Bar velocity\n\nOne line per set, measured by BarVelo: the day, the lift, which of the day's sets of it (set 3 = its third set in training.md), the set as logged, mean concentric velocity per rep in m/s, the last rep's loss against the fastest, and, when BarVelo sent them, its estimate of the reps in reserve at the end of the set (rir ~N), the reps the lifter said were left (left N, or fail), and a 1RM estimated from bar velocity (v1rm).\n"
+        let header = "# Bar velocity\n\nOne line per set, measured by BarVelo: the day, the lift, which of the day's sets of it (set 3 = its third set in training.md), the set as logged, mean concentric velocity per rep in m/s, the last rep's loss against the fastest, and, when BarVelo sent them, its estimate of the reps in reserve at the end of the set (rir ~N), the reps the lifter said were left (left N, or fail), a 1RM estimated from bar velocity (v1rm), and how the camera's metres were set (scale ±N% and the rulers: the lifter's height, a plate, the rack).\n"
         return (current.isEmpty ? header : current) + "\n" + new.joined(separator: "\n") + "\n"
     }
 

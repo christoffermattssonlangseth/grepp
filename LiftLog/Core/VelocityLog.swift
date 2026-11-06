@@ -7,7 +7,7 @@ import Foundation
 ///
 /// The day, the lift as the log spells it, `set N` when the line has one, the
 /// set as logged, `mcv` and a speed per rep in m/s; then, each optional, `loss
-/// N%`, `rir ~N`, `left N` or `fail`, `v1rm X`. A line without a day, a lift,
+/// N%`, `rir ~N`, `left N` or `fail`, `v1rm X`, `scale ±N% rulers`. A line without a day, a lift,
 /// a set or a single speed is not a measurement and is skipped; a token after
 /// the speeds that doesn't read is dropped, the way the URL's extras are.
 struct VelocityRecord: Equatable {
@@ -24,6 +24,9 @@ struct VelocityRecord: Equatable {
     var rirEstimate: Double?
     var left: VelocitySet.Left?
     var v1rm: Double?
+    /// The scale's relative uncertainty and the rulers it came from, when stated.
+    var scale: Double?
+    var rulers: [String] = []
 
     /// Load in kg; nil for a bodyweight lift.
     var load: Double? { logged.weight }
@@ -119,6 +122,8 @@ struct VelocityRecord: Equatable {
         var rir: Double?
         var left: VelocitySet.Left?
         var v1rm: Double?
+        var scale: Double?
+        var rulers: [String] = []
         while i < tokens.count {
             let key = tokens[i].lowercased()
             let value = tokens[safe: i + 1]
@@ -137,6 +142,16 @@ struct VelocityRecord: Equatable {
                 left = .failed
             case "v1rm":
                 if let v = value.flatMap(Double.init), v > 0, v.isFinite { v1rm = v; i += 1 }
+            case "scale":
+                // `scale ±1.2% height,plate,rack`: either part may be missing.
+                if let v = value, v.hasPrefix("±"),
+                   let p = Double(v.dropFirst().replacingOccurrences(of: "%", with: "")), p >= 0, p < 50 {
+                    scale = p / 100; i += 1
+                }
+                if let v = tokens[safe: i + 1], v.contains(",") || ["height", "plate", "rack"].contains(v.lowercased()) {
+                    let names = VelocitySet.rulerNames(v)
+                    if !names.isEmpty { rulers = names; i += 1 }
+                }
             default:
                 break
             }
@@ -152,6 +167,8 @@ struct VelocityRecord: Equatable {
         self.rirEstimate = rir
         self.left = left
         self.v1rm = v1rm
+        self.scale = scale
+        self.rulers = rulers
     }
 
     /// Loss as `VelocitySet` works it out: last rep against the fastest.

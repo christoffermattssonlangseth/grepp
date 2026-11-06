@@ -312,6 +312,35 @@ final class VelocityEffortTests: XCTestCase {
         XCTAssertTrue(estimateOnly.line.hasSuffix("loss 47% rir ~3"), estimateOnly.line)
     }
 
+    // MARK: - Scale
+
+    func testScaleAndRulersReachTheLine() throws {
+        let v = try XCTUnwrap(VelocitySet(url: url(ohp + "&scale=0.012&rulers=height,plate,rack")))
+        XCTAssertEqual(v.scale, 0.012)
+        XCTAssertEqual(v.rulers, ["height", "plate", "rack"])
+        XCTAssertTrue(v.line.hasSuffix("loss 47% scale ±1.2% height,plate,rack"), v.line)
+        let one = try XCTUnwrap(VelocitySet(url: url(ohp + "&rulers=height")))
+        XCTAssertNil(one.scale)
+        XCTAssertTrue(one.line.hasSuffix("loss 47% scale height"), one.line)
+        XCTAssertFalse(try XCTUnwrap(VelocitySet(url: url(ohp))).line.contains("scale"))
+    }
+
+    func testBadScaleIsDroppedNotRefused() throws {
+        for extra in ["&scale=-0.1&rulers=", "&scale=abc&rulers=1,2", "&scale=0.9&rulers=he%20ight", "&scale=&rulers=<b>"] {
+            let v = try XCTUnwrap(VelocitySet(url: url(ohp + extra)), extra)
+            XCTAssertNil(v.scale, extra)
+            XCTAssertEqual(v.rulers, [], extra)
+            XCTAssertEqual(v.reps, 9)
+        }
+    }
+
+    func testScaleSurvivesTheOutbox() throws {
+        let v = try XCTUnwrap(VelocitySet(url: url(ohp + "&scale=0.004&rulers=height,rack")))
+        let back = try JSONDecoder().decode(VelocitySet.self, from: JSONEncoder().encode(v))
+        XCTAssertEqual(back.scale, 0.004)
+        XCTAssertEqual(back.rulers, ["height", "rack"])
+    }
+
     func testRPEFromAnswerThenEstimate() throws {
         func set(_ extra: String) throws -> VelocitySet { try XCTUnwrap(VelocitySet(url: url(ohp + extra))) }
         XCTAssertEqual(try set("&left=fail").rpe, 10)

@@ -167,7 +167,11 @@ struct SettingsView: View {
                     labeled("goals file", text: $store.goalsPath, placeholder: "goals.md")
                     labeled("evidence file", text: $store.researchPath, placeholder: "research.md")
                     labeled("programme file", text: $store.programPath, placeholder: "program.md")
-                    labeled("bar speed file", text: $store.velocityPath, placeholder: "velocity.md")
+                    // BarVelo is optional: the field only appears once it's installed or
+                    // a bar-speed file exists. Grepp works the same without it.
+                    if usesBarVelo {
+                        labeled("bar speed file", text: $store.velocityPath, placeholder: "velocity.md")
+                    }
                     Text(coachingHint)
                         .font(.caption)
                         .foregroundStyle(.secondary)
@@ -404,6 +408,12 @@ struct SettingsView: View {
     }
 
     /// Whether the coaching notes were found, and what to do about it.
+    /// BarVelo installed, or bar speed already in the repo.
+    private var usesBarVelo: Bool {
+        !store.brief.velocity.isEmpty
+            || UIApplication.shared.canOpenURL(VelocitySet.measureURL(lift: "", load: nil, reps: nil))
+    }
+
     private var coachingHint: LocalizedStringKey {
         let found = [store.brief.coaching.isEmpty ? nil : store.coachingPath,
                      store.brief.goals.isEmpty ? nil : store.goalsPath,

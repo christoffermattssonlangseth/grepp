@@ -86,9 +86,9 @@ struct TrendsView: View {
     /// Where a finger is on the bar-velocity chart (date, m/s) and on the
     /// reps-left chart (date, reps), if on either. One at a time: a finger on
     /// one clears the other, and the set it picks is highlighted on both.
-    @State private var speedScrubX: Date?
+    @State private var speedScrubX: Double?
     @State private var speedScrubY: Double?
-    @State private var reserveScrubX: Date?
+    @State private var reserveScrubX: Double?
     @State private var reserveScrubY: Double?
     /// Where a finger is on the load–velocity chart, kg.
     @State private var profileScrubX: Double?
@@ -431,30 +431,26 @@ struct TrendsView: View {
     /// against the last time at its load; the sets as a list.
     private var speedCard: some View {
         let all = figures.speeds
-        let domain = speedDomain(all)
-        let shown = all.filter { domain.contains($0.date) }
+        let slots = SetSlots(Array(all.suffix(SetSlots.maxSets)))
+        let shown = slots.records
         let newest = Array(all.reversed())
         let listed = showingAllSpeeds ? newest : Array(newest.prefix(5))
-        let reserves = figures.proximity.filter { domain.contains($0.date) }
-        let picked = pickedSet(shown, reserves)
+        let reserves = figures.proximity.filter { slots.x(of: $0.record) != nil }
+        let picked = pickedSet(slots, reserves)
         return Panel {
             VStack(alignment: .leading, spacing: 10) {
                 HStack(alignment: .firstTextBaseline) {
                     Text("bar velocity · m/s").font(.caption).foregroundStyle(.secondary)
                     Spacer()
-                    Text("\(all.count) measured \(all.count == 1 ? "set" : "sets")")
+                    Text(all.count > shown.count ? "last \(shown.count) of \(all.count) measured sets"
+                         : "\(all.count) measured \(all.count == 1 ? "set" : "sets")")
                         .font(.caption2).foregroundStyle(.tertiary)
                         .monospacedDigit()
                 }
 
-                if shown.isEmpty {
-                    Text("No measured sets in this stretch of the chart above.")
-                        .font(.footnote).foregroundStyle(.secondary)
-                        .frame(height: 140)
-                        .frame(maxWidth: .infinity)
-                } else {
-                    speedChart(shown, domain: domain, latest: all.last, picked: picked)
-                        .frame(height: 140)
+                if !shown.isEmpty {
+                    speedChart(slots, latest: all.last, picked: picked)
+                        .frame(height: 160)
                     // The set under the finger, and the way into that day —
                     // outside the plot, as on the lift chart.
                     if let picked, speedScrubX != nil {
@@ -509,13 +505,13 @@ struct TrendsView: View {
                     }
                 }
 
-                Text("MCV is the bar's mean velocity on the way up, rep by rep, from BarVelo: the big dot is the fastest rep, the small one the last. Only measured sets appear.")
+                Text("Each column is a measured set, its reps left to right: MCV, the bar's mean velocity on the way up, from BarVelo. The big dot is the fastest rep, the small one the last; the label, the load.")
                     .font(.caption2).foregroundStyle(.tertiary)
                     .fixedSize(horizontal: false, vertical: true)
 
                 if figures.reserveModel != nil || figures.proximity.contains(where: \.isOwn) {
                     Divider().padding(.vertical, 2)
-                    reserveSection(reserves, domain: domain, picked: picked)
+                    reserveSection(reserves, slots: slots, picked: picked)
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -666,30 +662,12 @@ struct TrendsView: View {
         reserveScrubX = nil; reserveScrubY = nil
     }
 
-    /// The measured set under the finger, on whichever chart it's on: the
-    /// nearest day with a set, then of that day's sets the one nearest the
-    /// finger's height — a drag snaps to sets that were lifted.
-    private func pickedSet(_ shown: [VelocityRecord], _ reserves: [VelocityRecord.Proximity]) -> VelocityRecord? {
-        if let x = speedScrubX {
-            let y = speedScrubY
-            return Self.nearest(shown, to: x, date: { $0.date }) { r in
-                y.map { min(abs(r.best - $0), abs(r.lastRep - $0)) } ?? 0
-            }
-        }
-        if let x = reserveScrubX {
-            let y = reserveScrubY
-            let cap = reserveCap
-            return Self.nearest(reserves, to: x, date: { $0.date }) { p in
-                y.map { abs(min(p.reserve, cap) - $0) } ?? 0
-            }?.record
-        }
+    /// The measured set under the finger, on whichever chart it's on: the set
+    /// whose column is nearest the finger.
+    private func pickedSet(_ slots: SetSlots, _ reserves: [VelocityRecord.Proximity]) -> VelocityRecord? {
+        if let x = speedScrubX { return slots.nearest(to: x) }
+        if let x = reserveScrubX { return slots.nearest(to: x) }
         return nil
-    }
-
-    private static func nearest<T>(_ items: [T], to x: Date, date: (T) -> Date, distance: (T) -> Double) -> T? {
-        guard let day = items.map(date).min(by: { abs($0.timeIntervalSince(x)) < abs($1.timeIntervalSince(x)) })
-        else { return nil }
-        return items.filter { date($0) == day }.min { distance($0) < distance($1) }
     }
 
     /// One measured set in a line: `6 Oct · set 3 · 110×12 · 0.42 → 0.32 m/s
@@ -740,7 +718,7 @@ struct TrendsView: View {
     /// or the speed's reading of it; what the speed says about failure; and,
     /// once there are answers on two days, the failure velocity over time.
     @ViewBuilder
-    private func reserveSection(_ shown: [VelocityRecord.Proximity], domain: ClosedRange<Date>, picked: VelocityRecord?) -> some View {
+    private func reserveSection(_ shown: [VelocityRecord.Proximity], slots: SetSlots, picked: VelocityRecord?) -> some View {
         HStack(alignment: .firstTextBaseline) {
             Text("reps left at the end of the set").font(.caption).foregroundStyle(.secondary)
             Spacer()
@@ -753,12 +731,12 @@ struct TrendsView: View {
         }
 
         if shown.isEmpty {
-            Text("No sets with reps left in this stretch of the chart above.")
+            Text("No sets with reps left among these.")
                 .font(.footnote).foregroundStyle(.secondary)
                 .frame(height: 110)
                 .frame(maxWidth: .infinity)
         } else {
-            reserveChart(shown, domain: domain, picked: picked)
+            reserveChart(shown, slots: slots, picked: picked)
                 .frame(height: 110)
             if let picked, reserveScrubX != nil {
                 velocityReading(picked)
@@ -800,40 +778,36 @@ struct TrendsView: View {
             .fixedSize(horizontal: false, vertical: true)
     }
 
-    /// Reps left, 0 to 6+, on the same dates as the speed chart: filled for
-    /// the lifter's answer, hollow for the speed's reading.
-    private func reserveChart(_ shown: [VelocityRecord.Proximity], domain: ClosedRange<Date>,
+    /// Reps left, 0 to 6+, under the speed chart's columns: filled for the
+    /// lifter's answer, hollow for the speed's reading.
+    private func reserveChart(_ shown: [VelocityRecord.Proximity], slots: SetSlots,
                               picked: VelocityRecord?) -> some View {
         let cap = reserveCap
         return Chart {
-            if let picked {
-                RuleMark(x: .value("Date", picked.date))
-                    .foregroundStyle(.secondary.opacity(0.35))
+            if let picked, let x = slots.x(of: picked) {
+                RuleMark(x: .value("Set", x)).foregroundStyle(.secondary.opacity(0.35))
             }
             ForEach(Array(shown.enumerated()), id: \.offset) { _, p in
-                let isPicked = p.record == picked
-                let size: CGFloat = isPicked ? 12 : 8
-                PointMark(x: .value("Date", p.date), y: .value("Reps left", min(p.reserve, cap)))
-                    .symbol {
-                        if p.isOwn {
-                            Circle().fill(Theme.accent).frame(width: size, height: size)
-                        } else {
-                            Circle().strokeBorder(Theme.accent, lineWidth: isPicked ? 2 : 1.5).frame(width: size, height: size)
+                if let x = slots.x(of: p.record) {
+                    let isPicked = p.record == picked
+                    let size: CGFloat = isPicked ? 12 : 8
+                    PointMark(x: .value("Set", x), y: .value("Reps left", min(p.reserve, cap)))
+                        .symbol {
+                            if p.isOwn {
+                                Circle().fill(Theme.accent).frame(width: size, height: size)
+                            } else {
+                                Circle().strokeBorder(Theme.accent, lineWidth: isPicked ? 2 : 1.5).frame(width: size, height: size)
+                            }
                         }
-                    }
-                    .opacity(picked == nil || isPicked ? 1 : 0.5)
+                        .opacity(picked == nil || isPicked ? 1 : 0.5)
+                }
             }
         }
         .chartXSelection(value: $reserveScrubX)
         .chartYSelection(value: $reserveScrubY)
-        .chartXScale(domain: domain)
+        .chartXScale(domain: slots.domain)
+        .chartXAxis { slots.axis }
         .chartYScale(domain: 0...cap)
-        .chartXAxis {
-            AxisMarks(values: .automatic(desiredCount: 4)) {
-                AxisGridLine()
-                AxisValueLabel(format: .dateTime.month(.abbreviated).day())
-            }
-        }
         .chartYAxis {
             AxisMarks(values: [0, 2, 4, 6]) { value in
                 AxisGridLine()
@@ -851,8 +825,8 @@ struct TrendsView: View {
         .accessibilityHint("swipe up or down to read a set")
         .accessibilityAdjustableAction { direction in
             let current = picked.flatMap { r in shown.firstIndex { $0.record == r } }
-            guard let p = step(shown, from: current, direction) else { return }
-            reserveScrubX = p.date
+            guard let p = step(shown, from: current, direction), let x = slots.x(of: p.record) else { return }
+            reserveScrubX = x
             reserveScrubY = min(p.reserve, cap)
         }
     }
@@ -877,55 +851,61 @@ struct TrendsView: View {
         .chartYAxis(.hidden)
     }
 
-    private func speedChart(_ shown: [VelocityRecord], domain: ClosedRange<Date>, latest: VelocityRecord?,
-                            picked: VelocityRecord?) -> some View {
-        let lo = shown.map(\.lastRep).min() ?? 0
-        let hi = shown.map(\.best).max() ?? 1
-        let half = max(hi - lo, 0.2) / 2 * 1.2
+    /// Each measured set as a column, its reps left to right: a short line of
+    /// the reps' speeds, the fastest a big dot, the last a small one, the load
+    /// above. Sets of one day sit together; days apart a little more.
+    private func speedChart(_ slots: SetSlots, latest: VelocityRecord?, picked: VelocityRecord?) -> some View {
+        let shown = slots.records
+        let speeds = shown.flatMap(\.mcv).filter { $0 > 0 }
+        let lo = speeds.min() ?? 0, hi = speeds.max() ?? 1
+        let half = max(hi - lo, 0.2) / 2 * 1.25
         let mid = (lo + hi) / 2
         let lower = max(0, mid - half)
+        // Room above the fastest rep for the load.
+        let upper = mid + half + 0.12 * half
         return Chart {
-            // Drag along the strokes to read a set off them.
-            if let picked {
-                RuleMark(x: .value("Date", picked.date))
-                    .foregroundStyle(.secondary.opacity(0.35))
+            if let picked, let x = slots.x(of: picked) {
+                RuleMark(x: .value("Set", x)).foregroundStyle(.secondary.opacity(0.35))
             }
-            ForEach(Array(shown.enumerated()), id: \.offset) { _, r in
+            ForEach(Array(shown.enumerated()), id: \.offset) { i, r in
+                let x0 = slots.xs[i]
                 let isPicked = r == picked
                 let faded = picked != nil && !isPicked
-                RuleMark(x: .value("Date", r.date),
-                         yStart: .value("Last rep", r.lastRep),
-                         yEnd: .value("Fastest rep", r.best))
-                    .lineStyle(StrokeStyle(lineWidth: isPicked ? 2.5 : 1.5, lineCap: .round))
-                    .foregroundStyle(Theme.accent.opacity(isPicked ? 0.8 : 0.4))
-                    .opacity(faded ? 0.5 : 1)
-                PointMark(x: .value("Date", r.date), y: .value("Last rep", r.lastRep))
-                    .foregroundStyle(Theme.accent.opacity(0.6))
-                    .symbolSize(isPicked ? 28 : 12)
-                    .opacity(faded ? 0.5 : 1)
-                let isLatest = r == latest && picked == nil
-                PointMark(x: .value("Date", r.date), y: .value("Fastest rep", r.best))
-                    .foregroundStyle(Theme.accent)
-                    .symbolSize(isPicked ? 90 : 36)
-                    .opacity(faded ? 0.5 : 1)
-                    .annotation(position: .top, spacing: 3,
-                                overflowResolution: .init(x: .fit(to: .plot), y: .disabled)) {
-                        if isLatest {
-                            Text(r.loadLabel)
-                                .font(.caption2.monospacedDigit())
-                                .foregroundStyle(.secondary)
+                let reps = r.mcv
+                let step = reps.count > 1 ? SetSlots.width / Double(reps.count - 1) : 0
+                let xOf = { (k: Int) in reps.count > 1 ? x0 - SetSlots.width / 2 + Double(k) * step : x0 }
+                ForEach(Array(reps.enumerated()), id: \.offset) { k, v in
+                    LineMark(x: .value("Set", xOf(k)), y: .value("MCV", v), series: .value("Set no.", i))
+                        .foregroundStyle(Theme.accent.opacity(isPicked ? 0.9 : 0.55))
+                        .lineStyle(StrokeStyle(lineWidth: isPicked ? 2.5 : 1.5, lineCap: .round))
+                        .opacity(faded ? 0.5 : 1)
+                }
+                if let b = reps.indices.max(by: { reps[$0] < reps[$1] }) {
+                    PointMark(x: .value("Set", xOf(b)), y: .value("MCV", reps[b]))
+                        .foregroundStyle(Theme.accent)
+                        .symbolSize(isPicked ? 70 : 32)
+                        .opacity(faded ? 0.5 : 1)
+                        .annotation(position: .top, spacing: 2,
+                                    overflowResolution: .init(x: .fit(to: .plot), y: .disabled)) {
+                            // The load over each set where it changes, and over the one picked.
+                            if isPicked || slots.loadChanges(at: i) {
+                                Text(r.loadLabel)
+                                    .font(.caption2.monospacedDigit())
+                                    .foregroundStyle(.secondary)
+                            }
                         }
-                    }
+                }
+                if let last = reps.last {
+                    PointMark(x: .value("Set", xOf(reps.count - 1)), y: .value("MCV", last))
+                        .foregroundStyle(Theme.accent.opacity(0.7))
+                        .symbolSize(isPicked ? 24 : 12)
+                        .opacity(faded ? 0.5 : 1)
+                }
             }
         }
-        .chartXScale(domain: domain)
-        .chartYScale(domain: lower...(mid + half))
-        .chartXAxis {
-            AxisMarks(values: .automatic(desiredCount: 4)) {
-                AxisGridLine()
-                AxisValueLabel(format: .dateTime.month(.abbreviated).day())
-            }
-        }
+        .chartXScale(domain: slots.domain)
+        .chartXAxis { slots.axis }
+        .chartYScale(domain: lower...upper)
         .chartYAxis {
             AxisMarks(values: .automatic(desiredCount: 3)) {
                 AxisGridLine()
@@ -936,29 +916,14 @@ struct TrendsView: View {
         .chartYSelection(value: $speedScrubY)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("bar velocity of \(shown.count) measured \(shown.count == 1 ? "set" : "sets")")
-        .accessibilityValue(picked.map { velocityReadingText($0) } ?? shown.last.map { "latest \($0.detail)" } ?? "")
+        .accessibilityValue(picked.map { velocityReadingText($0) } ?? latest.map { "latest \($0.detail)" } ?? "")
         .accessibilityHint("swipe up or down to read a set")
         .accessibilityAdjustableAction { direction in
-            guard let r = step(shown, from: picked.flatMap { shown.firstIndex(of: $0) }, direction) else { return }
-            speedScrubX = r.date
+            guard let r = step(shown, from: picked.flatMap { shown.firstIndex(of: $0) }, direction),
+                  let x = slots.x(of: r) else { return }
+            speedScrubX = x
             speedScrubY = r.best
         }
-    }
-
-    /// The dates the bar-velocity chart spans: the window the chart above shows
-    /// when it scrolls, its whole span when it doesn't, so a day sits under
-    /// itself; widened to the measured sets when the lift chart has none.
-    private func speedDomain(_ records: [VelocityRecord]) -> ClosedRange<Date> {
-        let series = figures.series
-        if scrolls(series) {
-            return scrollX...scrollX.addingTimeInterval(window)
-        }
-        let dates = records.map(\.date) + (series.count >= 2 ? series.map(\.date) : [])
-        let first = dates.min() ?? Date()
-        let last = dates.max() ?? Date()
-        // One day alone, or two close together, still gets some width.
-        let pad = max(0, 6 * 86_400 - last.timeIntervalSince(first)) / 2
-        return first.addingTimeInterval(-pad)...last.addingTimeInterval(pad)
     }
 
     // MARK: - Target
@@ -1873,6 +1838,71 @@ private struct CompactLegend: LabelStyle {
         HStack(spacing: 3) {
             configuration.icon
             configuration.title
+        }
+    }
+}
+
+/// Where the bar-velocity charts put each measured set: one column per set, in
+/// order, the sets of a day together and a gap between days, so a day of three
+/// sets reads as three sets, not a line squeezed against the edge of a calendar.
+struct SetSlots {
+    /// The latest this many sets are drawn.
+    static let maxSets = 12
+    /// A set's reps span this much of its column.
+    static let width = 0.7
+    /// Extra room between days, in columns.
+    static let dayGap = 0.6
+
+    let records: [VelocityRecord]
+    /// Each set's column centre.
+    let xs: [Double]
+
+    init(_ records: [VelocityRecord]) {
+        self.records = records
+        var xs: [Double] = [], x = 0.0
+        for (i, r) in records.enumerated() {
+            if i > 0 { x += 1 + (Calendar.current.isDate(r.date, inSameDayAs: records[i - 1].date) ? 0 : Self.dayGap) }
+            xs.append(x)
+        }
+        self.xs = xs
+    }
+
+    var domain: ClosedRange<Double> {
+        let lo = (xs.first ?? 0) - 0.6, hi = (xs.last ?? 0) + 0.6
+        // A single set still gets some width.
+        return hi - lo < 3 ? ((lo + hi) / 2 - 1.5)...((lo + hi) / 2 + 1.5) : lo...hi
+    }
+
+    func x(of r: VelocityRecord) -> Double? { records.firstIndex(of: r).map { xs[$0] } }
+
+    func nearest(to x: Double) -> VelocityRecord? {
+        xs.indices.min { abs(xs[$0] - x) < abs(xs[$1] - x) }.map { records[$0] }
+    }
+
+    /// Whether set `i` is the first or lifted a different load from the one before.
+    func loadChanges(at i: Int) -> Bool {
+        i == 0 || records[i].loadLabel != records[i - 1].loadLabel
+            || !Calendar.current.isDate(records[i].date, inSameDayAs: records[i - 1].date)
+    }
+
+    /// The days, one label under the middle of each day's sets.
+    var days: [(x: Double, date: Date)] {
+        var out: [(Double, Date)] = [], start = 0
+        for i in records.indices where i == records.count - 1
+            || !Calendar.current.isDate(records[i + 1].date, inSameDayAs: records[i].date) {
+            out.append(((xs[start] + xs[i]) / 2, records[i].date)); start = i + 1
+        }
+        return out
+    }
+
+    @AxisContentBuilder var axis: some AxisContent {
+        let days = self.days
+        AxisMarks(values: days.map(\.x)) { value in
+            AxisValueLabel {
+                if let v = value.as(Double.self), let d = days.first(where: { abs($0.x - v) < 1e-6 }) {
+                    Text(d.date, format: .dateTime.day().month(.abbreviated))
+                }
+            }
         }
     }
 }

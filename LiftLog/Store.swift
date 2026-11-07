@@ -168,7 +168,8 @@ final class Store: ObservableObject {
         receivedVelocity = Array((receivedVelocity + [set]).suffix(20))
         velocityRequest = set
         selectedTab = 0
-        if set.isFromNewerBarVelo { status = "BarVelo is newer than Grepp — update Grepp." }
+        // The update note lasts until a link that reads in full replaces it.
+        status = set.status(after: status)
     }
 
     /// The velocity.md lines waiting to be written, kept per backend like the

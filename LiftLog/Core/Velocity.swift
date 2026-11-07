@@ -159,6 +159,19 @@ struct VelocitySet: Equatable, Codable {
     /// Sent by a BarVelo that speaks a later contract than this Grepp.
     var isFromNewerBarVelo: Bool { version > Self.contractVersion }
 
+    /// The Log tab's status note for a link from a newer BarVelo.
+    static let newerBarVeloNote = "BarVelo is newer than Grepp — update Grepp."
+
+    /// The status line after this handoff arrives, from `current`: the
+    /// update note for a link from a newer BarVelo; a note left by an earlier
+    /// such link goes with the next link that reads in full. Anything else
+    /// in `current` (a sync message) stays.
+    func status(after current: String) -> String {
+        if isFromNewerBarVelo { return Self.newerBarVeloNote }
+        return current == Self.newerBarVeloNote ? "" : current
+    }
+
+
     /// This measurement as the set it was landed as: the `number`th set of `lift`
     /// on `date` in training.md, logged as `set`.
     func landed(as set: WorkSet, number: Int, lift: String, on date: Date) -> VelocitySet {

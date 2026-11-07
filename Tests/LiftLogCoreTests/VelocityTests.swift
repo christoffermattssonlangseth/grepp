@@ -201,6 +201,16 @@ final class VelocityTests: XCTestCase {
         XCTAssertEqual(retry.appending(to: retry.appending(to: file)), retry.appending(to: file))
     }
 
+    func testNewerBarVeloNoteClearsOnTheNextLink() throws {
+        let newer = try XCTUnwrap(VelocitySet(url: url("grepp://velocity?v=2&lift=squat&load=100&mcv=0.5")))
+        let current = try XCTUnwrap(VelocitySet(url: url("grepp://velocity?v=1&lift=squat&load=100&mcv=0.5")))
+        let noted = newer.status(after: "Loaded 3 sessions.")
+        XCTAssertEqual(noted, VelocitySet.newerBarVeloNote)
+        XCTAssertEqual(current.status(after: noted), "")
+        // A sync message is not the link's to clear.
+        XCTAssertEqual(current.status(after: "Offline — showing cached data."), "Offline — showing cached data.")
+    }
+
     func testOutboxSurvivesARelaunch() throws {
         var box = VelocityOutbox()
         box.add([VelocitySet(date: day, lift: "squat", load: 100, mcv: [0.5])])

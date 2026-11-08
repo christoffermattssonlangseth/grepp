@@ -66,6 +66,8 @@ struct TrendsView: View {
         /// The lift's sets measured with BarVelo, oldest first, from velocity.md.
         var speeds: [VelocityRecord] = []
         var speedComparison: VelocityRecord.Comparison?
+        /// The newest day's measured sets, against the stop target.
+        var session: VelocitySession?
         var v1rm: VelocityRecord?
         /// Bar velocity against reps in reserve, from the lift's `fail` / `left N`
         /// sets; nil until two answered sets agree on a line.
@@ -129,6 +131,7 @@ struct TrendsView: View {
                             chartCard
                             statsRow
                             if !figures.speeds.isEmpty { speedCard }
+                            if let session = figures.session { sessionCard(session) }
                             if figures.profileFit != .none { profileCard }
                             targetCard
                             if let dose = figures.dose {
@@ -532,6 +535,47 @@ struct TrendsView: View {
         }
         .onChange(of: reserveScrubX) { _, x in
             if x != nil { speedScrubX = nil; speedScrubY = nil }
+        }
+    }
+
+    /// The newest day's measured sets, one row each: fastest → last rep, the
+    /// loss, reps left; which went past the stop target; how the first rep
+    /// held up across the sets.
+    private func sessionCard(_ s: VelocitySession) -> some View {
+        Panel {
+            VStack(alignment: .leading, spacing: 8) {
+                HStack(alignment: .firstTextBaseline) {
+                    Text("latest measured session").font(.caption).foregroundStyle(.secondary)
+                    Spacer()
+                    Text(s.date, format: .dateTime.weekday(.abbreviated).day().month(.abbreviated))
+                        .font(.caption2).foregroundStyle(.tertiary)
+                }
+                VStack(alignment: .leading, spacing: 4) {
+                    ForEach(Array(s.rows.enumerated()), id: \.offset) { _, row in
+                        HStack(spacing: 6) {
+                            Circle()
+                                .fill(row.pastTarget ? Theme.warning : Theme.accent.opacity(0.5))
+                                .frame(width: 7, height: 7)
+                            Text(row.text)
+                                .font(.caption.monospacedDigit())
+                                .lineLimit(1)
+                                .minimumScaleFactor(0.7)
+                        }
+                        .accessibilityElement(children: .combine)
+                        .accessibilityValue(row.pastTarget ? "past the stop target" : "")
+                    }
+                }
+                Text(s.targetLine)
+                    .font(.footnote.weight(.semibold))
+                    .foregroundStyle(s.pastTarget > 0 ? Theme.warning : Color.secondary)
+                if let f = s.fatigueLine {
+                    Text(f).font(.footnote).foregroundStyle(.secondary)
+                }
+                Text("m/s, fastest rep → last; the loss is the last rep against the fastest. The stop target is BarVelo's default for the lift; an amber dot went past it.")
+                    .font(.caption2).foregroundStyle(.tertiary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
     }
 
@@ -1678,6 +1722,7 @@ struct TrendsView: View {
             case .notYet(let why): f.reserveWhyNot = why
             }
             f.proximity = VelocityRecord.proximity(f.speeds, model: f.reserveModel)
+            f.session = VelocitySession.latest(f.speeds, lift: exercise, model: f.reserveModel)
             f.failureSpeeds = VelocityRecord.failureSpeeds(f.speeds, now: Date())
             f.failureVelocity = VelocityRecord.failureVelocity(f.speeds)
             f.profileFit = LoadVelocityProfile.fit(f.speeds, lift: exercise)

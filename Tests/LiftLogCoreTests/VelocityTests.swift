@@ -403,4 +403,30 @@ final class VelocityEffortTests: XCTestCase {
         XCTAssertTrue(brief.contains("RPE = 10 − reps in reserve"), brief)
         XCTAssertTrue(brief.contains("load–velocity"), brief)
     }
+
+    func testCoachGetsTheStopTargetsAndOwnAnswers() {
+        let brief = CoachContext.barVelocityBrief("""
+        2026-11-07 bench-press set 3 73.5x12 mcv 0.40 0.30 0.19 loss 53% left 0
+        2026-11-07 seal-row set 3 62.5x14 mcv 0.77 0.70 0.63 loss 19% left 0
+        2026-11-07 squat set 3 92.5x10 mcv 0.58 0.47 loss 19%
+        """)
+        // No generic bands that the owner's own sets contradict.
+        XCTAssertFalse(brief.contains("under about 20 %"), brief)
+        XCTAssertFalse(brief.contains("30–40 %"), brief)
+        XCTAssertTrue(brief.contains("40 % loss on presses and the bench and 35 % on"), brief)
+        XCTAssertTrue(brief.contains(#""left 0" means no reps were left: the last rep was completed and nothing was missed"#), brief)
+        XCTAssertTrue(brief.contains("- bench-press (stop target 40%): 2026-11-07 set 3: 53 % → 0 left"), brief)
+        XCTAssertTrue(brief.contains("- seal-row (stop target 35%): 2026-11-07 set 3: 19 % → 0 left"), brief)
+        XCTAssertFalse(brief.contains("- squat (stop target"), brief)
+    }
+
+    func testStopTargetsMatchBarVelo() {
+        XCTAssertEqual(StopTarget.loss(for: "bench"), 0.40)
+        XCTAssertEqual(StopTarget.loss(for: "ohp"), 0.40)
+        XCTAssertEqual(StopTarget.loss(for: "over-head-press"), 0.40)
+        XCTAssertEqual(StopTarget.loss(for: "squat"), 0.35)
+        XCTAssertEqual(StopTarget.loss(for: "seal-row"), 0.35)
+        XCTAssertEqual(StopTarget.loss(for: "leg press"), 0.35)
+        XCTAssertEqual(StopTarget.loss(for: "dips"), 0.40)
+    }
 }

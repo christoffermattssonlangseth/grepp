@@ -280,15 +280,18 @@ enum CoachContext {
         training does: a lift moving faster than it did at the same load is \
         readiness to add load; the same load slower than usual is fatigue; across \
         the sets of one day, falling first-rep speed is fatigue building. Velocity \
-        loss within a set is proximity to failure: under about 20 % stays well short \
-        of it, 30–40 % is close (about one or two reps left), more is near or at \
-        failure; presses lose more speed before failing than squats and pulls. \
+        loss within a set is how this lifter stops sets: BarVelo calls the stop at \
+        \(Int(StopTarget.presses * 100)) % loss on presses and the bench and \(Int(StopTarget.others * 100)) % on \
+        other lifts, aimed at about one or two reps left. Use those targets, not \
+        generic loss bands: how much speed a set loses before failure differs by lift \
+        and person, and this lifter's own answers below outrank any rule. \
         Some lines go on to effort. "rir ~N" is BarVelo's estimate of the reps \
         left at the end of the set, from this lifter's own bar-velocity history; it \
-        is less certain the further the set stopped from failure. "left N" (N \
-        more reps were possible) or "fail" (the set ended on a failed rep) is the \
-        lifter's own report and outranks the estimate. RPE = 10 − reps in \
-        reserve. "v1rm" is a 1RM in kg estimated from the lift's load–velocity \
+        is less certain the further the set stopped from failure. "left N" means N \
+        more reps were possible; "left 0" means no reps were left: the last rep was \
+        completed and nothing was missed. "fail" means the set ended on a failed \
+        rep. Both are 0 in reserve. Either is the lifter's own report and outranks \
+        the estimate. RPE = 10 − reps in reserve. "v1rm" is a 1RM in kg estimated from the lift's load–velocity \
         profile: comparable across sessions for that lift, and typically more \
         conservative than a 1RM estimated from reps. "scale ±N% height,plate,rack" \
         says how the camera's metres were set: from the lifter's height, a plate \
@@ -301,7 +304,30 @@ enum CoachContext {
         <bar-velocity>
         \(lines.joined(separator: "\n"))
         </bar-velocity>
-        \(reserveBrief(file))\(profileBrief(file))
+        \(answersBrief(file))\(reserveBrief(file))\(profileBrief(file))
+
+        """
+    }
+
+    /// The lifter's own answers per lift, against its stop target: the loss
+    /// each answered set ended at and the reps left, so the coach reads loss
+    /// through this lifter's sets rather than a textbook's. Nothing without
+    /// answers.
+    static func answersBrief(_ file: String) -> String {
+        let lines = VelocityRecord.byLift(VelocityRecord.parse(file)).compactMap { lift, records -> String? in
+            let answered = records.filter { $0.ownReserve != nil && $0.mcv.count > 1 }.suffix(8)
+            guard !answered.isEmpty else { return nil }
+            let sets = answered.map { r -> String in
+                let loss = Int(((r.loss ?? 0) * 100).rounded())
+                let left = r.left == .failed ? "fail" : "\(r.ownReserve!) left"
+                return "\(Session.dateFormatter.string(from: r.date))\(r.setNumber.map { " set \($0)" } ?? ""): \(loss) % → \(left)"
+            }
+            return "\(lift) (stop target \(StopTarget.label(for: lift))): " + sets.joined(separator: "; ")
+        }
+        guard !lines.isEmpty else { return "" }
+        return """
+        The lifter's own answers, velocity loss at the end of the set → reps left:
+        \(lines.map { "- " + $0 }.joined(separator: "\n"))
 
         """
     }

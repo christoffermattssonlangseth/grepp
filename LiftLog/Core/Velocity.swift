@@ -466,3 +466,19 @@ struct VelocityOutbox: Codable, Equatable {
         entries.removeAll { sent.contains($0.id) }
     }
 }
+
+/// The last handoffs taken, kept across launches: BarVelo may deliver one
+/// link twice (a double tap, its outbox or "send to Grepp" resending after
+/// Grepp was killed), and a set already written to velocity.md must not be
+/// taken again as a new one.
+struct ReceivedVelocity: Codable, Equatable {
+    static let limit = 20
+    private(set) var sets: [VelocitySet] = []
+
+    /// Note a handoff. False when it was taken already.
+    mutating func take(_ set: VelocitySet) -> Bool {
+        guard !sets.contains(set) else { return false }
+        sets = Array((sets + [set]).suffix(Self.limit))
+        return true
+    }
+}

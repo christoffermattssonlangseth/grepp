@@ -107,4 +107,111 @@ final class VelocityLandingTests: XCTestCase {
         XCTAssertEqual(VelocitySet.RepsLeftChoice(nil), .none)
         XCTAssertNil(VelocitySet.RepsLeftChoice.none.left)
     }
+
+    // MARK: Surviving a kill
+
+    /// What the Log tab saves on every change, written and read back as a
+    /// relaunch would.
+    private func relaunched(_ d: SessionDraft) throws -> SessionDraft {
+        try JSONDecoder().decode(SessionDraft.self, from: JSONEncoder().encode(d))
+    }
+
+    func testHeldMeasurementComesBackAfterAKill() throws {
+        let s1 = set(73.5), s2 = set(73.5)
+        var held = measured(73.5)
+        held.left = .reps(2)                       // answered in Grepp before the kill
+        var riding = measured(73.5)
+        riding.mcv = [0.45, 0.41]
+        riding.left = .failed
+        var d = draft([s1, s2], held: held)
+        d.measurements = [s1.id: riding]
+        d.attachOffer = s2.id
+        d.repsNote = "BarVelo counted 3 · you had 8"
+        d.setsWhenMeasureOpened = 1
+        let back = try relaunched(d)
+        XCTAssertEqual(back, d)
+        XCTAssertEqual(back.measured?.left, .reps(2))
+        XCTAssertEqual(back.measurements?[s1.id]?.left, .failed)
+        XCTAssertEqual(back.attachOffer, s2.id)
+        XCTAssertEqual(back.repsNote, "BarVelo counted 3 · you had 8")
+        // Speeds held on their own are worth keeping.
+        var bare = SessionDraft(date: day, name: "", sets: [], isBodyweight: false,
+                                weightText: "", addedText: "", repsText: "", plan: nil, queue: [], restStart: nil)
+        bare.measured = held
+        XCTAssertFalse(bare.isEmpty)
+    }
+
+    func testAnOlderDraftHasNoOffer() throws {
+        let legacy = """
+        {"date":"2026-11-07","name":"bench","sets":[],"isBodyweight":false,
+         "weightText":"","addedText":"","repsText":"","queue":[]}
+        """
+        let d = try JSONDecoder().decode(SessionDraft.self, from: Data(legacy.utf8))
+        XCTAssertNil(d.attachOffer)
+        XCTAssertNil(d.repsNote)
+        XCTAssertNil(d.measured)
+    }
+
+    func testAttachAfterAKillLandsOnTheOfferedSet() throws {
+        let s1 = set(73.5), s2 = set(73.5)
+        var held = measured(73.5)
+        held.left = .reps(1)
+        var d = draft([s1, s2], held: held)
+        d.attachOffer = s2.id
+        d.repsNote = "BarVelo counted 3 · you had 8"
+        var back = try relaunched(d)
+        XCTAssertTrue(back.attachHeld(to: try XCTUnwrap(back.attachOffer)))
+        XCTAssertNil(back.measured)
+        XCTAssertNil(back.attachOffer)
+        XCTAssertNil(back.repsNote)
+        XCTAssertEqual(back.measurements?[s2.id]?.left, .reps(1), "the answer rides along")
+        // Finish numbers it as set 2, the set it was offered to.
+        let lines = VelocitySet.numbered(back.measurements!, committed: back.sets, dayLinesOfLift: [],
+                                         occurrence: nil, lift: "bench", on: day)
+        XCTAssertEqual(lines.map(\.setNumber), [2])
+        // Once is all: nothing held, nothing to attach; a set with speeds keeps them.
+        XCTAssertFalse(back.attachHeld(to: s1.id))
+        var again = draft([s1], held: measured(73.5))
+        again.measurements = [s1.id: riding()]
+        XCTAssertFalse(again.attachHeld(to: s1.id))
+        XCTAssertFalse(again.attachHeld(to: UUID()), "a set removed meanwhile")
+        XCTAssertNotNil(again.measured)
+    }
+    private func riding() -> VelocitySet { var v = measured(73.5); v.mcv = [0.5]; return v }
+
+    func testTheSameLinkAfterAKillIsOneSet() throws {
+        let s1 = set(73.5)
+        let v = measured(73.5)
+        // Held, answered since, then killed: the link delivered again is the same set.
+        var answered = v
+        answered.left = .reps(2)
+        let held = try relaunched(draft([s1], held: answered))
+        XCTAssertTrue(held.holds(v))
+        // Attached to a set: still the same set.
+        var landed = draft([s1], held: nil)
+        landed.measurements = [s1.id: answered]
+        XCTAssertTrue(try relaunched(landed).holds(v))
+        // Another set is not.
+        var other = v
+        other.mcv = [0.41]
+        XCTAssertFalse(held.holds(other))
+        XCTAssertFalse(draft([], held: nil).holds(v))
+    }
+
+    func testReceivedLinksAreRememberedAcrossALaunch() throws {
+        var seen = ReceivedVelocity()
+        let v = measured(73.5)
+        XCTAssertTrue(seen.take(v))
+        XCTAssertFalse(seen.take(v), "a double delivery")
+        var back = try JSONDecoder().decode(ReceivedVelocity.self, from: JSONEncoder().encode(seen))
+        XCTAssertFalse(back.take(v), "already written to velocity.md, say: not a new set")
+        // The last twenty are kept.
+        for i in 0..<ReceivedVelocity.limit {
+            var w = v
+            w.mcv = [0.5 + Double(i) / 100]
+            XCTAssertTrue(back.take(w))
+        }
+        XCTAssertEqual(back.sets.count, ReceivedVelocity.limit)
+        XCTAssertTrue(back.take(v), "forgotten after twenty more")
+    }
 }

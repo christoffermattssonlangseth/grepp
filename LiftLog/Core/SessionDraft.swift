@@ -30,10 +30,17 @@ struct SessionDraft: Codable, Equatable {
     /// set landed before the speeds came back can be offered them. Nil when
     /// BarVelo wasn't opened from here, and in older drafts.
     var setsWhenMeasureOpened: Int? = nil
+    /// The landed set the held measurement is offered to ("attach to set N"),
+    /// by id, so a kill while the question is up doesn't land the speeds on
+    /// the next set instead. Nil when there is no offer, and in older drafts.
+    var attachOffer: UUID? = nil
+    /// BarVelo counted other reps than were typed: the note shown over the
+    /// held measurement, with its "use N". Nil without, and in older drafts.
+    var repsNote: String? = nil
 
-    /// Nothing worth keeping: no lift chosen, nothing landed, nothing queued.
-    /// Numbers typed but not yet added don't count on their own.
-    var isEmpty: Bool { name.isEmpty && sets.isEmpty && queue.isEmpty }
+    /// Nothing worth keeping: no lift chosen, nothing landed, nothing queued,
+    /// no speeds held. Numbers typed but not yet added don't count on their own.
+    var isEmpty: Bool { name.isEmpty && sets.isEmpty && queue.isEmpty && measured == nil }
 
     /// The set the plan says comes next, if the plan has one left.
     var nextPlanned: WorkSet? {

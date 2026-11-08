@@ -42,6 +42,29 @@ extension VelocitySet {
 
 extension SessionDraft {
 
+    /// This handoff is already here, held or riding on a landed set: a
+    /// second delivery of the link, before or after a relaunch, is one set.
+    func holds(_ v: VelocitySet) -> Bool {
+        (measured.map { v.isSameHandoff(as: $0) } ?? false)
+            || (measurements ?? [:]).values.contains { v.isSameHandoff(as: $0) }
+    }
+
+    /// "attach to set N": the held speeds go on that landed set, with the
+    /// reps-left answer given meanwhile. False when nothing is held, the set
+    /// is gone, or it has speeds of its own already.
+    @discardableResult
+    mutating func attachHeld(to id: UUID) -> Bool {
+        guard let held = measured, sets.contains(where: { $0.id == id }),
+              measurements?[id] == nil else { return false }
+        var m = measurements ?? [:]
+        m[id] = held
+        measurements = m
+        measured = nil
+        attachOffer = nil
+        repsNote = nil
+        return true
+    }
+
     /// A set was just landed outside the Log screen (the lock screen's
     /// button): the held measurement rides on it when it was for this lift and
     /// this load, as a tap in the Log tab would have it. A measurement at
@@ -55,6 +78,8 @@ extension SessionDraft {
         m[set.id] = held
         measurements = m
         measured = nil
+        attachOffer = nil
+        repsNote = nil
         return true
     }
 }

@@ -206,8 +206,9 @@ struct VelocityRecord: Equatable {
 
     // MARK: - Same load
 
-    /// The latest set against the most recent set of the same lift at the same
-    /// load on an earlier day.
+    /// The latest day's first set at a load against the first set at that
+    /// load on the most recent earlier day that had one: both the least tired
+    /// set of their day, so a fatigued set 3 isn't read against a fresh set 1.
     struct Comparison: Equatable {
         var latest: VelocityRecord
         var earlier: VelocityRecord
@@ -215,29 +216,39 @@ struct VelocityRecord: Equatable {
         var delta: Double
         /// The same as a share of the earlier, in percent.
         var percent: Double
+        /// Differences this small are the same speed, as far as the camera can
+        /// tell, m/s: 0.02, or the stated scale error at that speed if larger.
+        var sameBand: Double = Comparison.minBand
 
-        /// Within ±0.01 m/s: the same velocity, as far as a camera can tell.
-        var isSame: Bool { abs(delta) <= 0.01 + 1e-9 }
+        static let minBand = 0.02
+
+        var isSame: Bool { abs(delta) <= sameBand + 1e-9 }
         var isFaster: Bool { !isSame && delta > 0 }
 
-        /// `at 110 kg: 0.03 m/s faster than 29 Sep`, the day as `day` spells it.
+        /// `at 110 kg, first set: 0.03 m/s faster than 29 Sep`, the day as `day` spells it.
         func sentence(day: (Date) -> String) -> String {
             let when = day(earlier.date)
-            if isSame { return "at \(latest.loadLabel): same velocity as \(when)" }
-            return "at \(latest.loadLabel): \(VelocitySet.speed(abs(delta))) m/s \(delta > 0 ? "faster" : "slower") than \(when)"
+            if isSame { return "at \(latest.loadLabel), first set: same velocity as \(when)" }
+            return "at \(latest.loadLabel), first set: \(VelocitySet.speed(abs(delta))) m/s \(delta > 0 ? "faster" : "slower") than \(when)"
         }
     }
 
-    /// From one lift's sets, oldest first (`records(for:in:)`). Nil when the
-    /// latest has no earlier day at its load.
+    /// From one lift's sets, oldest first (`records(for:in:)`). The latest
+    /// day's sets in order; the first whose load an earlier day also had is
+    /// compared with that day's first set at the load. Nil when none was.
     static func sameLoadComparison(_ sorted: [VelocityRecord]) -> Comparison? {
-        guard let latest = sorted.last,
-              let earlier = sorted.last(where: { $0.date < latest.date && $0.sameLoad(as: latest) }),
-              earlier.best > 0
-        else { return nil }
-        let delta = ((latest.best - earlier.best) * 100).rounded() / 100
-        return Comparison(latest: latest, earlier: earlier, delta: delta,
-                          percent: (latest.best - earlier.best) / earlier.best * 100)
+        guard let day = sorted.last?.date else { return nil }
+        for latest in sorted where latest.date == day {
+            guard let earlierDay = sorted.last(where: { $0.date < day && $0.sameLoad(as: latest) })?.date,
+                  let earlier = sorted.first(where: { $0.date == earlierDay && $0.sameLoad(as: latest) }),
+                  earlier.best > 0 else { continue }
+            let delta = ((latest.best - earlier.best) * 100).rounded() / 100
+            let scale = max(latest.scale ?? 0, earlier.scale ?? 0)
+            return Comparison(latest: latest, earlier: earlier, delta: delta,
+                              percent: (latest.best - earlier.best) / earlier.best * 100,
+                              sameBand: max(Comparison.minBand, scale * earlier.best))
+        }
+        return nil
     }
 }
 

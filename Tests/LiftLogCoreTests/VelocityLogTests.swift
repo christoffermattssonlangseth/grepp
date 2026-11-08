@@ -152,7 +152,7 @@ final class VelocityLogTests: XCTestCase {
         XCTAssertEqual(c.delta, 0.03, accuracy: 1e-9)
         XCTAssertEqual(c.percent, 0.03 / 0.39 * 100, accuracy: 1e-6)
         XCTAssertTrue(c.isFaster)
-        XCTAssertEqual(c.sentence(day: short), "at 110 kg: 0.03 m/s faster than 29 Sep")
+        XCTAssertEqual(c.sentence(day: short), "at 110 kg, first set: 0.03 m/s faster than 29 Sep")
     }
 
     func testSameLoadSlowerSameAndNone() throws {
@@ -167,15 +167,51 @@ final class VelocityLogTests: XCTestCase {
         let slower = try XCTUnwrap(compare(["2026-09-20 squat 110.004x5 mcv 0.47", squat1006]))
         XCTAssertEqual(slower.delta, -0.05, accuracy: 1e-9)
         XCTAssertFalse(slower.isFaster)
-        XCTAssertEqual(slower.sentence(day: short), "at 110 kg: 0.05 m/s slower than 20 Sep")
+        XCTAssertEqual(slower.sentence(day: short), "at 110 kg, first set: 0.05 m/s slower than 20 Sep")
 
         let same = try XCTUnwrap(compare(["2026-09-20 squat 110x5 mcv 0.41", squat1006]))
         XCTAssertTrue(same.isSame)
-        XCTAssertEqual(same.sentence(day: short), "at 110 kg: same velocity as 20 Sep")
+        XCTAssertEqual(same.sentence(day: short), "at 110 kg, first set: same velocity as 20 Sep")
 
         // The most recent earlier one at the load, not the first.
         let recent = try XCTUnwrap(compare(["2026-09-01 squat 110x5 mcv 0.30", "2026-09-20 squat 110x5 mcv 0.40", squat1006]))
         XCTAssertEqual(recent.earlier.date, day("2026-09-20"))
+    }
+
+    func testSameLoadFirstSetAgainstFirstSet() throws {
+        func compare(_ lines: [String]) -> VelocityRecord.Comparison? {
+            VelocityRecord.sameLoadComparison(VelocityRecord.records(for: "bench", in: VelocityRecord.parse(lines.joined(separator: "\n"))))
+        }
+        // Today's tired set 3 isn't read against last week's fresh set 1:
+        // set 1 against set 1.
+        let c = try XCTUnwrap(compare([
+            "2026-10-31 bench-press set 1 73.5x8 mcv 0.38 0.30 loss 21%",
+            "2026-10-31 bench-press set 2 73.5x8 mcv 0.34 0.28 loss 18%",
+            "2026-11-07 bench-press set 1 73.5x8 mcv 0.42 0.27 loss 36%",
+            "2026-11-07 bench-press set 3 73.5x12 mcv 0.33 0.19 loss 42% left 0"]))
+        XCTAssertEqual(c.latest.setNumber, 1)
+        XCTAssertEqual(c.earlier.setNumber, 1)
+        XCTAssertEqual(c.delta, 0.04, accuracy: 1e-9)
+        // A lighter first set today with no match: the first set that has one.
+        let warm = try XCTUnwrap(compare([
+            "2026-10-31 bench-press set 1 73.5x8 mcv 0.38",
+            "2026-11-07 bench-press set 1 60x8 mcv 0.55",
+            "2026-11-07 bench-press set 2 73.5x8 mcv 0.40"]))
+        XCTAssertEqual(warm.latest.setNumber, 2)
+    }
+
+    func testSameBandIsTheCamerasError() throws {
+        func compare(_ lines: [String]) -> VelocityRecord.Comparison? {
+            VelocityRecord.sameLoadComparison(VelocityRecord.records(for: "squat", in: VelocityRecord.parse(lines.joined(separator: "\n"))))
+        }
+        // 0.02 m/s apart: the same, as far as a camera tells.
+        XCTAssertTrue(try XCTUnwrap(compare(["2026-09-20 squat 110x5 mcv 0.40", "2026-10-06 squat 110x5 mcv 0.42"])).isSame)
+        XCTAssertFalse(try XCTUnwrap(compare(["2026-09-20 squat 110x5 mcv 0.40", "2026-10-06 squat 110x5 mcv 0.43"])).isSame)
+        // ±8% scale at 0.50 m/s is 0.04: a 0.03 gain is within it.
+        let wide = try XCTUnwrap(compare(["2026-09-20 squat 110x5 mcv 0.50 scale ±8% height",
+                                          "2026-10-06 squat 110x5 mcv 0.53 scale ±2% height"]))
+        XCTAssertEqual(wide.sameBand, 0.04, accuracy: 1e-9)
+        XCTAssertTrue(wide.isSame)
     }
 
     func testLatestV1RM() throws {

@@ -214,4 +214,13 @@ final class VelocityLandingTests: XCTestCase {
         XCTAssertEqual(back.sets.count, ReceivedVelocity.limit)
         XCTAssertTrue(back.take(v), "forgotten after twenty more")
     }
+
+    func testAnOpenAttachOfferKeepsTheSpeedsHeld() {
+        let v = VelocitySet(date: day, lift: "squat", load: 100, mcv: [0.5, 0.45])
+        var d = draft([WorkSet(weight: 100, added: nil, reps: 5)], held: v, name: "squat")
+        d.attachOffer = d.sets[0].id
+        d.sets.append(WorkSet(weight: 100, added: nil, reps: 5))   // landed from the lock screen
+        XCTAssertFalse(d.takeHeldMeasurement())
+        XCTAssertEqual(d.measured, v)
+    }
 }

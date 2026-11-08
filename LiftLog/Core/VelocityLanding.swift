@@ -71,7 +71,9 @@ extension SessionDraft {
     /// another load stays held for the next set. True when it was taken.
     @discardableResult
     mutating func takeHeldMeasurement() -> Bool {
-        guard let held = measured, let set = sets.last, !name.isEmpty,
+        // While "attach to set N?" is still open, which set the speeds belong to is the
+        // lifter's answer, not a guess from the next set landed: they stay held.
+        guard attachOffer == nil, let held = measured, let set = sets.last, !name.isEmpty,
               Analytics.matches(name, held.lift), measurements?[set.id] == nil,
               held.matchesLoad(of: set) else { return false }
         var m = measurements ?? [:]

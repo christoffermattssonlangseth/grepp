@@ -64,6 +64,11 @@ struct LogView: View {
     /// takes its measurement with it; a lift discarded takes them all, since
     /// speeds for a set never logged have nothing to name.
     @State private var measurements: [UUID: VelocitySet] = [:]
+    /// Sets landed when BarVelo was opened from here; nil when it wasn't.
+    @State private var setsWhenMeasureOpened: Int?
+    /// The set landed before the held measurement came back, offered it:
+    /// "attach to set N".
+    @State private var attachOffer: UUID?
 
     @State private var showingPicker = false
     /// The lift card the picker grows out of, and shrinks back into.
@@ -264,7 +269,8 @@ struct LogView: View {
                                  weightText: weightText, addedText: addedText, repsText: repsText,
                                  plan: plan, queue: queue, restStart: restStart,
                                  dateChosen: dateChosen, target: editing,
-                                 measured: measured, measurements: measurements.isEmpty ? nil : measurements)
+                                 measured: measured, measurements: measurements.isEmpty ? nil : measurements,
+                                 setsWhenMeasureOpened: setsWhenMeasureOpened)
         return draft.isEmpty ? nil : draft
     }
 
@@ -287,6 +293,7 @@ struct LogView: View {
         queue = d.queue
         measured = d.measured
         measurements = d.measurements ?? [:]
+        setsWhenMeasureOpened = d.setsWhenMeasureOpened
         if let start = d.restStart, Date().timeIntervalSince(start) < 30 * 60 { restStart = start }
         // Whether or not a rest came back, the lock screen must agree: this is
         // what clears a Live Activity left over from a session that just stopped.
@@ -307,6 +314,10 @@ struct LogView: View {
         plan = d.plan
         queue = d.queue
         restStart = d.restStart
+        // The lock screen's set may have taken the held speeds (Store.sameAgain).
+        measured = d.measured
+        measurements = d.measurements ?? [:]
+        if measured == nil { repsNote = nil; attachOffer = nil }
         if grew {
             if record(at: sets.count - 1) != nil { recordSet += 1 }
             setAdded += 1
@@ -374,7 +385,8 @@ struct LogView: View {
     private func applyVelocity() {
         guard let v = store.velocityRequest else { return }
         store.velocityRequest = nil
-        guard v != measured, !measurements.values.contains(v) else { return }
+        guard !(measured.map { v.isSameHandoff(as: $0) } ?? false),
+              !measurements.values.contains(where: { v.isSameHandoff(as: $0) }) else { return }
         let sameLift = !name.isEmpty && Analytics.matches(name, v.lift)
         guard sameLift || (name.isEmpty && sets.isEmpty) else {
             store.enqueueVelocity([v])
@@ -396,6 +408,23 @@ struct LogView: View {
             repsNote = nil
         }
         measured = v
+        // The set may already be landed: tapped, or from the lock screen,
+        // while BarVelo was measuring it. Offer it the speeds.
+        attachOffer = sameLift ? v.attachCandidate(sets: sets, measurements: measurements,
+                                                   setsWhenOpened: setsWhenMeasureOpened).map { sets[$0].id } : nil
+        setsWhenMeasureOpened = nil
+    }
+
+    /// "attach to set N": the held speeds go on that set, already landed, and
+    /// the fields go back to lining up the next one.
+    private func attachHeld(to id: UUID) {
+        guard let held = measured, sets.contains(where: { $0.id == id }) else { return }
+        measurements[id] = held
+        measured = nil
+        repsNote = nil
+        attachOffer = nil
+        repsText = ""
+        if let plan, sets.count < plan.count { prefill(plan[sets.count]) }
     }
 
     /// A measurement held but not landed, when the lift it was for goes:
@@ -404,7 +433,26 @@ struct LogView: View {
         guard let held = measured else { return }
         measured = nil
         repsNote = nil
+        attachOffer = nil
         store.enqueueVelocity([held])
+    }
+
+    /// "reps left?" as chips: fail · 0 · 1 · 2 · 3+, the answer (BarVelo's,
+    /// if it sent one) lit; a lit chip tapped again takes the answer back.
+    private func repsLeftChips(_ current: VelocitySet.Left?, set: @escaping (VelocitySet.Left?) -> Void) -> some View {
+        let picked = VelocitySet.RepsLeftChoice(current)
+        return HStack(spacing: 6) {
+            Text("reps left?").font(.caption).foregroundStyle(.secondary)
+            ForEach(VelocitySet.RepsLeftChoice.allCases.filter { $0 != .none }, id: \.self) { c in
+                Button(c.short) { set(c == picked ? nil : c.left) }
+                    .buttonStyle(c == picked ? .panelProminent : .panel)
+                    .controlSize(.small)
+                    .font(.caption.weight(.semibold).monospacedDigit())
+                    .accessibilityLabel(c.label)
+                    .accessibilityAddTraits(c == picked ? .isSelected : [])
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     private var barVeloInstalled: Bool {
@@ -423,10 +471,33 @@ struct LogView: View {
                 .foregroundStyle(Theme.accent)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 if let repsNote {
-                    Text(repsNote)
-                        .font(.caption)
-                        .foregroundStyle(Theme.warning)
-                        .frame(maxWidth: .infinity, alignment: .leading)
+                    HStack(spacing: 8) {
+                        Text(repsNote)
+                            .font(.caption)
+                            .foregroundStyle(Theme.warning)
+                        Spacer()
+                        // One tap to take BarVelo's count instead.
+                        Button("use \(measured.reps)") {
+                            repsText = String(measured.reps)
+                            self.repsNote = nil
+                        }
+                        .font(.caption.weight(.semibold))
+                        .buttonStyle(.panel)
+                        .controlSize(.small)
+                    }
+                }
+                repsLeftChips(measured.left) { self.measured?.left = $0 }
+                if let id = attachOffer, let idx = sets.firstIndex(where: { $0.id == id }),
+                   measurements[id] == nil {
+                    HStack(spacing: 8) {
+                        Button("attach to set \(idx + 1)") { attachHeld(to: id) }
+                            .buttonStyle(.panelProminent)
+                        Button("it's the next set") { attachOffer = nil }
+                            .buttonStyle(.panel)
+                    }
+                    .font(.caption.weight(.semibold))
+                    .controlSize(.small)
+                    .frame(maxWidth: .infinity, alignment: .leading)
                 }
                 if measured.isFromNewerBarVelo {
                     Text("BarVelo is newer than Grepp — update Grepp")
@@ -439,6 +510,7 @@ struct LogView: View {
                 // A barbell lift without its weight would come back as bodyweight.
                 let needsWeight = !isBodyweight && parsedWeight == nil
                 Button {
+                    setsWhenMeasureOpened = sets.count
                     UIApplication.shared.open(VelocitySet.measureURL(
                         lift: MuscleMap.canonical(name),
                         load: isBodyweight ? nil : parsedWeight,
@@ -1014,11 +1086,30 @@ struct LogView: View {
                             .background(Theme.accent, in: RoundedRectangle(cornerRadius: Theme.corner, style: .continuous))
                         Text(set.loadLabel)
                             .font(.body.weight(.semibold))
-                        if measurements[set.id] != nil {
-                            Image(systemName: "gauge.with.dots.needle.67percent")
-                                .font(.caption)
+                        if let m = measurements[set.id] {
+                            // Reps left can still be answered here, until Finish.
+                            Menu {
+                                Text(m.summary)
+                                Picker("reps left?", selection: Binding(
+                                    get: { VelocitySet.RepsLeftChoice(m.left) },
+                                    // An unchanged pick keeps BarVelo's own count (5 shows as 3+).
+                                    set: { c in
+                                        if c != VelocitySet.RepsLeftChoice(measurements[set.id]?.left) {
+                                            measurements[set.id]?.left = c.left
+                                        }
+                                    })) {
+                                    ForEach(VelocitySet.RepsLeftChoice.allCases, id: \.self) { Text($0.label).tag($0) }
+                                }
+                            } label: {
+                                HStack(spacing: 3) {
+                                    Image(systemName: "gauge.with.dots.needle.67percent")
+                                    if let left = m.left { Text(VelocitySet.RepsLeftChoice(left).short) }
+                                }
+                                .font(.caption.weight(.semibold))
                                 .foregroundStyle(Theme.accent)
-                                .accessibilityLabel("Bar velocity measured")
+                            }
+                            .accessibilityLabel("Bar velocity measured")
+                            .accessibilityValue(m.left.map { VelocitySet.RepsLeftChoice($0).label } ?? "reps left not answered")
                         }
                         if let record = record(at: idx) { RecordBadge(record: record) }
                         Spacer()
@@ -1044,7 +1135,7 @@ struct LogView: View {
                 }
                 Button {
                     if let last = sets.last {
-                        land(WorkSet(weight: last.weight, added: last.added, reps: last.reps))
+                        land(WorkSet(weight: last.weight, added: last.added, reps: last.reps), repeating: true)
                     }
                 } label: {
                     Label("repeat last set", systemImage: "arrow.uturn.down")
@@ -1199,8 +1290,10 @@ struct LogView: View {
     }
 
     /// A set is done: record it, start the rest, feel it, and line up the next.
-    /// The one path for both add-set and repeat-last.
-    private func land(_ set: WorkSet) {
+    /// The one path for both add-set and repeat-last. `repeating`: the last set
+    /// again, which takes held speeds only at their load — a measurement of a
+    /// heavier set isn't this one.
+    private func land(_ set: WorkSet, repeating: Bool = false) {
         // The first set of a lift is where a wrong day gets caught — before
         // anything is on the clock, not after the whole lift is done.
         if sets.isEmpty, needsDayCheck {
@@ -1221,16 +1314,22 @@ struct LogView: View {
         repsText = ""
         // Measured in BarVelo: the speeds ride on this very set, and Finish
         // numbers them by where it sits then. Measured for another lift, they
-        // are kept without a set.
+        // are kept without a set. A repeat at another load leaves them held
+        // for the set they were measured on.
         if let held = measured {
             if Analytics.matches(name, held.lift) {
-                measurements[set.id] = held
+                if !repeating || held.matchesLoad(of: set) {
+                    measurements[set.id] = held
+                    measured = nil
+                    repsNote = nil
+                }
             } else {
                 store.enqueueVelocity([held])
+                measured = nil
+                repsNote = nil
             }
         }
-        measured = nil
-        repsNote = nil
+        attachOffer = nil
         focus = nil
         // The day's clock starts only for today's session — a set corrected on
         // a past day must not make that day "the session in progress".

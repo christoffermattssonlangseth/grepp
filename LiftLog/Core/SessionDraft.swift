@@ -26,6 +26,10 @@ struct SessionDraft: Codable, Equatable {
     /// Measurements riding on landed sets, by the set's id, until Finish
     /// writes them to velocity.md. Nil in older drafts.
     var measurements: [UUID: VelocitySet]? = nil
+    /// How many sets were landed when BarVelo was opened to measure, so a
+    /// set landed before the speeds came back can be offered them. Nil when
+    /// BarVelo wasn't opened from here, and in older drafts.
+    var setsWhenMeasureOpened: Int? = nil
 
     /// Nothing worth keeping: no lift chosen, nothing landed, nothing queued.
     /// Numbers typed but not yet added don't count on their own.

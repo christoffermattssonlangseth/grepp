@@ -1080,6 +1080,9 @@ final class Store: ObservableObject {
             return
         }
         d.sets.append(WorkSet(weight: set.weight, added: set.added, reps: set.reps))
+        // Measured in BarVelo and landed here: the speeds ride on this set, as
+        // a tap in the Log tab would put them, when its load matches.
+        d.takeHeldMeasurement()
         d.restStart = Date()
         // Only today's session has a clock: a backfilled day timed from now
         // would post to Strava as today.

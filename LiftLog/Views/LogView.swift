@@ -270,7 +270,8 @@ struct LogView: View {
                                  plan: plan, queue: queue, restStart: restStart,
                                  dateChosen: dateChosen, target: editing,
                                  measured: measured, measurements: measurements.isEmpty ? nil : measurements,
-                                 setsWhenMeasureOpened: setsWhenMeasureOpened)
+                                 setsWhenMeasureOpened: setsWhenMeasureOpened,
+                                 attachOffer: attachOffer, repsNote: repsNote)
         return draft.isEmpty ? nil : draft
     }
 
@@ -294,6 +295,9 @@ struct LogView: View {
         measured = d.measured
         measurements = d.measurements ?? [:]
         setsWhenMeasureOpened = d.setsWhenMeasureOpened
+        // The question that was up when the app was killed is up again.
+        attachOffer = d.attachOffer
+        repsNote = d.repsNote
         if let start = d.restStart, Date().timeIntervalSince(start) < 30 * 60 { restStart = start }
         // Whether or not a rest came back, the lock screen must agree: this is
         // what clears a Live Activity left over from a session that just stopped.
@@ -317,6 +321,8 @@ struct LogView: View {
         // The lock screen's set may have taken the held speeds (Store.sameAgain).
         measured = d.measured
         measurements = d.measurements ?? [:]
+        attachOffer = d.attachOffer
+        repsNote = d.repsNote
         if measured == nil { repsNote = nil; attachOffer = nil }
         if grew {
             if record(at: sets.count - 1) != nil { recordSet += 1 }
@@ -385,8 +391,7 @@ struct LogView: View {
     private func applyVelocity() {
         guard let v = store.velocityRequest else { return }
         store.velocityRequest = nil
-        guard !(measured.map { v.isSameHandoff(as: $0) } ?? false),
-              !measurements.values.contains(where: { v.isSameHandoff(as: $0) }) else { return }
+        guard !(currentDraft?.holds(v) ?? false) else { return }
         let sameLift = !name.isEmpty && Analytics.matches(name, v.lift)
         guard sameLift || (name.isEmpty && sets.isEmpty) else {
             store.enqueueVelocity([v])
@@ -418,11 +423,11 @@ struct LogView: View {
     /// "attach to set N": the held speeds go on that set, already landed, and
     /// the fields go back to lining up the next one.
     private func attachHeld(to id: UUID) {
-        guard let held = measured, sets.contains(where: { $0.id == id }) else { return }
-        measurements[id] = held
-        measured = nil
-        repsNote = nil
-        attachOffer = nil
+        guard var d = currentDraft, d.attachHeld(to: id) else { return }
+        measurements = d.measurements ?? [:]
+        measured = d.measured
+        repsNote = d.repsNote
+        attachOffer = d.attachOffer
         repsText = ""
         if let plan, sets.count < plan.count { prefill(plan[sets.count]) }
     }

@@ -152,11 +152,22 @@ final class Store: ObservableObject {
 
     /// A set BarVelo measured and handed back. The Log tab consumes it: the
     /// load and rep count go into the fields, landed with the usual tap.
-    @Published var velocityRequest: VelocitySet?
+    /// Kept until the Log tab has taken it into its draft, so a kill in
+    /// between doesn't lose the set.
+    @Published var velocityRequest: VelocitySet? {
+        didSet { defaults.set(velocityRequest.flatMap { try? JSONEncoder().encode($0) }, forKey: velocityRequestKey) }
+    }
 
-    /// Handoffs already taken this run. The same URL delivered twice — a
-    /// relaunch replaying it, a double tap in BarVelo — is one set, not two.
-    private var receivedVelocity: [VelocitySet] = []
+    /// Handoffs already taken, kept across launches. The same URL delivered
+    /// twice — a relaunch replaying it, a double tap in BarVelo, its outbox
+    /// resending after Grepp was killed — is one set, not two.
+    private var receivedVelocity: ReceivedVelocity {
+        get {
+            defaults.data(forKey: receivedVelocityKey)
+                .flatMap { try? JSONDecoder().decode(ReceivedVelocity.self, from: $0) } ?? ReceivedVelocity()
+        }
+        set { defaults.set(try? JSONEncoder().encode(newValue), forKey: receivedVelocityKey) }
+    }
 
     /// Take a `grepp://velocity` handoff: open the Log tab with the set. The
     /// Log tab rides the speeds on the set they're landed as, and at Finish
@@ -164,8 +175,9 @@ final class Store: ObservableObject {
     /// velocity.md (`enqueueVelocity`); a set it can't take is queued at once,
     /// unnumbered.
     func receiveVelocity(_ set: VelocitySet) {
-        guard !receivedVelocity.contains(set) else { selectedTab = 0; return }
-        receivedVelocity = Array((receivedVelocity + [set]).suffix(20))
+        var seen = receivedVelocity
+        guard seen.take(set) else { selectedTab = 0; return }
+        receivedVelocity = seen
         velocityRequest = set
         selectedTab = 0
         // The update note lasts until a link that reads in full replaces it.
@@ -326,6 +338,8 @@ final class Store: ObservableObject {
     private var pendingKey: String { "\(keyPrefix)\(location)_pending" }
     private var velocityOutboxKey: String { "\(keyPrefix)_velocity_outbox" }
     private let draftKey = "session_draft"
+    private let velocityRequestKey = "velocity_request"
+    private let receivedVelocityKey = "velocity_received"
     private let plansKey = "plan_records"
     private let sessionStartsKey = "session_starts"
     private let sessionEndsKey = "session_ends"
@@ -346,6 +360,9 @@ final class Store: ObservableObject {
 
     init() {
         draft = loadDraft()
+        // A handoff the Log tab hadn't taken yet when the app was killed.
+        velocityRequest = defaults.data(forKey: velocityRequestKey)
+            .flatMap { try? JSONDecoder().decode(VelocitySet.self, from: $0) }
         plans = loadPlans()
         stravaPosts = defaults.data(forKey: stravaPostsKey)
             .flatMap { try? JSONDecoder().decode([String: Int].self, from: $0) } ?? [:]

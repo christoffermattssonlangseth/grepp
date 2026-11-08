@@ -72,6 +72,35 @@ final class LoadVelocityTests: XCTestCase {
         XCTAssertTrue(why.contains("10% apart"), why)
     }
 
+    func testTheRealSquatsSayWhyThereIsNoOneRepMax() throws {
+        // The owner's three squats: a line, but not a clear one, from sets
+        // filmed before and after the rulers were checked.
+        let real = records("""
+        2026-09-27 squat set 1 105x8 mcv 0.55 0.55 0.54 0.56 0.53 0.50 0.53 0.51 loss 9%
+        2026-10-06 squat set 3 110x12 mcv 0.39 0.41 0.42 0.41 0.37 0.36 0.37 0.35 0.35 0.33 0.35 0.32 loss 24%
+        2026-11-07 squat set 3 92.5x10 mcv 0.51 0.54 0.56 0.58 0.52 0.53 0.52 0.50 0.49 0.47 loss 19% scale ±2% height
+        """)
+        let at = Session.dateFormatter.date(from: "2026-11-08")!
+        guard case .profile(let p) = LoadVelocityProfile.fit(real, lift: "squat", now: at) else { return XCTFail() }
+        XCTAssertFalse(p.isClear)
+        XCTAssertNil(p.oneRepMax)
+        XCTAssertEqual(p.noOneRepMaxReason, "line not clear yet (r² \(String(format: "%.2f", p.rSquared))): no 1RM or target loads")
+        XCTAssertEqual(p.calibrationNote, "mixed camera calibrations: 1 of 3 sets with a checked scale")
+        let line = p.coachLine(lift: "squat", readiness: nil)
+        XCTAssertTrue(line.contains("line not clear yet"), line)
+        XCTAssertTrue(line.contains("mixed camera calibrations"), line)
+    }
+
+    func testAClearProfileHasNoExcuses() throws {
+        let p = try profile(clean)
+        XCTAssertNil(p.noOneRepMaxReason)
+        XCTAssertNil(p.calibrationNote)
+        // A lift with no typical threshold and no failures: no 1RM, and why.
+        guard case .profile(let row) = fit(clean.replacingOccurrences(of: "squat", with: "seal-row"), lift: "seal-row")
+        else { return XCTFail() }
+        XCTAssertEqual(row.noOneRepMaxReason, "no 1RM: no failure velocity for this lift yet")
+    }
+
     func testAllAtOneLoadAsksForAnotherLoad() {
         let same = records("""
         2026-10-01 squat set 1 100x5 mcv 0.50 0.48 loss 4%

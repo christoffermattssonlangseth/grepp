@@ -28,6 +28,11 @@ struct LoadVelocityProfile: Equatable {
         var date: Date
         var load: Double
         var mcv: Double
+        /// How the camera's metres were set for that set: `scale ±N%` and its
+        /// rulers, when the line says (`VelocityRecord.scale`, `rulers`).
+        var scale: Double? = nil
+        var rulers: [String] = []
+        var isCalibrated: Bool { scale != nil || !rulers.isEmpty }
     }
 
     /// Sets older than this many days, counted back from today, are left out.
@@ -73,6 +78,32 @@ struct LoadVelocityProfile: Equatable {
         // The line puts the 1RM below a load already lifted (a heavy set near the
         // threshold): the 1RM is at least that load.
         return top
+    }
+
+    /// Why the profile gives no 1RM, in a few words for the card; nil when it
+    /// gives one. `line not clear yet (r² 0.63): no 1RM or target loads`.
+    var noOneRepMaxReason: String? {
+        guard oneRepMax == nil else { return nil }
+        if !isClear {
+            return "line not clear yet (r² \(String(format: "%.2f", rSquared))): no 1RM or target loads"
+        }
+        guard threshold != nil else { return "no 1RM: no failure velocity for this lift yet" }
+        return "no 1RM: the line meets the failure velocity more than 30% past the heaviest set"
+    }
+
+    /// Sets measured with different camera calibrations, which can move the
+    /// absolute speeds apart by more than the line's scatter: `mixed camera
+    /// calibrations: 1 of 3 sets with a checked scale`. Nil when all agree.
+    var calibrationNote: String? {
+        let checked = points.filter(\.isCalibrated)
+        if !checked.isEmpty, checked.count < points.count {
+            return "mixed camera calibrations: \(checked.count) of \(points.count) sets with a checked scale"
+        }
+        let kinds = Set(checked.map { $0.rulers.sorted().joined(separator: ",") })
+        if kinds.count > 1 {
+            return "mixed camera calibrations: rulers \(kinds.sorted().map { $0.isEmpty ? "unnamed" : $0 }.joined(separator: " / "))"
+        }
+        return nil
     }
 
     /// How much faster (+) or slower (−) a set moved than the line predicts at
@@ -122,7 +153,7 @@ struct LoadVelocityProfile: Equatable {
             return .needsMore("No measured sets in the last 12 weeks; the latest was on "
                 + newest.formatted(.dateTime.day().month(.abbreviated).year()) + ".")
         }
-        let points = recent.map { Point(date: $0.date, load: $0.load!, mcv: $0.best) }
+        let points = recent.map { Point(date: $0.date, load: $0.load!, mcv: $0.best, scale: $0.scale, rulers: $0.rulers) }
         let loads = points.map(\.load)
         let lo = loads.min()!, hi = loads.max()!
         let range = lo == hi ? "\(WorkSet.formatWeight(lo)) kg" : "\(WorkSet.formatWeight(lo))–\(WorkSet.formatWeight(hi)) kg"
@@ -227,6 +258,8 @@ struct LoadVelocityProfile: Equatable {
             parts.append("est. 1RM ≈ \(WorkSet.formatWeight((rm / 2.5).rounded() * 2.5)) kg at "
                          + "\(VelocitySet.speed(t)) m/s (\(thresholdIsOwn ? "own" : "typical") threshold)")
         }
+        if let why = noOneRepMaxReason { parts.append(why) }
+        if let note = calibrationNote { parts.append(note) }
         if let (r, d) = readiness, let load = r.load {
             parts.append("latest day's first set, \(WorkSet.formatWeight(load)) kg: \(Self.readinessText(d))")
         }

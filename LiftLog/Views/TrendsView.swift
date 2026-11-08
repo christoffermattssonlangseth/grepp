@@ -476,16 +476,24 @@ struct TrendsView: View {
                     .accessibilityElement(children: .combine)
                 }
 
-                // The profile's own 1RM, on its card, takes over from BarVelo's once there is one.
+                // The profile's own 1RM, on its card, takes over from BarVelo's once
+                // there is one. Until then BarVelo's is shown as BarVelo's, and
+                // said to be unconfirmed when the profile below refuses one.
                 if !profileHasOneRepMax, let r = figures.v1rm, let v1rm = r.v1rm {
-                    HStack(alignment: .firstTextBaseline, spacing: 6) {
-                        Text("velocity 1RM").font(.caption).foregroundStyle(.secondary)
-                        Spacer()
-                        Text("\(WorkSet.formatWeight(v1rm)) kg")
-                            .font(Theme.serif(.title3, weight: .medium))
-                            .monospacedDigit()
-                        Text(r.date, format: .dateTime.day().month(.abbreviated))
-                            .font(.caption2).foregroundStyle(.tertiary)
+                    VStack(alignment: .leading, spacing: 2) {
+                        HStack(alignment: .firstTextBaseline, spacing: 6) {
+                            Text("BarVelo's 1RM estimate").font(.caption).foregroundStyle(.secondary)
+                            Spacer()
+                            Text("\(WorkSet.formatWeight(v1rm)) kg")
+                                .font(Theme.serif(.title3, weight: .medium))
+                                .monospacedDigit()
+                            Text(r.date, format: .dateTime.day().month(.abbreviated))
+                                .font(.caption2).foregroundStyle(.tertiary)
+                        }
+                        if figures.profileFit != .none {
+                            Text("not confirmed: the profile below doesn't give a 1RM yet")
+                                .font(.caption2).foregroundStyle(.tertiary)
+                        }
                     }
                     .accessibilityElement(children: .combine)
                 }
@@ -582,6 +590,15 @@ struct TrendsView: View {
                     .font(.caption2).foregroundStyle(.tertiary)
             }
             .accessibilityElement(children: .combine)
+        } else if let why = p.noOneRepMaxReason {
+            Text(why)
+                .font(.footnote).foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        if let note = p.calibrationNote {
+            Text(note + ": absolute speeds may not line up")
+                .font(.caption).foregroundStyle(Theme.warning)
+                .fixedSize(horizontal: false, vertical: true)
         }
         if let (r, d) = figures.profileReadiness, let load = r.load {
             let color = d >= 3 ? Theme.progressing : (d <= -3 ? Theme.stalled : Color.secondary)

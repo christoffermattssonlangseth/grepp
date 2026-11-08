@@ -794,7 +794,7 @@ struct TrendsView: View {
                 .fixedSize(horizontal: false, vertical: true)
         }
 
-        Text("Estimates assume the same filming setup. Answer “reps left?” in BarVelo, or mark failed sets, to sharpen them.")
+        Text("Estimates assume the same filming setup. Answer “reps left?” in BarVelo, or on a measured set in Log before Finish, to sharpen them.")
             .font(.caption2).foregroundStyle(.tertiary)
             .fixedSize(horizontal: false, vertical: true)
     }

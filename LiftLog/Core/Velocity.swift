@@ -226,11 +226,12 @@ struct VelocitySet: Equatable, Codable {
         return parts.joined(separator: " ")
     }
 
-    /// One line for a person: `0.52 → 0.41 m/s · loss 21% · RPE 9`, the RPE
-    /// `est. RPE 8.5` when it is BarVelo's estimate.
+    /// One line for a person: `0.52 → 0.41 m/s · loss 21% · RPE 9`, fastest
+    /// rep to last as Trends reads a set (the loss is against the fastest), the
+    /// RPE `est. RPE 8.5` when it is BarVelo's estimate.
     var summary: String {
-        guard let first = mcv.first, let last = mcv.last else { return "no reps measured" }
-        var text = mcv.count == 1 ? "\(Self.speed(first)) m/s" : "\(Self.speed(first)) → \(Self.speed(last)) m/s"
+        guard let best = mcv.max(), let last = mcv.last else { return "no reps measured" }
+        var text = mcv.count == 1 ? "\(Self.speed(best)) m/s" : "\(Self.speed(best)) → \(Self.speed(last)) m/s"
         if let loss, mcv.count > 1 { text += " · loss \(Int((loss * 100).rounded()))%" }
         if let rpe { text += " · \(rpeIsEstimated ? "est. " : "")RPE \(Self.tenth(rpe))" }
         return text

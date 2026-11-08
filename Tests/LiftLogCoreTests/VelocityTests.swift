@@ -370,6 +370,9 @@ final class VelocityEffortTests: XCTestCase {
         XCTAssertEqual(try set("&rir=1.4").summary, "0.78 → 0.41 m/s · loss 47% · est. RPE 8.5")
         let single = try XCTUnwrap(VelocitySet(url: url("grepp://velocity?lift=squat&load=140&mcv=0.30&left=fail")))
         XCTAssertEqual(single.summary, "0.30 m/s · RPE 10")
+        // Fastest to last, as Trends shows it: a slow first rep isn't the start.
+        let slowStart = VelocitySet(date: Date(), lift: "squat", load: 100, mcv: [0.51, 0.58, 0.47])
+        XCTAssertEqual(slowStart.summary, "0.58 → 0.47 m/s · loss 19%")
     }
 
     func testEffortCodableRoundTripAndOldPayloads() throws {

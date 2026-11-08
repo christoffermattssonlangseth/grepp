@@ -256,7 +256,7 @@ final class Store: ObservableObject {
             case .research:
                 return "One finding per line, tagged [R1], [R2]… The coach cites the tags. Easier to fill from Coach: hand it a paper."
             case .velocity:
-                return "One line per set measured with BarVelo: mean concentric velocity per rep, and the loss across the set."
+                return "One line per set measured with BarVelo: the day, the lift, which set, the set as logged, mean concentric velocity per rep, the loss, and, when known, reps left (left N or fail), BarVelo's estimates and how the camera was calibrated."
             }
         }
     }

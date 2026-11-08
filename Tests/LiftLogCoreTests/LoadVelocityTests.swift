@@ -36,10 +36,16 @@ final class LoadVelocityTests: XCTestCase {
         XCTAssertEqual(p.load(at: 0.50), 100, accuracy: 1e-9)
     }
 
-    func testOwnThresholdFromASetTakenToFailure() throws {
-        let p = try profile(clean + "\n2026-10-29 squat set 1 105x6 mcv 0.45 0.40 0.33 0.27 loss 40% fail")
+    func testOwnThresholdFromTwoSetsTakenToFailure() throws {
+        // One set at failure isn't a threshold yet: the typical one stands.
+        let one = try profile(clean + "\n2026-10-29 squat set 1 105x6 mcv 0.45 0.40 0.33 0.27 loss 40% fail")
+        XCTAssertFalse(one.thresholdIsOwn)
+        XCTAssertEqual(one.threshold, 0.30)
+        // Two: their median, the same failure velocity Trends and the coach show.
+        let p = try profile(clean + "\n2026-10-29 squat set 1 105x6 mcv 0.45 0.40 0.33 0.27 loss 40% fail"
+                            + "\n2026-10-30 squat set 2 100x8 mcv 0.48 0.44 0.38 0.32 0.25 loss 48% left 0")
         XCTAssertTrue(p.thresholdIsOwn)
-        XCTAssertEqual(p.threshold, 0.27)
+        XCTAssertEqual(try XCTUnwrap(p.threshold), 0.26, accuracy: 1e-9)
         XCTAssertGreaterThan(try XCTUnwrap(p.oneRepMax), 120)   // a lower threshold, a heavier 1RM
     }
 

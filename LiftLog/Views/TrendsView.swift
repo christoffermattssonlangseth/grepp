@@ -68,13 +68,16 @@ struct TrendsView: View {
         var speedComparison: VelocityRecord.Comparison?
         var v1rm: VelocityRecord?
         /// Bar velocity against reps in reserve, from the lift's `fail` / `left N`
-        /// sets; nil until there are enough of them.
+        /// sets; nil until two answered sets agree on a line.
         var reserveModel: ReserveModel?
+        /// Why there is no model yet, when there isn't.
+        var reserveWhyNot: String?
         /// Reps left at the end of each measured set, own or read off speed.
         var proximity: [VelocityRecord.Proximity] = []
-        /// Last-rep speed of each set taken to failure, oldest first.
+        /// Last-rep speed of each set ended with nothing left in the last
+        /// twelve weeks, oldest first, and their median: the failure velocity.
         var failureSpeeds: [(date: Date, speed: Double)] = []
-        var labelledDays = 0
+        var failureVelocity: (speed: Double, sets: Int)?
         /// Load against bar velocity over the last twelve weeks, or what it still needs.
         var profileFit: LoadVelocityProfile.Fit = .none
         /// The latest day's first loaded set against the profile without that day.
@@ -752,25 +755,26 @@ struct TrendsView: View {
                 .foregroundStyle(.secondary)
                 .lineLimit(1)
                 .minimumScaleFactor(0.7)
-        } else {
-            Text("Not enough answered sets to read reps left from velocity yet: it takes four reps within five of failure.")
+        } else if let why = figures.reserveWhyNot {
+            Text(why)
                 .font(.footnote).foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
         }
 
-        if figures.labelledDays >= 2, figures.failureSpeeds.count >= 2 {
+        if let fv = figures.failureVelocity, figures.failureSpeeds.count >= 2 {
             HStack(alignment: .center, spacing: 8) {
                 Text("failure velocity").font(.caption).foregroundStyle(.secondary)
                 failureSparkline(figures.failureSpeeds)
                     .frame(height: 28)
-                if let last = figures.failureSpeeds.last {
-                    Text("\(VelocitySet.speed(last.speed)) m/s")
-                        .font(.caption.monospacedDigit())
-                }
+                Text("\(VelocitySet.speed(fv.speed)) m/s")
+                    .font(.caption.monospacedDigit())
             }
             .accessibilityElement(children: .ignore)
-            .accessibilityLabel("failure velocity over \(figures.failureSpeeds.count) sets taken to failure")
+            .accessibilityLabel("failure velocity \(VelocitySet.speed(fv.speed)) m/s, the median last rep of \(fv.sets) sets ended with nothing left")
             .accessibilityValue(figures.failureSpeeds.map { VelocitySet.speed($0.speed) }.joined(separator: ", ") + " m/s")
+            Text("failure velocity: the median last rep of the \(fv.sets) sets ended with nothing left (fail or 0 left), last 12 weeks")
+                .font(.caption2).foregroundStyle(.tertiary)
+                .fixedSize(horizontal: false, vertical: true)
         }
 
         Text("Estimates assume the same filming setup. Answer “reps left?” in BarVelo, or mark failed sets, to sharpen them.")
@@ -1652,10 +1656,13 @@ struct TrendsView: View {
             f.speeds = VelocityRecord.records(for: exercise, in: VelocityRecord.parse(store.brief.velocity))
             f.speedComparison = VelocityRecord.sameLoadComparison(f.speeds)
             f.v1rm = VelocityRecord.latestV1RM(f.speeds)
-            f.reserveModel = ReserveModel.fit(f.speeds)
+            switch ReserveModel.assess(f.speeds) {
+            case .model(let m): f.reserveModel = m
+            case .notYet(let why): f.reserveWhyNot = why
+            }
             f.proximity = VelocityRecord.proximity(f.speeds, model: f.reserveModel)
-            f.failureSpeeds = VelocityRecord.failureSpeeds(f.speeds)
-            f.labelledDays = VelocityRecord.labelledDays(f.speeds)
+            f.failureSpeeds = VelocityRecord.failureSpeeds(f.speeds, now: Date())
+            f.failureVelocity = VelocityRecord.failureVelocity(f.speeds)
             f.profileFit = LoadVelocityProfile.fit(f.speeds, lift: exercise)
             f.profileReadiness = LoadVelocityProfile.readiness(f.speeds, lift: exercise)
         }

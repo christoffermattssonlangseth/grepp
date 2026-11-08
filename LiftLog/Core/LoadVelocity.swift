@@ -10,8 +10,9 @@ import Foundation
 ///
 /// - **An estimated 1RM**, without testing one: the load at which the line
 ///   reaches the minimum velocity threshold, the speed of a last possible rep.
-///   That is the lifter's own once velocity.md holds a set taken to failure (the
-///   last rep's speed), otherwise a typical value for the lift.
+///   That is the lifter's own failure velocity once velocity.md holds two sets
+///   ended with nothing left (`VelocityRecord.failureVelocity`), otherwise a
+///   typical value for the lift.
 /// - **Readiness**: a set faster than the line predicts at its load is a good
 ///   day; slower, a tired one.
 /// - **Loads for a target speed**: the load that should move at, say, 0.50 m/s.
@@ -149,13 +150,13 @@ struct LoadVelocityProfile: Equatable {
             return .needsMore("The sets so far don't fall on a line yet (r² \(String(format: "%.2f", r2)) over \(range)); "
                 + "a few more sets at clearly different loads will settle it.")
         }
-        let own = VelocityRecord.failureSpeeds(records).filter { Self.recent($0.date, now: now) }.map(\.speed)
-        let threshold = own.isEmpty ? typicalThreshold(lift) : own.sorted()[own.count / 2]
+        let own = VelocityRecord.failureVelocity(records, now: now)
+        let threshold = own?.speed ?? typicalThreshold(lift)
         return .profile(LoadVelocityProfile(
             intercept: a, slope: b, points: points,
             rSquared: r2,
             scatter: points.count > 2 ? (ssRes / Double(points.count - 2)).squareRoot() : 0,
-            threshold: threshold, thresholdIsOwn: !own.isEmpty))
+            threshold: threshold, thresholdIsOwn: own != nil))
     }
 
     /// Ordinary least squares of speed on load; nil when every load is the same.

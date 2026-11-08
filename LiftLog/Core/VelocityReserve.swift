@@ -37,12 +37,20 @@ extension VelocityRecord {
 
 /// Least squares, reps in reserve = a + b · MCV, over a lift's labelled reps
 /// with five or fewer in reserve: further out the line bends and the answers
-/// get vaguer. Valid only with four such reps and a slope that says faster is
-/// further from failure.
+/// get vaguer. Within one set, speed and reserve both just follow the rep
+/// order, so one answered set says little: a model needs two answered sets,
+/// four such reps, a slope that says faster is further from failure, and a
+/// leave-one-out error of at most 1.5 reps. Short of that there is no model,
+/// and nothing is read off velocity (BarVelo gates its own the same way,
+/// `Effort.Model.minLabelledSets`).
 struct ReserveModel: Equatable {
     /// Points further from failure than this are left out of the fit.
     static let maxReserve = 5
     static let minPoints = 4
+    /// Answered sets the fit needs.
+    static let minSets = 2
+    /// Worse than this, reps, and the line reads noise.
+    static let maxLooError = 1.5
 
     var a: Double
     var b: Double
@@ -56,17 +64,49 @@ struct ReserveModel: Equatable {
     /// The speeds the fit saw, slowest to fastest, m/s.
     var observed: ClosedRange<Double>
 
-    /// The speed at which nothing is left, m/s.
-    var failureSpeed: Double { -a / b }
     /// How much faster the bar moves per rep in reserve, m/s.
     var speedPerRep: Double { 1 / b }
 
     /// Reps in reserve at a last-rep speed; never below 0.
     func reserve(at speed: Double) -> Double { max(0, a + b * speed) }
 
-    /// Fit from one lift's sets (`VelocityRecord.records(for:in:)`). Nil
-    /// with too few labelled reps or a flat or backwards line.
+    /// Whether a lift's answers make a model, and if not, why.
+    enum Assessment: Equatable {
+        case model(ReserveModel)
+        /// Not enough, or not consistent enough: the sentence says which.
+        case notYet(String)
+    }
+
+    /// The model from one lift's sets (`VelocityRecord.records(for:in:)`),
+    /// gated; nil short of two answered sets that agree on a line.
     static func fit(_ records: [VelocityRecord]) -> ReserveModel? {
+        if case .model(let m) = assess(records) { return m }
+        return nil
+    }
+
+    /// The gated model, or what it still needs.
+    static func assess(_ records: [VelocityRecord]) -> Assessment {
+        let answered = records.filter { $0.ownReserve != nil }.count
+        guard answered >= minSets else {
+            return .notYet(answered == 0
+                ? "No answered sets yet: reading reps left from velocity takes two."
+                : "One answered set so far: reading reps left from velocity takes two.")
+        }
+        guard let m = candidate(records), m.labelledSets >= minSets else {
+            return .notYet("The answered sets don't give a line yet: it takes two sets "
+                + "ending within five reps of failure, slower nearer to it.")
+        }
+        guard m.looError.isFinite, m.looError <= maxLooError else {
+            let e = m.looError.isFinite ? " (±\(VelocitySet.tenth(m.looError)) reps)" : ""
+            return .notYet("The answered sets don't agree on a line yet\(e), so nothing is read "
+                + "from velocity until more answers settle it.")
+        }
+        return .model(m)
+    }
+
+    /// The line through the labelled reps, ungated: nil only with too few
+    /// reps or a flat or backwards line.
+    static func candidate(_ records: [VelocityRecord]) -> ReserveModel? {
         var points: [VelocityRecord.ReservePoint] = []
         var sets = 0
         for r in records {
@@ -129,14 +169,17 @@ struct ReserveModel: Equatable {
         looError.isFinite ? "±\(VelocitySet.tenth(looError)) reps" : nil
     }
 
-    /// The card's sentence: `Overhead press: failure ≈ 0.27 m/s, about 0.04
-    /// m/s per rep in reserve (1 labelled set, ±0.6 reps). Filmed the same
-    /// way, 0.40 m/s ≈ 3 left.`
+    /// The speed per rep, to three decimals: `0.017`, rounding which to two
+    /// would be 15% off.
+    var speedPerRepLabel: String { String(format: "%.3f", speedPerRep) }
+
+    /// The card's sentence: `Overhead press: about 0.039 m/s per rep in
+    /// reserve (2 labelled sets, ±0.6 reps). Filmed the same way, 0.40 m/s ≈ 3
+    /// left.`
     func summary(lift: String) -> String {
         var paren = ["\(labelledSets) labelled \(labelledSets == 1 ? "set" : "sets")"]
         if let errorLabel { paren.append(errorLabel) }
-        var s = "\(lift): failure ≈ \(VelocitySet.speed(failureSpeed)) m/s, about "
-            + "\(VelocitySet.speed(speedPerRep)) m/s per rep in reserve (\(paren.joined(separator: ", ")))."
+        var s = "\(lift): about \(speedPerRepLabel) m/s per rep in reserve (\(paren.joined(separator: ", ")))."
         let table = lookup
         if !table.isEmpty {
             let anchor = table[table.count / 2]
@@ -145,14 +188,14 @@ struct ReserveModel: Equatable {
         return s
     }
 
-    /// The coach's line: `over-head-press: failure ≈ 0.27 m/s, 0.039 m/s per
-    /// rep in reserve, 1 labelled set, ±0.6 reps`.
+    /// The coach's line: `over-head-press: 0.039 m/s per rep in reserve, 2
+    /// labelled sets, ±0.6 reps; 0.30 m/s ≈ 1 left, 0.40 m/s ≈ 3 left`.
     func coachLine(lift: String) -> String {
-        var parts = ["\(lift): failure ≈ \(VelocitySet.speed(failureSpeed)) m/s",
-                     "\(String(format: "%.3f", speedPerRep)) m/s per rep in reserve",
+        var parts = ["\(lift): \(speedPerRepLabel) m/s per rep in reserve",
                      "\(labelledSets) labelled \(labelledSets == 1 ? "set" : "sets")"]
         if let errorLabel { parts.append(errorLabel) }
-        return parts.joined(separator: ", ")
+        let table = lookup.map { "\(VelocitySet.speed($0.speed)) m/s ≈ \($0.reserve) left" }
+        return parts.joined(separator: ", ") + (table.isEmpty ? "" : "; " + table.joined(separator: ", "))
     }
 }
 
@@ -180,12 +223,31 @@ extension VelocityRecord {
         }
     }
 
-    /// The last rep of each set that ended at failure (`fail`, `left 0`),
-    /// oldest first: how fast this lifter's bar moves when nothing is left.
-    static func failureSpeeds(_ records: [VelocityRecord]) -> [(date: Date, speed: Double)] {
+    /// The last rep of each set that ended with nothing left (`fail`, `left
+    /// 0`), oldest first: how fast this lifter's bar moves at failure. Within
+    /// the profile's twelve weeks when `now` is given.
+    static func failureSpeeds(_ records: [VelocityRecord], now: Date? = nil) -> [(date: Date, speed: Double)] {
         records.compactMap { r in
-            r.ownReserve == 0 && !r.mcv.isEmpty ? (r.date, r.lastRep) : nil
+            guard r.ownReserve == 0, !r.mcv.isEmpty else { return nil }
+            if let now, !LoadVelocityProfile.recent(r.date, now: now) { return nil }
+            return (r.date, r.lastRep)
         }
+    }
+
+    /// Sets ended with nothing left that a failure velocity needs: one could
+    /// be a bad rep or a bad day.
+    static let minFailureSets = 2
+
+    /// The lift's failure velocity, the one figure everywhere (the profile's
+    /// own 1RM threshold, the Trends line, the coach): the median last rep of
+    /// the sets of the last twelve weeks that ended with nothing left. Nil
+    /// with fewer than two.
+    static func failureVelocity(_ records: [VelocityRecord], now: Date = Date()) -> (speed: Double, sets: Int)? {
+        let speeds = failureSpeeds(records, now: now).map(\.speed).sorted()
+        guard speeds.count >= minFailureSets else { return nil }
+        let n = speeds.count
+        let median = n % 2 == 1 ? speeds[n / 2] : (speeds[n / 2 - 1] + speeds[n / 2]) / 2
+        return (median, n)
     }
 
     /// Days with at least one labelled set.

@@ -306,22 +306,41 @@ enum CoachContext {
         """
     }
 
-    /// Per lift with enough "fail" / "left N" answers: the speed at failure
-    /// and the speed per rep in reserve, fitted from the lifter's own reps,
-    /// so a set's last-rep speed reads as reps left. Nothing without a fit.
-    static func reserveBrief(_ file: String) -> String {
-        let fits = VelocityRecord.byLift(VelocityRecord.parse(file)).compactMap { lift, records in
-            ReserveModel.fit(records).map { $0.coachLine(lift: lift) }
+    /// Per lift with enough "fail" / "left N" answers: the speed per rep in
+    /// reserve, fitted from the lifter's own reps, so a set's last-rep speed
+    /// reads as reps left; and the failure velocity, the median last rep of
+    /// the sets ended with nothing left. Only what passes the gates (two
+    /// answered sets agreeing within 1.5 reps; two sets at failure): a fit
+    /// from one set is noise and is not sent. Nothing without either.
+    static func reserveBrief(_ file: String, now: Date = Date()) -> String {
+        var fits: [String] = []
+        var failure: [String] = []
+        for (lift, records) in VelocityRecord.byLift(VelocityRecord.parse(file)) {
+            if let m = ReserveModel.fit(records) { fits.append(m.coachLine(lift: lift)) }
+            if let f = VelocityRecord.failureVelocity(records, now: now) {
+                failure.append("\(lift): \(VelocitySet.speed(f.speed)) m/s (median last rep of \(f.sets) sets ended with nothing left, last 12 weeks)")
+            }
         }
-        guard !fits.isEmpty else { return "" }
-        return """
-        Velocity to reps in reserve, fitted from this lifter's own labelled reps \
-        (reserve = reps left after that rep; same camera setup only; ± is the \
-        typical miss in reps). Read a set's last-rep speed against it for \
-        proximity to failure:
-        \(fits.map { "- " + $0 }.joined(separator: "\n"))
+        var out = ""
+        if !fits.isEmpty {
+            out += """
+            Velocity to reps in reserve, fitted from this lifter's own labelled reps \
+            (reserve = reps left after that rep; same camera setup only; ± is the \
+            typical miss in reps). Read a set's last-rep speed against it for \
+            proximity to failure:
+            \(fits.map { "- " + $0 }.joined(separator: "\n"))
 
-        """
+            """
+        }
+        if !failure.isEmpty {
+            out += """
+            Failure velocity, measured, not extrapolated: how fast this lifter's last \
+            rep moves when nothing is left:
+            \(failure.map { "- " + $0 }.joined(separator: "\n"))
+
+            """
+        }
+        return out
     }
 
     /// Per lift with a load–velocity profile (three measured sets over loads 10%

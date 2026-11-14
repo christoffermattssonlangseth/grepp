@@ -13,15 +13,24 @@ enum CoachModelChoice: String, CaseIterable, Identifiable, Codable {
     case fable
     /// Apple's model, on the phone. Free and private; small.
     case onDevice
+    /// Qwen3 4B, on the phone through MLX. Free and private; downloaded once,
+    /// and with room for months of the log.
+    case qwen
 
     var id: String { rawValue }
 
-    var isOnDevice: Bool { self == .onDevice }
+    var isOnDevice: Bool { self == .onDevice || self == .qwen }
 
-    /// The choices this phone can offer: the on-device one only where the
+    /// The choices this phone can offer: an on-device one only where the
     /// framework exists and the hardware can run it.
     @MainActor static var offered: [CoachModelChoice] {
-        allCases.filter { !$0.isOnDevice || AppleCoach.isSupported }
+        allCases.filter {
+            switch $0 {
+            case .onDevice: return AppleCoach.isSupported
+            case .qwen: return QwenModel.isSupported
+            default: return true
+            }
+        }
     }
 
     /// The API model ID. Dateless IDs are pinned snapshots, not evergreen
@@ -31,7 +40,7 @@ enum CoachModelChoice: String, CaseIterable, Identifiable, Codable {
         case .sonnet: return "claude-sonnet-5"
         case .opus: return "claude-opus-5"
         case .fable: return "claude-fable-5-1"
-        case .onDevice: return ""   // never sent anywhere
+        case .onDevice, .qwen: return ""   // never sent anywhere
         }
     }
 
@@ -41,6 +50,7 @@ enum CoachModelChoice: String, CaseIterable, Identifiable, Codable {
         case .opus: return "Opus"
         case .fable: return "Fable"
         case .onDevice: return "On device"
+        case .qwen: return "Qwen"
         }
     }
 
@@ -62,7 +72,7 @@ enum CoachModelChoice: String, CaseIterable, Identifiable, Codable {
         case .sonnet: return (2.0, 10.0)
         case .opus: return (5.0, 25.0)
         case .fable: return (10.0, 50.0)
-        case .onDevice: return (0, 0)
+        case .onDevice, .qwen: return (0, 0)
         }
     }
 
@@ -83,6 +93,7 @@ enum CoachModelChoice: String, CaseIterable, Identifiable, Codable {
         case .opus: return "Slower and pricier; better at deep analysis."
         case .fable: return "The most capable, at twice Opus and slower. For the question you'd pay a coach for."
         case .onDevice: return "Apple's model on the phone. Free, private, small: it sees your last few weeks, not the whole log."
+        case .qwen: return "Qwen3 4B on the phone. Free and private, slower than Claude; it sees about your last month."
         }
     }
 }
@@ -374,7 +385,7 @@ final class CoachService: ObservableObject {
         errorText = nil
 
         if model.isOnDevice {
-            sendOnDevice(trimmed, sessions: sessions, brief: brief, draft: draft, muscleMap: muscleMap)
+            sendOnDevice(trimmed, model: model, sessions: sessions, brief: brief, draft: draft, muscleMap: muscleMap)
             return
         }
 
@@ -541,23 +552,27 @@ final class CoachService: ObservableObject {
 
     /// The on-device path: a compact brief, no key, no cost, the same fences.
     /// The context is trimmed once and retried if the model says it's too long.
-    private func sendOnDevice(_ question: String, sessions: [Session],
+    private func sendOnDevice(_ question: String, model: CoachModelChoice, sessions: [Session],
                               brief: CoachContext.Brief, draft: SessionDraft?, muscleMap: MuscleMap) {
         guard mode == .coaching else {
             messages.append(CoachMessage(role: .you, text: question))
             errorText = "The goals interview needs Claude. Pick Sonnet, Opus or Fable for it."
             return
         }
-        if let why = AppleCoach.unavailableReason {
+        let engine: AppleCoach.Engine = model == .qwen ? .qwen : .apple
+        let unavailable = engine == .qwen ? QwenModel.shared.unavailableReason : AppleCoach.unavailableReason
+        if let why = unavailable {
             messages.append(CoachMessage(role: .you, text: question))
             errorText = why
             return
         }
+        // Qwen's window is far larger: it is shown about a month up front.
+        let shown = engine == .qwen ? CoachContext.qwenSessions : CoachContext.onDeviceSessions
         let history = messages.suffix(6).map { (role: $0.role == .you ? "Lifter" : "Coach", text: $0.text) }
-        contextNote = "on device · digest · \(min(sessions.count, CoachContext.onDeviceSessions)) recent sessions · tools"
+        contextNote = "on device · \(engine == .qwen ? "qwen · " : "")digest · up to \(min(sessions.count, shown)) recent sessions · tools"
 
         messages.append(CoachMessage(role: .you, text: question))
-        let reply = CoachMessage(role: .coach, text: "", isStreaming: true, model: .onDevice)
+        let reply = CoachMessage(role: .coach, text: "", isStreaming: true, model: model)
         messages.append(reply)
         isResponding = true
         persist()
@@ -566,16 +581,17 @@ final class CoachService: ObservableObject {
         beginBackgroundTime()
 
         task = Task { [weak self] in
-            var budget = CoachContext.onDeviceBudget
+            var budget = engine == .qwen ? CoachContext.qwenBudget : CoachContext.onDeviceBudget
             var attempt = 0
             while true {
                 attempt += 1
                 let prompt = CoachContext.onDevicePrompt(question: question, history: Array(history),
                                                          sessions: sessions, brief: brief, draft: draft,
-                                                         budget: budget)
+                                                         budget: budget, sessionsShown: shown)
                 do {
                     for try await whole in AppleCoach.respond(question: question, prompt: prompt,
-                                                              sessions: sessions, muscleMap: muscleMap) {
+                                                              sessions: sessions, muscleMap: muscleMap,
+                                                              engine: engine) {
                         guard let self, !Task.isCancelled else { return }
                         self.replace(whole, on: reply.id)
                         self.persistWhileStreaming()
@@ -589,7 +605,7 @@ final class CoachService: ObservableObject {
                         budget /= 2   // half the sessions, same question
                         continue
                     }
-                    self.errorText = AppleCoach.describe(error)
+                    self.errorText = AppleCoach.describe(error, engine: engine)
                     break
                 }
             }

@@ -7,6 +7,7 @@ struct SettingsView: View {
     @AppStorage(Prefs.coachShowCost) private var showCost = true
     @AppStorage(CoachSpend.capKey) private var monthlyCap: Double = CoachSpend.defaultCap
     @ObservedObject private var spend = CoachSpend.shared
+    @ObservedObject private var qwen = QwenModel.shared
     @AppStorage(Prefs.barWeight) private var barWeight: Double = 20
     /// In the App Group, not the app's own defaults: the widget reads it.
     @AppStorage(WidgetStyle.key, store: UserDefaults(suiteName: WidgetSnapshot.appGroup))
@@ -213,13 +214,17 @@ struct SettingsView: View {
                     Text("""
                     Spent this month: about $\(SpendLedger.money(spend.thisMonth)), estimated from \
                     token counts across Sonnet, Opus and Fable. At the cap the cloud models stop \
-                    until the 1st; the on-device model keeps working. Fable is about twice Opus per \
+                    until the 1st; the on-device models keep working. Fable is about twice Opus per \
                     answer and asks once before its first use.
                     """)
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
                 .listRowBackground(Theme.row)
+
+                if QwenModel.isSupported {
+                    qwenSection
+                }
 
                 Section("Apple Health") {
                     Toggle("Save sessions to Health", isOn: $healthEnabled)
@@ -495,6 +500,53 @@ struct SettingsView: View {
         return "Each day's lifting is saved as one strength-training workout, from the first set to the last lift finished, so it counts in Fitness. Nothing is read from Health."
     }
 
+
+    /// Qwen's weights aren't in the app: fetched here once, removable here.
+    private var qwenSection: some View {
+        Section("Qwen on device") {
+            switch qwen.state {
+            case .notDownloaded:
+                Button {
+                    qwen.startDownload()
+                } label: {
+                    Label("Download Qwen3 4B (\(QwenModel.downloadSize))", systemImage: "arrow.down.circle")
+                }
+            case .downloading(let fraction):
+                VStack(alignment: .leading, spacing: 6) {
+                    ProgressView(value: fraction) {
+                        Text("Downloading… \(Int(fraction * 100))%")
+                    }
+                    Button("Cancel", role: .cancel) { qwen.cancelDownload() }
+                        .font(.subheadline)
+                }
+            case .ready:
+                HStack {
+                    Label("Downloaded", systemImage: "checkmark.circle")
+                    Spacer()
+                    Button("Delete", role: .destructive) { qwen.delete() }
+                        .font(.subheadline)
+                }
+            case .failed(let why):
+                Text(why).foregroundStyle(.secondary)
+                Button {
+                    qwen.startDownload()
+                } label: {
+                    Label("Try again", systemImage: "arrow.clockwise")
+                }
+            }
+            Text("""
+            A second on-device coach: Qwen3 4B, an open model from Alibaba, run on the \
+            phone. Free and private like Apple's, slower to answer, and it sees about a \
+            month of your log rather than a week or two. \(QwenModel.downloadSize) from \
+            Hugging Face, over Wi-Fi if you can; keep the app open while it downloads. \
+            Pick **Qwen** in Coach's model menu once it's here.
+            """)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+        .listRowBackground(Theme.row)
+        .task { await qwen.refresh() }
+    }
     private func labeled(_ label: String, text: Binding<String>, placeholder: String) -> some View {
         labeledRow(label) {
             TextField(placeholder, text: text)

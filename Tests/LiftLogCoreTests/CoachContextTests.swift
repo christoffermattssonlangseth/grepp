@@ -779,6 +779,36 @@ final class CoachContextTests: XCTestCase {
         XCTAssertTrue(tiny.prompt.contains("only the digest fits"))
     }
 
+    func testQwenPromptShowsFarMoreOfTheLog() {
+        var sessions: [Session] = []
+        var d = day("2026-06-01")
+        for i in 0..<40 {
+            sessions.append(Session(date: d, exercises: [lift("squat", "\(80 + i)x5 \(80 + i)x5 \(80 + i)x5"), lift("bench", "60x8 60x8")]))
+            d = d.addingTimeInterval(2 * 86_400)
+        }
+        let apple = CoachContext.onDevicePrompt(question: "What next?", history: [], sessions: sessions,
+                                                brief: .none, draft: nil, today: day("2026-09-01"))
+        let qwen = CoachContext.onDevicePrompt(question: "What next?", history: [], sessions: sessions,
+                                               brief: .none, draft: nil, today: day("2026-09-01"),
+                                               budget: CoachContext.qwenBudget, sessionsShown: CoachContext.qwenSessions)
+        XCTAssertLessThanOrEqual(qwen.prompt.count, CoachContext.qwenBudget + 200)
+        let count = { (p: CoachContext.OnDevicePrompt) in p.prompt.components(separatedBy: "\n").filter { $0.contains(" squat ") }.count }
+        XCTAssertEqual(count(qwen), CoachContext.qwenSessions, "a month of sessions, not four")
+        XCTAssertGreaterThan(count(qwen), count(apple))
+        XCTAssertTrue(qwen.prompt.contains("119x5"), "the newest is still in")
+        XCTAssertFalse(qwen.prompt.contains("2026-06-01 squat 80x5"), "the oldest still isn't")
+    }
+
+    func testPlainNoteKeepsTwoSentencesWithoutMarkdown() {
+        // Qwen's actual note for "what session should I do today?", shortened
+        let qwen = "Today's session: squat. Based on the last squat sessions (97.5x5 on Nov-06, then 100x5 on Nov-10), all reps were done.\nThe plan rests on: last squat was **100x5** on **2026-11-10**. This is a single working set."
+        XCTAssertEqual(CoachContext.plainNote(qwen),
+                       "Today's session: squat. Based on the last squat sessions (97.5x5 on Nov-06, then 100x5 on Nov-10), all reps were done.")
+        XCTAssertEqual(CoachContext.plainNote("Squat **102.5** kg: you got 100x5 on 2026-11-10."),
+                       "Squat 102.5 kg: you got 100x5 on 2026-11-10.", "a decimal point is not a sentence end")
+        XCTAssertEqual(CoachContext.plainNote("No full stop at the end"), "No full stop at the end")
+    }
+
     func testOnDevicePromptCarriesTheLastTurns() {
         let prompt = CoachContext.onDevicePrompt(question: "and bench?", history: [("Lifter", "what should I squat"), ("Coach", "100x5")],
                                                  sessions: [], brief: .none, draft: nil)

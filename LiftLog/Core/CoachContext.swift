@@ -1351,6 +1351,14 @@ enum CoachContext {
     /// results and the answer.
     static let onDeviceBudget = 4_000
 
+    /// The same for Qwen, whose window is far larger than Apple's: what limits
+    /// it on a phone is the memory its cache takes per token, not the model.
+    /// It is the prompt, read in token by token, that a phone spends most of
+    /// an answer on: about 8k characters — a month of a typical log, some 2.5k
+    /// tokens — is the most that keeps an answer to seconds rather than a minute.
+    static let qwenSessions = 12
+    static let qwenBudget = 8_000
+
     struct OnDevicePrompt: Equatable {
         let instructions: String
         let prompt: String
@@ -1402,7 +1410,8 @@ enum CoachContext {
     /// `budget` characters from the sessions end first.
     static func onDevicePrompt(question: String, history: [(role: String, text: String)],
                                sessions: [Session], brief: Brief, draft: SessionDraft?,
-                               today: Date = Date(), budget: Int = onDeviceBudget) -> OnDevicePrompt {
+                               today: Date = Date(), budget: Int = onDeviceBudget,
+                               sessionsShown: Int = onDeviceSessions) -> OnDevicePrompt {
         var parts: [String] = ["Today is \(Session.dateFormatter.string(from: today))."]
         if let digest = liftDigest(from: sessions, today: today, limit: 10) {
             parts.append(digest)
@@ -1419,7 +1428,7 @@ enum CoachContext {
         let fixed = parts.joined(separator: "\n\n").count + tail.count
         var room = max(0, budget - fixed)
         var recent: [Session] = []
-        for session in sessions.sorted(by: { $0.date > $1.date }).prefix(onDeviceSessions) {
+        for session in sessions.sorted(by: { $0.date > $1.date }).prefix(sessionsShown) {
             let cost = WorkoutParser.serialize([session]).count + 1
             if cost > room { break }
             recent.insert(session, at: 0)
@@ -1437,6 +1446,32 @@ enum CoachContext {
     }
 
     // MARK: - On-device tools and assembled replies
+
+    /// A small model's note made fit to sit above a session card: markdown
+    /// emphasis out, one paragraph, at most two sentences. Qwen asked for "one
+    /// or two sentences" writes a paragraph in bold that drifts from the plan
+    /// it came with; the grammar can't hold a string to a length here, so the
+    /// app does.
+    static func plainNote(_ note: String, sentences: Int = 2) -> String {
+        var text = note.replacingOccurrences(of: "**", with: "")
+            .replacingOccurrences(of: "__", with: "")
+            .components(separatedBy: .newlines)
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+            .filter { !$0.isEmpty }
+            .joined(separator: " ")
+        // A sentence ends at ". ", "! " or "? " — not at the point in 102.5.
+        var count = 0
+        var idx = text.startIndex
+        while idx < text.endIndex {
+            let next = text.index(after: idx)
+            if ".!?".contains(text[idx]), next == text.endIndex || text[next] == " " {
+                count += 1
+                if count == sentences { text = String(text[..<next]); break }
+            }
+            idx = next
+        }
+        return text
+    }
 
     /// One lift's last sessions as log lines, newest first, and its best set:
     /// what the on-device model asks for when a question needs history.

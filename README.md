@@ -71,7 +71,14 @@ limit, says so instead of arriving empty. It is small, so instead of the log it 
 sessions plus three tools it can call back into the app with — one lift's
 history, the last days of the log, sets per muscle — and it answers "what
 should I do today" and "here's what I did" as typed output, so a session or
-a set of log lines can't come back malformed. It doesn't design programmes
+a set of log lines can't come back malformed. On an iPhone with 8 GB of
+memory and iOS 27 there's a fifth, **Qwen**: Qwen3 4B Instruct (2507, 4-bit),
+run on the phone by MLX. It isn't bundled; Settings ▸ Qwen on device downloads
+it once (about 2.3 GB, from Hugging Face) and can delete it again. MLX's
+FoundationModels adapter makes it a `LanguageModel`, so it takes the same path
+as Apple's model — same tools, same typed answers, here held to the shape by a
+grammar — except that its brief is bigger, about a month of sessions up front
+instead of four, and so it prescribes from the brief without tool calls. It doesn't design programmes
 or read papers; that's Claude's. It prescribes with numbers, and each exercise it
 prescribes is a card with a **Log** button, or one button for the whole session
 (**Load for next session** once you've already trained today). Mid-session it

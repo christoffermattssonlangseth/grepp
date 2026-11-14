@@ -15,8 +15,20 @@ import FoundationModels
 /// type (guided generation) rather than as prose with a fence in it, so a
 /// prescription can't come back malformed. The assembled reply then goes
 /// through the same fences and cards as Claude's.
+///
+/// Qwen (`QwenModel`) runs through this same path: MLX's adapter makes it a
+/// FoundationModels `LanguageModel`, so the session, the tools and the typed
+/// answers are the same code, and only the model handed to the session and
+/// the size of the brief differ.
 @MainActor
 enum AppleCoach {
+    /// Which on-device model answers.
+    enum Engine {
+        case apple, qwen
+
+        var name: String { self == .apple ? "Apple's model" : "Qwen" }
+    }
+
     /// Whether the framework is here and the phone can run the model at all.
     /// The picker offers "On device" only when this is true.
     static var isSupported: Bool {
@@ -61,7 +73,7 @@ enum AppleCoach {
     /// structured answer (a session, imported history) arrives in one piece,
     /// already assembled with its fence.
     static func respond(question: String, prompt: CoachContext.OnDevicePrompt,
-                        sessions: [Session], muscleMap: MuscleMap,
+                        sessions: [Session], muscleMap: MuscleMap, engine: Engine = .apple,
                         today: Date = Date()) -> AsyncThrowingStream<String, Error> {
         AsyncThrowingStream { continuation in
             let task = Task {
@@ -73,19 +85,23 @@ enum AppleCoach {
                             RecentSessionsTool(sessions: sessions, today: today),
                             MuscleSetsTool(sessions: sessions, map: muscleMap, today: today),
                         ]
-                        switch try await classify(question) {
+                        switch try await classify(question, engine: engine) {
                         case .prescribe:
-                            let session = LanguageModelSession(tools: tools, instructions: CoachContext.onDevicePlanInstructions)
+                            // Qwen's brief already holds the recent sessions; its tool rounds
+                            // only re-fetched them, and tripled the time to a plan.
+                            let session = try makeSession(engine, tools: engine == .qwen ? [] : tools,
+                                                          instructions: CoachContext.onDevicePlanInstructions)
                             let plan = try await session.respond(to: prompt.prompt, generating: PlannedSession.self).content
-                            continuation.yield(CoachContext.prescriptionReply(note: plan.note, lifts: plan.lifts.map(\.generated)))
+                            continuation.yield(CoachContext.prescriptionReply(note: CoachContext.plainNote(plan.note),
+                                                                              lifts: plan.lifts.map(\.generated)))
                         case .importHistory:
-                            let session = LanguageModelSession(instructions: CoachContext.onDeviceImportInstructions)
+                            let session = try makeSession(engine, instructions: CoachContext.onDeviceImportInstructions)
                             let history = try await session.respond(to: prompt.prompt, generating: DescribedHistory.self).content
                             continuation.yield(CoachContext.importReply(
                                 note: history.note,
                                 days: history.days.map { (date: $0.date, lifts: $0.lifts.map(\.generated)) }))
                         case .question:
-                            let session = LanguageModelSession(tools: tools, instructions: prompt.instructions)
+                            let session = try makeSession(engine, tools: tools, instructions: prompt.instructions)
                             for try await partial in session.streamResponse(to: prompt.prompt) {
                                 // Each snapshot carries the whole text so far.
                                 let text = partial.content
@@ -125,16 +141,16 @@ enum AppleCoach {
     }
 
     /// The failure in the lifter's terms.
-    static func describe(_ error: Error) -> String {
+    static func describe(_ error: Error, engine: Engine = .apple) -> String {
         #if canImport(FoundationModels)
         if #available(iOS 26.0, *), let e = error as? LanguageModelSession.GenerationError {
             switch e {
             case .exceededContextWindowSize:
-                return "Too much for the on-device model even trimmed. Start a new chat, or ask Claude."
+                return "Too much for \(engine.name) even trimmed. Start a new chat, or ask Claude."
             case .guardrailViolation:
-                return "Apple's model declined to answer that one."
+                return "\(engine.name) declined to answer that one."
             default:
-                return "The on-device model couldn't answer: \(e.localizedDescription)"
+                return "\(engine.name) couldn't answer: \(e.localizedDescription)"
             }
         }
         #endif
@@ -142,16 +158,34 @@ enum AppleCoach {
     }
 
     #if canImport(FoundationModels)
+    /// A session on the engine's model. Qwen's adapter exists from iOS 27.
+    @available(iOS 26.0, *)
+    private static func makeSession(_ engine: Engine, tools: [any Tool] = [],
+                                    instructions: String) throws -> LanguageModelSession {
+        switch engine {
+        case .apple:
+            return LanguageModelSession(tools: tools, instructions: instructions)
+        case .qwen:
+            guard #available(iOS 27.0, *) else {
+                throw OnDeviceError.unavailable("Qwen on device needs iOS 27 or later.")
+            }
+            return LanguageModelSession(model: QwenModel.model, tools: tools, instructions: instructions)
+        }
+    }
+
     /// One small typed call: what kind of answer does the message want.
     @available(iOS 26.0, *)
-    private static func classify(_ question: String) async throws -> Intent {
-        let session = LanguageModelSession(instructions: """
+    private static func classify(_ question: String, engine: Engine) async throws -> Intent {
+        let session = try makeSession(engine, instructions: """
             Classify a message to a strength coach. "prescribe" when they ask what to \
             train, do, lift or squat today or next, or for a session or workout. \
             "importHistory" when they report training they have already done, with \
             lifts and numbers, to be added to their log. "question" for anything else.
             """)
-        let kind = try await session.respond(to: question, generating: MessageKind.self).content
+        // Wrapped in a struct: MLX's adapter hands a bare enum back with its
+        // JSON quotes on ("\"prescribe\""), which FoundationModels then can't
+        // match to a case. A field of a struct decodes on both models.
+        let kind = try await session.respond(to: question, generating: MessageClass.self).content.kind
         switch kind {
         case .prescribe: return .prescribe
         case .importHistory: return .importHistory
@@ -172,6 +206,12 @@ nonisolated enum MessageKind: String {
 }
 
 @available(iOS 26.0, *)
+@Generable(description: "The kind of answer a message to a strength coach wants")
+nonisolated struct MessageClass {
+    var kind: MessageKind
+}
+
+@available(iOS 26.0, *)
 @Generable(description: "One working set")
 nonisolated struct PlannedSet {
     @Guide(description: "Load in kilograms; 0 for a bodyweight set")
@@ -181,7 +221,7 @@ nonisolated struct PlannedSet {
 }
 
 @available(iOS 26.0, *)
-@Generable(description: "One lift with its working sets")
+@Generable(description: "One lift with its sets, as done")
 nonisolated struct PlannedLift {
     @Guide(description: "The lift's name as the log has it: lowercase, hyphens for spaces, e.g. squat, bench, chin-ups")
     var name: String
@@ -194,12 +234,27 @@ nonisolated struct PlannedLift {
 }
 
 @available(iOS 26.0, *)
+@Generable(description: "One lift prescribed for today, with its working sets")
+nonisolated struct PrescribedLift {
+    @Guide(description: "The lift's name as the log has it: lowercase, hyphens for spaces, e.g. squat, bench, chin-ups")
+    var name: String
+    // The instructions ask for three to five; the shape holds a small model
+    // to it, where 1...6 let it write a single set and stop.
+    @Guide(description: "The working sets, in order", .count(3...5))
+    var sets: [PlannedSet]
+
+    var generated: CoachContext.GeneratedLift {
+        CoachContext.GeneratedLift(name: name, sets: sets.map { (kg: $0.weightKg, reps: $0.reps) })
+    }
+}
+
+@available(iOS 26.0, *)
 @Generable(description: "Today's session, prescribed from the lifter's own log")
 nonisolated struct PlannedSession {
-    @Guide(description: "One or two sentences naming the numbers and dates the plan rests on")
+    @Guide(description: "One or two short plain sentences, no markdown, naming the numbers and dates the plan rests on")
     var note: String
     @Guide(description: "Two to four lifts, in the order to do them", .count(2...4))
-    var lifts: [PlannedLift]
+    var lifts: [PrescribedLift]
 }
 
 @available(iOS 26.0, *)

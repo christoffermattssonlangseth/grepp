@@ -41,6 +41,7 @@ struct CoachView: View {
     /// Bumped per send, so the arrow bounces on fire.
     @State private var sent = 0
     @FocusState private var inputFocused: Bool
+    @Environment(\.scenePhase) private var scenePhase
 
     /// The only thing that can stop Coach working now is a missing key.
     private var hasKey: Bool { CoachCredentials.hasKey }
@@ -69,6 +70,10 @@ struct CoachView: View {
                 Button("Keep \(modelBeforeFable.label)", role: .cancel) { model = modelBeforeFable }
             } message: {
                 Text("About twice Opus and five times Sonnet per answer, and slower. " + capNote)
+            }
+            .task(id: model) { if model == .qwen { QwenModel.shared.prewarm() } }
+            .onChange(of: scenePhase) { _, phase in
+                if phase == .active, model == .qwen { QwenModel.shared.prewarm() }
             }
             .onAppear {
                 // Picked and then the app died under the alert: the pick was
@@ -911,19 +916,27 @@ struct CoachView: View {
 
     // MARK: - No key
 
+    /// Apple's model where the phone has it, else Qwen where it can run; Qwen
+    /// still asks for its download when first used.
+    private var onDeviceFallback: CoachModelChoice? {
+        if AppleCoach.isSupported { return .onDevice }
+        if QwenModel.isSupported { return .qwen }
+        return nil
+    }
+
     private var needsKey: some View {
         ContentUnavailableView {
             Label("Coach needs an API key", systemImage: "key")
         } description: {
-            Text(AppleCoach.isSupported
-                 ? "Coach asks Claude about your training log. Add a Claude API key to get started — it's stored in the Keychain, never in the repo. Or try Apple's on-device model: free and private, with a shorter memory."
+            Text(onDeviceFallback != nil
+                 ? "Coach asks Claude about your training log. Add a Claude API key to get started — it's stored in the Keychain, never in the repo. Or try a model on the phone: free and private, with a shorter memory."
                  : "Coach asks Claude about your training log. Add a Claude API key to get started — it's stored in the Keychain, never in the repo.")
         } actions: {
             Button("Open Settings") { store.selectedTab = 4 }
                 .buttonStyle(.panelProminent)
                 .tint(Theme.accent)
-            if AppleCoach.isSupported {
-                Button("Use the on-device model") { model = .onDevice }
+            if let fallback = onDeviceFallback {
+                Button("Use the on-device model") { model = fallback }
                     .buttonStyle(.panel)
                     .tint(Theme.accent)
             }

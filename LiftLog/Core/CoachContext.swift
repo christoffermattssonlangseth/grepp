@@ -1383,15 +1383,21 @@ enum CoachContext {
     """
 
     /// For the structured "what should I do" call: the same rules, and the
-    /// shape comes from the type rather than a fence.
+    /// shape comes from the type rather than a fence. The arithmetic of the
+    /// rule is the app's (`nextStep`): a small model asked to apply it held
+    /// loads it should have raised. Its part is the choice of lifts and the
+    /// note; the loads it is handed, and held to afterwards.
     static let onDevicePlanInstructions = """
     You are a strength coach prescribing today's session from one lifter's own log. \
     Loads are kilograms. Choose two to four lifts they already do, in the order \
-    they usually do them. For each lift look at what they did last (the context \
-    and the liftHistory tool): the same load plus 2.5 kg if they got every rep, \
-    the same load if they didn't, three to five working sets, reps as they \
-    usually do. Bodyweight lifts are 0 kg. The note is one or two sentences \
-    naming the numbers the plan rests on, with their dates.
+    they usually do them, favouring lifts not trained in the last day or two. \
+    The context has TODAY'S LOADS: the app has already applied the rule (2.5 kg \
+    more after a session with every rep made, the same load after a missed rep) \
+    to each lift's last session. Use those loads, reps and set counts exactly; \
+    do not work them out again. For a lift not listed there, the same load plus \
+    2.5 kg if they got every rep last time, else the same load. Bodyweight lifts \
+    are 0 kg. The note is one or two short sentences giving the reason for the \
+    main lift's load, with the date it rests on; plain words, no markdown.
     """
 
     /// For turning what the lifter says they did into log lines.
@@ -1419,6 +1425,7 @@ enum CoachContext {
         let goals = trimmed(brief.goals).text
         if !goals.isEmpty { parts.append("GOALS (from goals.md):\n" + String(goals.prefix(400))) }
         if let live = inProgressNote(draft, now: today) { parts.append(live) }
+        if let loads = todaysLoads(in: sessions, today: today) { parts.append(loads) }
 
         let recentTurns = history.suffix(4).map { "\($0.role): \(String($0.text.prefix(400)))" }
         let tail = (recentTurns.isEmpty ? "" : "EARLIER IN THIS CHAT:\n" + recentTurns.joined(separator: "\n") + "\n\n")
@@ -1443,6 +1450,113 @@ enum CoachContext {
         }
         parts.append(tail)
         return OnDevicePrompt(instructions: onDeviceInstructions, prompt: parts.joined(separator: "\n\n"))
+    }
+
+    // MARK: - Today's loads, by the rule
+
+    /// One lift's next session by the plan rule, worked out by the app.
+    struct NextStep: Equatable {
+        let name: String
+        /// 0 for a bodyweight lift.
+        let kg: Double
+        let reps: Int
+        let sets: Int
+        /// The fact it rests on: "100x5 100x5 100x5 on 2026-11-10, every rep made".
+        let why: String
+        /// Whether every working set made its reps last time.
+        let made: Bool
+        /// The working load last time (0 for bodyweight) and the day.
+        let from: Double
+        let date: String
+
+        /// The reason in a sentence: "Squat up to 102.5 kg: every rep at 100 kg
+        /// made on 2026-11-10."
+        var sentence: String {
+            let lift = MuscleMap.key(name).replacingOccurrences(of: "-", with: " ")
+            let named = lift.prefix(1).uppercased() + lift.dropFirst()
+            if kg > 0 {
+                return made
+                    ? "\(named) up to \(WorkSet.formatWeight(kg)) kg: every rep at \(WorkSet.formatWeight(from)) kg made on \(date)."
+                    : "\(named) at \(WorkSet.formatWeight(kg)) kg again: a rep short on \(date)."
+            }
+            return made
+                ? "\(named) up to \(reps) reps: every rep made on \(date)."
+                : "\(named) at \(reps) reps again: a rep short on \(date)."
+        }
+
+        var lift: GeneratedLift { GeneratedLift(name: name, sets: Array(repeating: (kg: kg, reps: reps), count: sets)) }
+    }
+
+    /// The rule the coach prescribes by, applied to a lift's last session.
+    /// The working sets are those at its top load; the reps asked of them are
+    /// the first one's. All made: 2.5 kg more (a rep more, on bodyweight).
+    /// Any short: the same again. Nil for a lift not in the log, and for
+    /// added-load work (`bw+5`), which a prescribed line can't carry.
+    static func nextStep(_ lift: String, in sessions: [Session]) -> NextStep? {
+        let key = MuscleMap.key(lift)
+        guard let (session, entry) = sessions.sorted(by: { $0.date > $1.date }).lazy.compactMap({ session -> (Session, ExerciseEntry)? in
+            session.exercises.last { MuscleMap.key($0.name) == key || MuscleMap.aliases[MuscleMap.key($0.name)] == key }
+                .map { (session, $0) }
+        }).first, !entry.sets.isEmpty else { return nil }
+        if entry.sets.contains(where: { ($0.added ?? 0) > 0 }) { return nil }
+
+        let weighted = entry.sets.filter { $0.weight != nil }
+        let work: [WorkSet]
+        let top: Double
+        if let max = weighted.compactMap(\.weight).max() {
+            top = max
+            work = weighted.filter { $0.weight == max }
+        } else {
+            top = 0
+            work = entry.sets
+        }
+        guard let first = work.first else { return nil }
+        let target = first.reps
+        let made = work.allSatisfy { $0.reps >= target }
+        let done = entry.sets.map(\.token).joined(separator: " ")
+        let why = "\(done) on \(session.dateString), " + (made ? "every rep made" : "a rep short")
+        let sets = min(5, work.count)
+        if top > 0 {
+            return NextStep(name: entry.name, kg: made ? top + 2.5 : top, reps: target, sets: sets, why: why,
+                            made: made, from: top, date: session.dateString)
+        }
+        return NextStep(name: entry.name, kg: 0, reps: made ? target + 1 : target, sets: sets, why: why,
+                        made: made, from: 0, date: session.dateString)
+    }
+
+    /// The rule applied to the lifts trained lately, for the on-device brief:
+    /// a small model copies a number well and works one out badly.
+    static func todaysLoads(in sessions: [Session], today: Date = Date(), limit: Int = 8) -> String? {
+        let since = today.addingTimeInterval(-42 * 86_400)
+        var seen = Set<String>()
+        var lines: [String] = []
+        for session in sessions.filter({ $0.date >= since }).sorted(by: { $0.date > $1.date }) {
+            for entry in session.exercises where seen.insert(MuscleMap.key(entry.name)).inserted {
+                guard lines.count < limit, let step = nextStep(entry.name, in: sessions) else { continue }
+                let load = step.kg > 0 ? "\(WorkSet.formatWeight(step.kg)) kg" : "bodyweight"
+                lines.append("- \(MuscleMap.key(step.name)): \(load), \(step.sets) × \(step.reps) (last: \(step.why))")
+            }
+        }
+        guard !lines.isEmpty else { return nil }
+        return "TODAY'S LOADS (the rule, applied by the app to each lift's last session; use these exactly):\n"
+            + lines.joined(separator: "\n")
+    }
+
+    /// A generated plan held to the rule: a lift the rule covers gets the
+    /// rule's sets whatever the model wrote; the choice of lifts stays its.
+    static func heldToRule(_ lifts: [GeneratedLift], sessions: [Session]) -> [GeneratedLift] {
+        lifts.map { lift in
+            nextStep(lift.name, in: sessions).map { GeneratedLift(name: lift.name, sets: $0.lift.sets) } ?? lift
+        }
+    }
+
+    /// The note over a plan held to the rule: the rule's reason for each
+    /// lift it covers, in the plan's order. A small model's own note named
+    /// loads the plan didn't have and advice it contradicted; this can't.
+    /// Nil when the rule covers none of them, and the model's note stands.
+    static func ruleNote(for lifts: [GeneratedLift], sessions: [Session]) -> String? {
+        let sentences = lifts.compactMap { nextStep($0.name, in: sessions)?.sentence }
+        return sentences.isEmpty ? nil : sentences.joined(separator: " ")
     }
 
     // MARK: - On-device tools and assembled replies

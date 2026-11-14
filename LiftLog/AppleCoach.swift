@@ -92,8 +92,12 @@ enum AppleCoach {
                             let session = try makeSession(engine, tools: engine == .qwen ? [] : tools,
                                                           instructions: CoachContext.onDevicePlanInstructions)
                             let plan = try await session.respond(to: prompt.prompt, generating: PlannedSession.self).content
-                            continuation.yield(CoachContext.prescriptionReply(note: CoachContext.plainNote(plan.note),
-                                                                              lifts: plan.lifts.map(\.generated)))
+                            // The loads are the rule's, not the model's: it was handed
+                            // them, and anything it changed is put back.
+                            let lifts = CoachContext.heldToRule(plan.lifts.map(\.generated), sessions: sessions)
+                            let note = CoachContext.ruleNote(for: lifts, sessions: sessions)
+                                ?? CoachContext.plainNote(plan.note)
+                            continuation.yield(CoachContext.prescriptionReply(note: note, lifts: lifts))
                         case .importHistory:
                             let session = try makeSession(engine, instructions: CoachContext.onDeviceImportInstructions)
                             let history = try await session.respond(to: prompt.prompt, generating: DescribedHistory.self).content

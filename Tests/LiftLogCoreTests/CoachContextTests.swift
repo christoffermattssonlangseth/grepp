@@ -799,6 +799,60 @@ final class CoachContextTests: XCTestCase {
         XCTAssertFalse(qwen.prompt.contains("2026-06-01 squat 80x5"), "the oldest still isn't")
     }
 
+    // MARK: - the rule, applied by the app
+
+    func testNextStepRaisesAfterEveryRepAndHoldsAfterAMiss() {
+        let sessions = [
+            Session(date: day("2026-11-06"), exercises: [lift("squat", "97.5x5 97.5x5 97.5x5")]),
+            Session(date: day("2026-11-08"), exercises: [lift("bench", "40x10 70x6 70x6 70x5"), lift("deadlift", "130x5"),
+                                                         lift("chin-ups", "bwx8 bwx8 bwx8"), lift("dips", "bw+10x8")]),
+            Session(date: day("2026-11-10"), exercises: [lift("squat", "60x5 100x5 100x5 100x5")]),
+        ]
+        // The case Qwen got wrong: every rep at 100 is 102.5, not 100 again.
+        let squat = CoachContext.nextStep("squat", in: sessions)
+        XCTAssertEqual(squat?.kg, 102.5)
+        XCTAssertEqual(squat?.reps, 5)
+        XCTAssertEqual(squat?.sets, 3, "the warm-up at 60 isn't a working set")
+        XCTAssertEqual(squat?.why, "60x5 100x5 100x5 100x5 on 2026-11-10, every rep made")
+        // A rep short on the last set: the same load and reps again.
+        let bench = CoachContext.nextStep("bench", in: sessions)
+        XCTAssertEqual(bench.map { [$0.kg, Double($0.reps), Double($0.sets)] }, [70, 6, 3])
+        XCTAssertEqual(CoachContext.nextStep("deadlift", in: sessions).map { [$0.kg, Double($0.sets)] }, [132.5, 1])
+        // Bodyweight: a rep more rather than a load.
+        let chins = CoachContext.nextStep("chin-ups", in: sessions)
+        XCTAssertEqual(chins.map { [$0.kg, Double($0.reps)] }, [0, 9])
+        XCTAssertNil(CoachContext.nextStep("dips", in: sessions), "added load can't be prescribed as a line")
+        XCTAssertNil(CoachContext.nextStep("ohp", in: sessions))
+    }
+
+    func testTodaysLoadsGoInTheBriefAndThePlanIsHeldToThem() {
+        let sessions = [
+            Session(date: day("2026-11-08"), exercises: [lift("bench", "70x6 70x6 70x5")]),
+            Session(date: day("2026-11-10"), exercises: [lift("squat", "100x5 100x5 100x5")]),
+        ]
+        let loads = CoachContext.todaysLoads(in: sessions, today: day("2026-11-12"))
+        XCTAssertEqual(loads, """
+        TODAY'S LOADS (the rule, applied by the app to each lift's last session; use these exactly):
+        - squat: 102.5 kg, 3 × 5 (last: 100x5 100x5 100x5 on 2026-11-10, every rep made)
+        - bench: 70 kg, 3 × 6 (last: 70x6 70x6 70x5 on 2026-11-08, a rep short)
+        """)
+        let prompt = CoachContext.onDevicePrompt(question: "What next?", history: [], sessions: sessions,
+                                                 brief: .none, draft: nil, today: day("2026-11-12"))
+        XCTAssertTrue(prompt.prompt.contains("- squat: 102.5 kg, 3 × 5"))
+
+        // What Qwen wrote, held to the rule; a lift the rule can't cover is left alone.
+        let generated = [CoachContext.GeneratedLift(name: "squat", sets: [(100, 5)]),
+                         CoachContext.GeneratedLift(name: "bench", sets: [(72.5, 6), (72.5, 6), (72.5, 6)]),
+                         CoachContext.GeneratedLift(name: "rows", sets: [(50, 10), (50, 10), (50, 10)])]
+        let held = CoachContext.heldToRule(generated, sessions: sessions)
+        XCTAssertEqual(held.map { CoachContext.line(for: $0) },
+                       ["squat 102.5x5 102.5x5 102.5x5", "bench 70x6 70x6 70x6", "rows 50x10 50x10 50x10"])
+        // The note is the rule's reasons, in the plan's order; rows has none.
+        XCTAssertEqual(CoachContext.ruleNote(for: held, sessions: sessions),
+                       "Squat up to 102.5 kg: every rep at 100 kg made on 2026-11-10. Bench at 70 kg again: a rep short on 2026-11-08.")
+        XCTAssertNil(CoachContext.ruleNote(for: [generated[2]], sessions: sessions))
+    }
+
     func testPlainNoteKeepsTwoSentencesWithoutMarkdown() {
         // Qwen's actual note for "what session should I do today?", shortened
         let qwen = "Today's session: squat. Based on the last squat sessions (97.5x5 on Nov-06, then 100x5 on Nov-10), all reps were done.\nThe plan rests on: last squat was **100x5** on **2026-11-10**. This is a single working set."

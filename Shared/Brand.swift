@@ -35,6 +35,8 @@ enum Brand {
 /// default rest for ever.
 nonisolated enum Prefs {
     static let muscleMap = "muscle_map"
+    /// Dark mode on true black, for OLED, rather than the warm charcoal.
+    static let trueBlack = "true_black"
     static let barWeight = "bar_weight"
     static let plateInventory = "plate_inventory"
     static let barOverrides = "bar_overrides"

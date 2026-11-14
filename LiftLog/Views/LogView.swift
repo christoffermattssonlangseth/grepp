@@ -582,6 +582,7 @@ struct LogView: View {
                     .foregroundStyle(.secondary)
                     .padding(.horizontal, 10).padding(.vertical, 6)
                     .background(Theme.surface, in: RoundedRectangle(cornerRadius: Theme.corner))
+                    .tileEdge()
                 Text("Trained before? The Coach can bring your last few weeks in.")
                     .font(.subheadline)
                 Button {
@@ -765,6 +766,7 @@ struct LogView: View {
                     .padding(.vertical, 10)
                     .padding(.horizontal, 12)
                     .background(Theme.surface, in: RoundedRectangle(cornerRadius: Theme.corner))
+                    .tileEdge()
                     .overlay(alignment: .leading) {
                         RoundedRectangle(cornerRadius: 2)
                             .fill(Theme.accent)
@@ -1013,6 +1015,7 @@ struct LogView: View {
             // not a label changing colour but the biggest thing on screen changing.
             .background(due ? AnyShapeStyle(Theme.accent) : AnyShapeStyle(Theme.surface),
                         in: RoundedRectangle(cornerRadius: Theme.corner, style: .continuous))
+            .tileEdge()
             // A heartbeat while due, driven by the clock's own ticks — nothing
             // repeating forever that has to be babysat.
             .scaleEffect(due && elapsed % 2 == 0 ? 1.015 : 1)

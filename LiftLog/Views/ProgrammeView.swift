@@ -205,6 +205,7 @@ struct ProgrammeView: View {
             .listRowBackground(
                 RoundedRectangle(cornerRadius: Theme.corner)
                     .fill(Theme.surface)
+                    .tileEdge()
                     .padding(.vertical, 2)
             )
             .accessibilityElement(children: .combine)
@@ -254,6 +255,7 @@ struct ProgrammeView: View {
         .listRowBackground(
             RoundedRectangle(cornerRadius: Theme.corner)
                 .fill(Theme.surface)
+                .tileEdge()
                 .padding(.vertical, 2)
         )
         // Swipes and handles only in Edit mode; reading the file is not editing it.

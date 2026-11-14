@@ -5,6 +5,7 @@ import UserNotifications
 struct LiftLogApp: App {
     @StateObject private var store = Store.shared
     @Environment(\.scenePhase) private var scenePhase
+    @AppStorage(Prefs.trueBlack) private var trueBlack = false
 
     init() {
         // The lock-screen button lands in the store, whether or not a screen is up.
@@ -37,6 +38,7 @@ struct LiftLogApp: App {
         WindowGroup {
             ContentView()
                 .environmentObject(store)
+                .environment(\.trueBlack, trueBlack)
                 .task { await store.load() }
                 // The widget is what you see once the app is gone, so it gets a
                 // reload on the way out whatever happened to the ones before.

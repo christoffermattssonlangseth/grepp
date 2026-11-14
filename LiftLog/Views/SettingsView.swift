@@ -13,6 +13,7 @@ struct SettingsView: View {
     @AppStorage(WidgetStyle.key, store: UserDefaults(suiteName: WidgetSnapshot.appGroup))
     private var widgetStyle: WidgetStyle = .auto
     @AppStorage(Prefs.muscleMap) private var muscleMap = MuscleMap()
+    @AppStorage(Prefs.trueBlack) private var trueBlack = false
     @StateObject private var strava = StravaService.shared
     /// Strava off means none of it: no post button, no marks in History, no
     /// backfill — the connection and keys are kept for when it comes back.
@@ -105,6 +106,14 @@ struct SettingsView: View {
                         }
                     }
                     Text("The plates you own, both sides together — four 25s is two a side. The calculator never suggests a plate you don't have.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                .listRowBackground(Theme.row)
+
+                Section("appearance") {
+                    Toggle("True black in dark mode", isOn: $trueBlack)
+                    Text("Dark mode on pure black instead of warm charcoal: easier on the eyes in a dark gym, and the black pixels of an OLED screen are switched off. Light mode is unchanged; the phone still decides when it's dark.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }

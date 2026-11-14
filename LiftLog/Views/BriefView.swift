@@ -117,6 +117,7 @@ struct BriefView: View {
             .frame(minHeight: 160)
             .padding(8)
             .background(Theme.surface, in: RoundedRectangle(cornerRadius: Theme.corner))
+            .tileEdge()
             .overlay(alignment: .topLeading) {
                 if draft(file).isEmpty {
                     Text("Nothing here yet — write whatever you'd tell a coach on day one.")

@@ -396,6 +396,7 @@ struct TrendsView: View {
         .padding(.horizontal, 8).padding(.vertical, 5)
         .background(Theme.surface,
                     in: RoundedRectangle(cornerRadius: Theme.corner))
+        .tileEdge()
     }
 
     /// The logged point nearest the finger — a drag snaps to real sessions,

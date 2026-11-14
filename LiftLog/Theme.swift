@@ -1,6 +1,7 @@
 import SwiftUI
 
-/// Central visual style: warm and calm. Ivory by day, soft charcoal by night,
+/// Central visual style: warm and calm. Ivory by day, soft charcoal by night
+/// (or true black, if Settings says so),
 /// serif titles over a clean sans, generous rounded cards, and one terracotta
 /// accent. Change `accent` and `onAccent` here to re-skin the whole app.
 enum Theme {
@@ -32,20 +33,41 @@ enum Theme {
     /// Strava's orange for small text — deep on ivory, lifted on charcoal.
     static let stravaText = dynamic(light: (0.72, 0.22, 0.00), dark: (1.00, 0.54, 0.31))
 
-    /// The page: ivory, or a warm charcoal rather than black.
-    static let ground = dynamic(light: (0.980, 0.976, 0.961), dark: (0.149, 0.149, 0.141))   // #FAF9F5 / #262624
-    /// A card's face: white on ivory, a step up from the charcoal.
-    static let surface = dynamic(light: (1.0, 1.0, 1.0), dark: (0.188, 0.188, 0.180))        // #FFFFFF / #30302E
+    /// The page: ivory, or a warm charcoal rather than black — or black, when
+    /// true black is on.
+    static let ground = dynamic(light: (0.980, 0.976, 0.961), dark: (0.149, 0.149, 0.141),   // #FAF9F5 / #262624
+                                black: (0, 0, 0))                                            // #000000
+    /// A card's face: white on ivory, a step up from the charcoal. On true
+    /// black it is black too, and the card is drawn by its outline alone.
+    static let surface = dynamic(light: (1.0, 1.0, 1.0), dark: (0.188, 0.188, 0.180),        // #FFFFFF / #30302E
+                                 black: (0, 0, 0))                                           // #000000
     /// A control's face — chips, secondary buttons, your chat bubble.
-    static let raised = dynamic(light: (0.941, 0.933, 0.902), dark: (0.231, 0.231, 0.220))   // #F0EEE6 / #3B3B38
-    /// The hairline round cards and between rows.
-    static let rule = dynamic(light: (0.890, 0.882, 0.855), dark: (0.267, 0.263, 0.251))     // #E3E1DA / #444340
+    static let raised = dynamic(light: (0.941, 0.933, 0.902), dark: (0.231, 0.231, 0.220),   // #F0EEE6 / #3B3B38
+                                black: (0.133, 0.133, 0.125))                                // #222220
+    /// The hairline round cards and between rows. On true black it is all
+    /// that draws a card, so it is brighter there.
+    static let rule = dynamic(light: (0.890, 0.882, 0.855), dark: (0.267, 0.263, 0.251),     // #E3E1DA / #444340
+                              black: (0.310, 0.306, 0.294))                                  // #4F4E4B
+
+    /// The outline for tiles that have none of their own: nothing in light
+    /// and charcoal, where the fill sets them off, and the rule on true
+    /// black, where the fill is the page.
+    static let edge = Color(UIColor { traits in
+        traits.userInterfaceStyle == .dark && traits[TrueBlackTrait.self]
+            ? UIColor(red: 0.310, green: 0.306, blue: 0.294, alpha: 1)
+            : .clear
+    })
     /// Labels and figures that step back.
     static let dim = dynamic(light: (0.45, 0.447, 0.424), dark: (0.65, 0.639, 0.604))        // #73726C / #A6A39A
 
-    private static func dynamic(light: (Double, Double, Double), dark: (Double, Double, Double)) -> Color {
+    /// A colour per appearance. `black` is the true-black variant of `dark`;
+    /// colours without one look the same on either dark ground.
+    private static func dynamic(light: (Double, Double, Double), dark: (Double, Double, Double),
+                                black: (Double, Double, Double)? = nil) -> Color {
         Color(UIColor { traits in
-            let c = traits.userInterfaceStyle == .dark ? dark : light
+            let c = traits.userInterfaceStyle == .dark
+                ? (traits[TrueBlackTrait.self] ? (black ?? dark) : dark)
+                : light
             return UIColor(red: c.0, green: c.1, blue: c.2, alpha: 1)
         })
     }
@@ -70,6 +92,30 @@ enum Theme {
     /// Turn a stored kebab-case name into a readable label, keeping its casing —
     /// e.g. "over-head-press" -> "over head press".
     static func readableName(_ raw: String) -> String { Brand.readableName(raw) }
+}
+
+// MARK: - True black
+
+/// Whether dark mode draws on true black. A trait, not just a setting the
+/// colours read: the colours are UIKit dynamic ones, and a trait change makes
+/// them resolve again everywhere — no view rebuilt, no chat state lost.
+struct TrueBlackTrait: UITraitDefinition {
+    static let defaultValue = false
+}
+
+/// The same trait as SwiftUI sees it: set `.environment(\.trueBlack, …)` at
+/// the root and it reaches the trait collection the colours resolve against.
+private struct TrueBlackKey: UITraitBridgedEnvironmentKey {
+    static let defaultValue = false
+    static func read(from traitCollection: UITraitCollection) -> Bool { traitCollection[TrueBlackTrait.self] }
+    static func write(to mutableTraits: inout UIMutableTraits, value: Bool) { mutableTraits[TrueBlackTrait.self] = value }
+}
+
+extension EnvironmentValues {
+    var trueBlack: Bool {
+        get { self[TrueBlackKey.self] }
+        set { self[TrueBlackKey.self] = newValue }
+    }
 }
 
 /// "PR" or "REP PR": the same capsule wherever a record is shown — on a set as
@@ -112,6 +158,12 @@ private struct SlideIn: ViewModifier {
 }
 
 extension View {
+    /// The hairline a bare tile needs on true black. See `Theme.edge`.
+    func tileEdge(cornerRadius: CGFloat = Theme.corner) -> some View {
+        overlay(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+            .strokeBorder(Theme.edge, lineWidth: 0.5))
+    }
+
     /// Rise and fade in on first showing. See `SlideIn`.
     func slidesIn() -> some View { modifier(SlideIn()) }
 

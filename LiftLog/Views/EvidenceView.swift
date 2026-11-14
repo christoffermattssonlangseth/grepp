@@ -44,6 +44,7 @@ struct EvidenceView: View {
                             RoundedRectangle(cornerRadius: Theme.corner)
                                 .fill(entry.tag == focus ? AnyShapeStyle(Theme.accent.opacity(0.18))
                                                           : AnyShapeStyle(Theme.surface))
+                                .tileEdge()
                                 .padding(.vertical, 2)
                         )
                 }

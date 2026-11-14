@@ -1,6 +1,7 @@
 import AppIntents
 
 /// The one button on the lock screen: land the next set without unlocking.
+/// The Last session widget has it too, as "+ squat 100x5".
 ///
 /// A Live Activity intent runs in the *app's* process — the system wakes the
 /// app in the background to perform it — so the extension only has to name
@@ -20,12 +21,18 @@ nonisolated struct SameAgainIntent: LiveActivityIntent {
     /// Async, and awaited: when the phone is locked the system launches the
     /// app just to run this and may suspend it the moment `perform` returns,
     /// so the lock-screen update and the notification must be done by then.
-    @MainActor static var handler: (() async -> Void)?
+    @MainActor static var handler: ((_ fromWidget: Bool) async -> Void)?
 
-    init() {}
+    /// Pressed on the widget rather than the rest timer. The timer's button
+    /// ends a rest left running for half an hour instead of landing a set; on
+    /// the widget, which names the set it lands, a press always lands it.
+    @Parameter(title: "From widget") var fromWidget: Bool
+
+    init() { fromWidget = false }
+    init(fromWidget: Bool) { self.fromWidget = fromWidget }
 
     func perform() async throws -> some IntentResult {
-        if let handler = await Self.handler { await handler() }
+        if let handler = await Self.handler { await handler(fromWidget) }
         return .result()
     }
 }

@@ -606,8 +606,16 @@ final class Store: ObservableObject {
             }
         }
 
-        let snapshot = (last == nil && plan.isEmpty) ? nil
-            : WidgetSnapshot(day: last?.dateString ?? "", lines: lines, plan: plan)
+        // What the widget's add-set button lands: the lift in the fields and
+        // the set "same again" would put down, today only.
+        var addSet: WidgetSnapshot.Line?
+        if let d = draft, !d.name.isEmpty, let set = d.sameAgainSet, Calendar.current.isDateInToday(d.date) {
+            addSet = WidgetSnapshot.Line(name: d.name, sets: set.token)
+        }
+
+        let snapshot = (last == nil && plan.isEmpty && addSet == nil) ? nil
+            : WidgetSnapshot(day: last?.dateString ?? "", lines: lines, plan: plan,
+                             addSet: addSet, addSetDay: addSet == nil ? nil : draft.map { Session.dateFormatter.string(from: $0.date) })
         guard force || snapshot != WidgetSnapshot.load() else { return }
         WidgetSnapshot.save(snapshot)
         if force {
@@ -1087,12 +1095,13 @@ final class Store: ObservableObject {
     /// The lock-screen button: land the next planned set, or the last one
     /// again, and restart the rest — straight into the persisted draft, since
     /// the Log screen may not exist when the system wakes us for this.
-    func sameAgain() async {
+    func sameAgain(fromWidget: Bool = false) async {
         guard var d = draft, let set = d.sameAgainSet else { return }
         // A READY card left on the lock screen for hours is not a rest any
         // more (the Log screen drops one older than half an hour too): a tap
-        // on it ends it rather than landing a phantom set.
-        if let start = d.restStart, Date().timeIntervalSince(start) > 30 * 60 {
+        // on it ends it rather than landing a phantom set. The widget's button
+        // names the set it lands, so a press there is meant.
+        if !fromWidget, let start = d.restStart, Date().timeIntervalSince(start) > 30 * 60 {
             await RestSignals.syncAndWait(nil)
             return
         }

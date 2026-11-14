@@ -1,9 +1,11 @@
+import AppIntents
 import SwiftUI
 import WidgetKit
 
 /// "Last session: Thursday · squat 87.5x5" on the home screen, and the same in
 /// lock-screen sizes: a round glyph, a two-line card, a line above the clock.
-/// A tap opens the app on the Log tab.
+/// A tap opens the app on the Log tab. With a lift in the Log fields today,
+/// it carries a button that lands its next set without opening the app.
 ///
 /// Reads the snapshot the app leaves in the App Group; never the log itself.
 /// The timeline re-renders at each local midnight so "2 days ago" stays true
@@ -15,7 +17,7 @@ struct LastSessionWidget: Widget {
                 .widgetURL(WidgetSnapshot.logURL)
         }
         .configurationDisplayName("Last session")
-        .description("What you lifted last time, and what's loaded to lift next.")
+        .description("What you lifted last time, what's loaded next, and a button to land the next set.")
         .supportedFamilies([.systemSmall, .systemMedium,
                             .accessoryCircular, .accessoryRectangular, .accessoryInline])
     }
@@ -99,7 +101,16 @@ struct LastSessionView: View {
 
     @ViewBuilder
     private var home: some View {
-        if let snapshot = entry.snapshot, !snapshot.lines.isEmpty || !snapshot.upNext.isEmpty {
+        if let snapshot = entry.snapshot, let add = snapshot.addSet(on: entry.date) {
+            if family == .systemSmall {
+                now(snapshot, add)
+            } else {
+                VStack(alignment: .leading, spacing: 8) {
+                    content(snapshot, rows: 2)
+                    addSetButton(add)
+                }
+            }
+        } else if let snapshot = entry.snapshot, !snapshot.lines.isEmpty || !snapshot.upNext.isEmpty {
             content(snapshot)
         } else {
             empty
@@ -130,8 +141,35 @@ struct LastSessionView: View {
         .accessibilityLabel(entry.snapshot.map { "Grepp, last session \(relative($0).lowercased())" } ?? "Grepp")
     }
 
-    /// The plan when one is loaded, else the last session: a heading and two lifts.
+    /// The plan when one is loaded, else the last session: a heading and two
+    /// lifts. With a lift in the fields today: the heading and its button.
+    @ViewBuilder
     private var rectangular: some View {
+        if let add = entry.snapshot?.addSet(on: entry.date) {
+            VStack(alignment: .leading, spacing: 3) {
+                HStack(spacing: 5) {
+                    Barbell(height: 8, color: .primary).widgetAccentable()
+                    Text("now").font(.system(size: 11, weight: .heavy)).tracking(1)
+                }
+                Button(intent: SameAgainIntent(fromWidget: true)) {
+                    Label("\(Brand.readableName(add.name)) \(add.sets)", systemImage: "plus")
+                        .font(.footnote.weight(.semibold))
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.7)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 4)
+                        .background { AccessoryWidgetBackground().clipShape(Capsule()) }
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Add set: \(Brand.readableName(add.name)) \(add.sets)")
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        } else {
+            lastOrPlan
+        }
+    }
+
+    private var lastOrPlan: some View {
         let snapshot = entry.snapshot
         let planned = !(snapshot?.upNext.isEmpty ?? true)
         let lines = Array((planned ? snapshot?.upNext : snapshot?.lines)?.prefix(2) ?? [])
@@ -192,24 +230,73 @@ struct LastSessionView: View {
     /// Small: the plan when there is one, else the last session — the plan is
     /// the thing you'd glance at on the way to the gym. Medium: both, side by side.
     @ViewBuilder
-    private func content(_ snapshot: WidgetSnapshot) -> some View {
+    private func content(_ snapshot: WidgetSnapshot, rows: Int = 4) -> some View {
         if family == .systemSmall {
-            if !snapshot.upNext.isEmpty { upNext(snapshot) } else { session(snapshot) }
+            if !snapshot.upNext.isEmpty { upNext(snapshot, rows: rows) } else { session(snapshot, rows: rows) }
         } else if snapshot.upNext.isEmpty || snapshot.lines.isEmpty {
-            if snapshot.upNext.isEmpty { session(snapshot) } else { upNext(snapshot) }
+            if snapshot.upNext.isEmpty { session(snapshot, rows: rows) } else { upNext(snapshot, rows: rows) }
         } else {
             HStack(alignment: .top, spacing: 14) {
-                session(snapshot, compact: true)
+                session(snapshot, compact: true, rows: rows)
                 Divider()
-                upNext(snapshot, compact: true)
+                upNext(snapshot, compact: true, rows: rows)
             }
         }
     }
 
+    /// Small, mid-session: the lift in the fields, its plan, and the button.
+    private func now(_ snapshot: WidgetSnapshot, _ add: WidgetSnapshot.Line) -> some View {
+        let plan = snapshot.upNext.first { $0.name == add.name }
+        return VStack(alignment: .leading, spacing: 0) {
+            HStack(spacing: 6) {
+                Barbell(height: 11)
+                Text("now")
+                    .font(.system(size: 10, weight: .heavy)).tracking(1.5)
+                    .foregroundStyle(.secondary)
+            }
+            Text(Brand.readableName(add.name))
+                .font(.system(.title3, design: .serif, weight: .medium))
+                .lineLimit(1)
+                .minimumScaleFactor(0.7)
+                .padding(.top, 4)
+            if let plan {
+                Text(compactSets(plan.sets))
+                    .font(.system(.caption2, design: .monospaced))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(2)
+                    .minimumScaleFactor(0.7)
+            }
+            Spacer(minLength: 6)
+            addSetButton(add, showsName: false)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+    }
+
+    /// Lands the next set in the app, without opening it: "+ squat 100x5".
+    private func addSetButton(_ add: WidgetSnapshot.Line, showsName: Bool = true) -> some View {
+        Button(intent: SameAgainIntent(fromWidget: true)) {
+            HStack(spacing: 5) {
+                Image(systemName: "plus")
+                    .font(.caption.weight(.heavy))
+                Text(showsName ? "\(Brand.readableName(add.name)) \(add.sets)" : add.sets)
+                    .font(.subheadline.weight(.semibold))
+                    .monospacedDigit()
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.7)
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 7)
+            .foregroundStyle(Brand.onAccent)
+            .background(Brand.accent, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Add set: \(Brand.readableName(add.name)) \(add.sets)")
+    }
+
     /// The plan loaded in the Log tab: Coach's next session, or whatever's queued.
     /// One row per lift, sets compressed — "90x8 ×3" — so four fit.
-    private func upNext(_ snapshot: WidgetSnapshot, compact: Bool = false) -> some View {
-        let shown = Array(snapshot.upNext.prefix(4))
+    private func upNext(_ snapshot: WidgetSnapshot, compact: Bool = false, rows: Int = 4) -> some View {
+        let shown = Array(snapshot.upNext.prefix(rows))
         return VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 6) {
                 Image(systemName: "arrow.turn.down.right")
@@ -270,7 +357,7 @@ struct LastSessionView: View {
         return ([out.joined(separator: " ")] + parts.dropFirst()).joined(separator: " · ")
     }
 
-    private func session(_ snapshot: WidgetSnapshot, compact: Bool = false) -> some View {
+    private func session(_ snapshot: WidgetSnapshot, compact: Bool = false, rows: Int = 4) -> some View {
         VStack(alignment: .leading, spacing: 0) {
             header
             Text(relative(snapshot))
@@ -282,7 +369,7 @@ struct LastSessionView: View {
                 .foregroundStyle(.secondary)
                 .lineLimit(1)
             if compact { Spacer().frame(height: 6) } else { Spacer(minLength: 6) }
-            lines(snapshot, compact: compact)
+            lines(snapshot, compact: compact, rows: rows)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
@@ -298,9 +385,9 @@ struct LastSessionView: View {
 
     /// Small, or sharing the medium with the plan: the lifts and their last set.
     /// Medium on its own: the lifts and every set.
-    private func lines(_ snapshot: WidgetSnapshot, compact: Bool = false) -> some View {
+    private func lines(_ snapshot: WidgetSnapshot, compact: Bool = false, rows: Int = 4) -> some View {
         let narrow = compact || family == .systemSmall
-        let shown = Array(snapshot.lines.prefix(4))
+        let shown = Array(snapshot.lines.prefix(rows))
         return VStack(alignment: .leading, spacing: 3) {
             ForEach(Array(shown.enumerated()), id: \.offset) { _, line in
                 row(name: line.name, sets: narrow ? compactSets(line.sets) : line.sets)

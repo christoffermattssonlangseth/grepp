@@ -22,6 +22,22 @@ struct WidgetSnapshot: Codable, Equatable {
 
     var upNext: [Line] { plan ?? [] }
 
+    /// The set the widget's button lands — the lift in the Log fields and its
+    /// next set, as "same again" would put it down — and the day it's for.
+    /// Nil when nothing is loaded today.
+    var addSet: Line? = nil
+    var addSetDay: String? = nil
+
+    /// The button's set, unless the day it was loaded for has gone.
+    func addSet(on date: Date) -> Line? {
+        guard let addSet, let addSetDay else { return nil }
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "en_US_POSIX")
+        f.timeZone = .current
+        f.dateFormat = "yyyy-MM-dd"
+        return f.string(from: date) == addSetDay ? addSet : nil
+    }
+
     /// Shared between the app and the widget. Must match both entitlements files.
     static let appGroup = "group.CML.LiftLog"
     /// Where a tap on the widget lands: the Log tab.
@@ -63,5 +79,5 @@ struct WidgetSnapshot: Codable, Equatable {
     ], plan: [
         Line(name: "deadlift", sets: "120x5 120x5 120x5"),
         Line(name: "over-head-press", sets: "45x5 45x5 45x5"),
-    ])
+    ], addSet: Line(name: "deadlift", sets: "120x5"), addSetDay: nil)
 }

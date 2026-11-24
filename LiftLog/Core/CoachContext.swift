@@ -1544,6 +1544,87 @@ enum CoachContext {
 
     /// A generated plan held to the rule: a lift the rule covers gets the
     /// rule's sets whatever the model wrote; the choice of lifts stays its.
+    /// Today's session worked out by the app alone, for the on-device
+    /// coaches: a small model picks the wrong day of a plain rotation more
+    /// often than not, and the answer is arithmetic anyway.
+    ///
+    /// With a programme on file: the day the question names, else the day
+    /// that is due, loaded as the Programme screen loads it (rpt lines by
+    /// their own rule, the rest by `nextStep`). Without one: the log's own
+    /// rotation — the session that followed the last time the lifter did
+    /// what they did most recently. Nil when neither says anything, and the
+    /// model is asked instead.
+    static func nextSession(question: String, sessions: [Session], programme: Programme,
+                            bar: @escaping (String) -> Double = { _ in 20 },
+                            inventory: PlateInventory = .standard) -> (note: String, lifts: [GeneratedLift])? {
+        let asked = question.lowercased()
+        let days = programme.days.filter { !$0.exercises.isEmpty }
+        if !days.isEmpty {
+            let named = days.filter { !$0.title.isEmpty && asked.contains($0.title.lowercased()) }
+                .max { $0.title.count < $1.title.count }
+            let dueIndex = programme.dueDayIndex(in: sessions)
+            let day = named ?? (programme.days.indices.contains(dueIndex) && !programme.days[dueIndex].exercises.isEmpty
+                                ? programme.days[dueIndex] : days[0])
+            let plan = ReversePyramid.plan(day: day, in: sessions, bar: bar, inventory: inventory)
+            var lifts: [GeneratedLift] = []
+            var sentences: [String] = []
+            for entry in plan.entries {
+                let exercise = day.exercises.first { MuscleMap.canonical($0.name) == MuscleMap.canonical(entry.name) }
+                if let exercise, !exercise.rpt, let step = LineRule.next(exercise, in: sessions) {
+                    if let lift = generated(step.entry) { lifts.append(lift) }
+                    sentences.append(step.sentence)
+                } else if exercise?.rpt != true, let step = nextStep(entry.name, in: sessions) {
+                    lifts.append(step.lift)
+                    sentences.append(step.sentence)
+                } else if let lift = generated(entry) {
+                    lifts.append(lift)
+                }
+            }
+            guard !lifts.isEmpty else { return nil }
+            var note = named == nil ? "\(day.title) is next in your programme." : "\(day.title), from your programme."
+            if !sentences.isEmpty { note += " " + sentences.joined(separator: " ") }
+            if !plan.missing.isEmpty {
+                note += " Left out, never logged: " + plan.missing.joined(separator: ", ") + "."
+            }
+            return (note, lifts)
+        }
+
+        // The log's rotation. Two sessions are the same day when they share
+        // at least half the lifts of the larger.
+        let ordered = sessions.filter { !$0.exercises.isEmpty }.sorted { $0.date < $1.date }
+        guard let latest = ordered.last else { return nil }
+        func names(_ s: Session) -> Set<String> { Set(s.exercises.map { MuscleMap.canonical($0.name) }) }
+        let now = names(latest)
+        guard let match = ordered.indices.dropLast().reversed().first(where: { i in
+            let then = names(ordered[i])
+            return then.intersection(now).count * 2 >= max(then.count, now.count)
+        }) else { return nil }
+        let following = ordered[match + 1]
+        var seen = Set<String>()
+        var lifts: [GeneratedLift] = []
+        var sentences: [String] = []
+        for entry in following.exercises where seen.insert(MuscleMap.canonical(entry.name)).inserted {
+            if let step = nextStep(entry.name, in: sessions) {
+                lifts.append(step.lift)
+                sentences.append(step.sentence)
+            } else if let last = Programme.lastDone(entry.name, in: sessions)?.entry, let lift = generated(last) {
+                lifts.append(lift)
+            }
+        }
+        guard !lifts.isEmpty else { return nil }
+        let after = ordered[match].dateString
+        var note = "Next in your rotation: after the session of \(after) you did the one of \(following.dateString)."
+        if !sentences.isEmpty { note += " " + sentences.joined(separator: " ") }
+        return (note, lifts)
+    }
+
+    /// A logged lift as a prescribed one; nil for added-load work, which a
+    /// prescribed line can't carry.
+    private static func generated(_ entry: ExerciseEntry) -> GeneratedLift? {
+        guard !entry.sets.isEmpty, !entry.sets.contains(where: { ($0.added ?? 0) > 0 }) else { return nil }
+        return GeneratedLift(name: entry.name, sets: entry.sets.map { (kg: $0.weight ?? 0, reps: $0.reps) })
+    }
+
     static func heldToRule(_ lifts: [GeneratedLift], sessions: [Session]) -> [GeneratedLift] {
         lifts.map { lift in
             nextStep(lift.name, in: sessions).map { GeneratedLift(name: lift.name, sets: $0.lift.sets) } ?? lift

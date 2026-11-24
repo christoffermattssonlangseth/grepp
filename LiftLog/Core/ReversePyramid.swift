@@ -79,6 +79,9 @@ enum ReversePyramid {
                let sets = plan(exercise.name, sets: scheme.sets, reps: scheme.reps, last: last,
                                bar: bar(exercise.name), inventory: inventory) {
                 entries.append(ExerciseEntry(name: name, sets: sets))
+            } else if let step = LineRule.next(exercise, in: sessions) {
+                // The line's own rule, from the last session that fit it.
+                entries.append(step.entry)
             } else if let last, !last.sets.isEmpty {
                 entries.append(ExerciseEntry(name: name, sets: last.sets.map { WorkSet(weight: $0.weight, added: $0.added, reps: $0.reps) }))
             } else {

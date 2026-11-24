@@ -825,6 +825,95 @@ final class CoachContextTests: XCTestCase {
         XCTAssertNil(CoachContext.nextStep("ohp", in: sessions))
     }
 
+    func testNextSessionFollowsTheLogsRotation() {
+        // A/B alternation: the last session was A, so B is next.
+        let sessions = [
+            Session(date: day("2026-11-03"), exercises: [lift("squat", "95x10 95x10"), lift("bench", "75x8 75x8")]),
+            Session(date: day("2026-11-05"), exercises: [lift("deadlift", "125x8"), lift("seal row", "62x12 62x12")]),
+            Session(date: day("2026-11-10"), exercises: [lift("squat", "97.5x10 97.5x10"), lift("bench", "77.5x8 77.5x7")]),
+        ]
+        let next = CoachContext.nextSession(question: "what should I do today?", sessions: sessions,
+                                            programme: Programme.parse(""))
+        XCTAssertEqual(next?.lifts.map(\.name), ["deadlift", "seal row"])
+        XCTAssertEqual(next?.lifts.first?.sets.first?.kg, 127.5)
+        XCTAssertEqual(next?.lifts.last?.sets.map(\.kg), [64.5, 64.5])
+        XCTAssertTrue(next?.note.hasPrefix("Next in your rotation: after the session of 2026-11-03") == true)
+        // Nothing to go on: the model is asked.
+        XCTAssertNil(CoachContext.nextSession(question: "today?", sessions: [sessions[0]], programme: Programme.parse("")))
+    }
+
+    func testNextSessionTakesTheDueOrNamedProgrammeDay() {
+        let programme = Programme.parse("""
+        # Two days
+        ## Day A
+        - squat 3x5
+        - bench 3x5
+        ## Day B
+        - deadlift 1x5
+        - ohp 3x5
+        """)
+        let sessions = [
+            Session(date: day("2026-11-08"), exercises: [lift("deadlift", "130x5"), lift("ohp", "50x5 50x5 50x4")]),
+            Session(date: day("2026-11-10"), exercises: [lift("squat", "100x5 100x5 100x5"), lift("bench", "70x5 70x5 70x5")]),
+        ]
+        let due = CoachContext.nextSession(question: "what today?", sessions: sessions, programme: programme)
+        XCTAssertEqual(due?.lifts.map(\.name), ["deadlift", "ohp"])
+        XCTAssertEqual(due?.lifts.map { $0.sets.first?.kg }, [132.5, 50])
+        XCTAssertTrue(due?.note.hasPrefix("Day B is next in your programme.") == true)
+        let named = CoachContext.nextSession(question: "Prescribe Day A from my programme", sessions: sessions, programme: programme)
+        XCTAssertEqual(named?.lifts.map { $0.sets.first?.kg }, [102.5, 72.5])
+    }
+
+    func testASixDayRotationWithHeavyAndLightSquatDaysFollowsEachLinesRule() {
+        let programme = Programme.parse("""
+        # Six-session rotation
+        ## Session 1 — Squat heavy / OHP / Chins
+        - squat 3x5-8, last set AMRAP shy of failure — +2.5 kg when the AMRAP settles at 8-10, +5 kg while it runs past 12
+        - over-head-press 3x8, last set AMRAP — +1 to 1.5 kg when the AMRAP hits 10
+        - chin-ups 3 sets, reps only, no added load — add a rep a set, top set AMRAP
+        ## Session 2 — Squat light / Bench / Row
+        - squat 4x10, no AMRAP — +2.5 kg once all four sets are clean at 10
+        - bench-press 3x8, last set AMRAP — +1 to 2.5 kg when the AMRAP hits 10
+        - seal-row 3x12, last set AMRAP — +2.5 kg when the AMRAP hits 15
+        ## Session 3 — Deadlift / OHP / Chins
+        - deadlift 3x8, no AMRAP — +2.5 kg when all three sets hit, +5 kg while the top set runs past 12
+        - over-head-press 3x8, last set AMRAP — +1 to 1.5 kg when the AMRAP hits 10
+        - chin-ups 3 sets, reps only, no added load — add a rep a set, top set AMRAP
+        ## Session 4 — Squat heavy / Bench / Row
+        - squat 3x5-8, last set AMRAP shy of failure — +2.5 kg when the AMRAP settles at 8-10, +5 kg while it runs past 12
+        - bench-press 3x8, last set AMRAP — +1 to 2.5 kg when the AMRAP hits 10
+        - seal-row 3x12, last set AMRAP — +2.5 kg when the AMRAP hits 15
+        ## Session 5 — Squat light / OHP / Chins
+        - squat 4x10, no AMRAP — +2.5 kg once all four sets are clean at 10
+        - over-head-press 3x8, last set AMRAP — +1 to 1.5 kg when the AMRAP hits 10
+        - chin-ups 3 sets, reps only, no added load — add a rep a set, top set AMRAP
+        ## Session 6 — Deadlift / Bench / Row
+        - deadlift 3x8, no AMRAP — +2.5 kg while the top set runs past 12, +2.5 kg when all three sets hit
+        - bench-press 3x8, last set AMRAP — +1 to 2.5 kg when the AMRAP hits 10
+        - seal-row 3x12, last set AMRAP — +2.5 kg when the AMRAP hits 15
+        """)
+        var sessions = [
+            Session(date: day("2026-11-07"), exercises: [lift("squat", "92.5x10 92.5x10 92.5x10 92.5x10"), lift("bench-press", "73.5x8 73.5x8 73.5x12"), lift("seal-row", "62.5x12 62.5x12 62.5x14")]),
+            Session(date: day("2026-11-08"), exercises: [lift("deadlift", "122.5x8 122.5x8 122.5x11"), lift("over-head-press", "45x8 45x8 45x9"), lift("chin-ups", "bwx7 bwx7 bwx8")]),
+            Session(date: day("2026-11-10"), exercises: [lift("squat", "122.5x8 122.5x8 122.5x10"), lift("bench-press", "74x8 74x8 74x10"), lift("seal-row", "63.5x12 63.5x12 63.5x13")]),
+            Session(date: day("2026-11-12"), exercises: [lift("squat", "95x10 95x10 95x10 95x10"), lift("over-head-press", "45x8 45x8 45x9"), lift("chin-ups", "bwx7 bwx7 bwx8")]),
+            Session(date: day("2026-11-14"), exercises: [lift("deadlift", "125x8 125x8 125x10"), lift("bench-press", "75x8 75x8 75x10"), lift("seal-row", "64x12 64x12 64x12")]),
+        ]
+        func lines(_ q: String = "what's next?") -> [String]? {
+            CoachContext.nextSession(question: q, sessions: sessions, programme: programme)?.lifts.map(CoachContext.line(for:))
+        }
+        // After session 6: session 1, the heavy squat from the last heavy
+        // day (122.5, AMRAP 10 → +2.5), not the light one two days ago.
+        XCTAssertEqual(lines(), ["squat 125x8 125x8 125x8", "over-head-press 45x8 45x8 45x8", "chin-ups bwx8 bwx8 bwx9"])
+        // After the light squat day, session 5, not session 1 with the same lifts.
+        sessions.removeLast()
+        XCTAssertEqual(programme.dueDayIndex(in: sessions), 5)
+        XCTAssertEqual(lines(), ["deadlift 125x8 125x8 125x8", "bench-press 75x8 75x8 75x8", "seal-row 63.5x12 63.5x12 63.5x12"])
+        // A light day asked for by name: all four at 95 clean → 97.5.
+        XCTAssertEqual(lines("Prescribe Session 2 — Squat light / Bench / Row from my programme")?.first,
+                       "squat 97.5x10 97.5x10 97.5x10 97.5x10")
+    }
+
     func testTodaysLoadsGoInTheBriefAndThePlanIsHeldToThem() {
         let sessions = [
             Session(date: day("2026-11-08"), exercises: [lift("bench", "70x6 70x6 70x5")]),

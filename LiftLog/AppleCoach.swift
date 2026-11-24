@@ -74,6 +74,8 @@ enum AppleCoach {
     /// already assembled with its fence.
     static func respond(question: String, prompt: CoachContext.OnDevicePrompt,
                         sessions: [Session], muscleMap: MuscleMap, engine: Engine = .apple,
+                        programme: Programme = Programme.parse(""),
+                        bar: @escaping (String) -> Double = { _ in 20 }, inventory: PlateInventory = .standard,
                         today: Date = Date()) -> AsyncThrowingStream<String, Error> {
         AsyncThrowingStream { continuation in
             let task = Task {
@@ -87,6 +89,14 @@ enum AppleCoach {
                         ]
                         switch try await classify(question, engine: engine) {
                         case .prescribe:
+                            // Which day is next, and its loads, are arithmetic: the app
+                            // answers, and the model is asked only when the log and
+                            // the programme say nothing.
+                            if let next = CoachContext.nextSession(question: question, sessions: sessions,
+                                                                   programme: programme, bar: bar, inventory: inventory) {
+                                continuation.yield(CoachContext.prescriptionReply(note: next.note, lifts: next.lifts))
+                                break
+                            }
                             // Qwen's brief already holds the recent sessions; its tool rounds
                             // only re-fetched them, and tripled the time to a plan.
                             let session = try makeSession(engine, tools: engine == .qwen ? [] : tools,

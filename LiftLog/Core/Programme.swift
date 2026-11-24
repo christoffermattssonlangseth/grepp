@@ -232,13 +232,24 @@ struct Programme: Equatable {
                 let names = Set(day.exercises.map { MuscleMap.canonical($0.name) })
                 let overlap = names.intersection(done).count
                 // At least half the day's lifts, else it wasn't that day.
-                guard overlap * 2 >= names.count, overlap > bestScore else { continue }
-                bestScore = overlap
+                guard overlap * 2 >= names.count else { continue }
+                // Days with the same lifts (a heavy and a light squat day)
+                // are told apart by which one's schemes the session fits.
+                let score = overlap * 100 + fitting(session, day)
+                guard score > bestScore else { continue }
+                bestScore = score
                 bestIndex = i
             }
             if let bestIndex { return (bestIndex + 1) % days.count }
         }
         return 0
+    }
+
+    /// How many of the day's lines the session's entries fit, scheme and all.
+    private func fitting(_ session: Session, _ day: Day) -> Int {
+        day.exercises.filter { ex in
+            session.exercises.contains { MuscleMap.canonical($0.name) == MuscleMap.canonical(ex.name) && LineRule.fits($0, ex) }
+        }.count
     }
 
     /// The last time a lift was logged: its sets and the day, newest first.
@@ -271,8 +282,10 @@ struct Programme: Equatable {
         for day in days {
             let names = Set(day.exercises.map { MuscleMap.canonical($0.name) })
             let overlap = names.intersection(done).count
-            guard overlap * 2 >= names.count, overlap > bestScore else { continue }
-            bestScore = overlap
+            guard overlap * 2 >= names.count else { continue }
+            let score = overlap * 100 + fitting(session, day)
+            guard score > bestScore else { continue }
+            bestScore = score
             best = day
         }
         return best
@@ -438,5 +451,139 @@ enum ProgrammeText {
             all.remove(at: start)
         }
         return all.joined(separator: "\n")
+    }
+}
+
+// MARK: - A line's own rule
+
+/// The next session of one programme line, from the rule written on it:
+/// "+2.5 kg when the AMRAP hits 10", "+5 kg while it runs past 12", "+2.5 kg
+/// once all four sets are clean at 10", "add a rep a set". The last session
+/// it reads is the last one that fits the line's scheme, so a heavy squat
+/// day follows the last heavy day, not the light one between.
+enum LineRule {
+    struct Step: Equatable {
+        let entry: ExerciseEntry
+        let sentence: String
+    }
+
+    /// Sets the scheme asks for: `3x8` → 3, `3 sets` → 3.
+    static func setCount(_ exercise: Programme.Exercise) -> Int? {
+        if let s = exercise.setsAndReps { return s.sets }
+        return exercise.scheme.split(separator: " ").first.flatMap { Int($0) }
+    }
+
+    /// Whether a logged entry looks like this line: the same number of sets,
+    /// and the first set's reps in the scheme's range when it has one.
+    static func fits(_ entry: ExerciseEntry, _ exercise: Programme.Exercise) -> Bool {
+        guard let count = setCount(exercise), entry.sets.count == count else { return false }
+        guard let range = exercise.setsAndReps?.reps, let first = entry.sets.first else { return true }
+        return first.reps >= range.lowerBound - 1 && first.reps <= range.upperBound + 2
+    }
+
+    /// The newest entry of the lift that fits the line, else the newest at all.
+    static func last(_ exercise: Programme.Exercise, in sessions: [Session]) -> (entry: ExerciseEntry, day: String)? {
+        var newest: (ExerciseEntry, String)?
+        for session in sessions.sorted(by: { $0.date > $1.date }) {
+            for entry in Analytics.entries(exercise.name, in: session) where !entry.sets.isEmpty {
+                if fits(entry, exercise) { return (entry, session.dateString) }
+                if newest == nil { newest = (entry, session.dateString) }
+            }
+        }
+        return newest
+    }
+
+    /// One condition on the line: what it adds and when.
+    struct Clause: Equatable {
+        enum Measure: Equatable { case lastSet, everySet }
+        let kg: Double
+        let reps: Int
+        let measure: Measure
+        /// Reps the measured set(s) must reach; nil means the scheme's own.
+        let atLeast: Int?
+    }
+
+    static func clauses(_ note: String) -> [Clause] {
+        let lower = note.lowercased()
+        return lower.split(whereSeparator: { $0 == "," || $0 == ";" }).compactMap { raw in
+            let c = String(raw)
+            let kg = firstMatch(#"\+\s*(\d+(?:\.\d+)?)(?:\s*(?:to|-|–)\s*\d+(?:\.\d+)?)?\s*kg"#, in: c).flatMap(Double.init)
+            let addsRep = c.contains("add a rep") || c.contains("+1 rep") || c.contains("a rep a set")
+            guard kg != nil || addsRep else { return nil }
+            let measure: Clause.Measure = (c.contains("all ") || c.contains("every set") || c.contains("a rep a set")) && !c.contains("top set runs")
+                ? .everySet : .lastSet
+            var atLeast: Int?
+            if let n = firstMatch(#"past\s+(\d+)"#, in: c).flatMap(Int.init) {
+                atLeast = n + 1
+            } else if let n = firstMatch(#"(?:hits|reaches|clean at|settles at|at)\s+(\d+)"#, in: c).flatMap(Int.init) {
+                atLeast = n
+            }
+            // "add a rep a set, top set AMRAP": no threshold, every time.
+            if addsRep && kg == nil { return Clause(kg: 0, reps: 1, measure: .everySet, atLeast: 0) }
+            return Clause(kg: kg ?? 0, reps: 0, measure: measure, atLeast: atLeast)
+        }
+    }
+
+    private static func firstMatch(_ pattern: String, in text: String) -> String? {
+        guard let re = try? NSRegularExpression(pattern: pattern),
+              let m = re.firstMatch(in: text, range: NSRange(text.startIndex..., in: text)),
+              m.numberOfRanges > 1, let r = Range(m.range(at: 1), in: text) else { return nil }
+        return String(text[r])
+    }
+
+    /// Today's sets for the line. Nil when the lift isn't in the log, when
+    /// it carries added load, or when the line has no rule the app can read
+    /// (the caller then falls back to its general rule).
+    static func next(_ exercise: Programme.Exercise, in sessions: [Session]) -> Step? {
+        guard let (entry, day) = last(exercise, in: sessions), let lastSet = entry.sets.last,
+              !entry.sets.contains(where: { ($0.added ?? 0) > 0 }) else { return nil }
+        let rules = clauses(exercise.note)
+        guard !rules.isEmpty else { return nil }
+        let count = setCount(exercise) ?? entry.sets.count
+        let schemeReps = exercise.setsAndReps?.reps
+        let top = entry.sets.compactMap(\.weight).max()
+        let working = top.map { t in entry.sets.filter { $0.weight == t } } ?? entry.sets
+
+        var kgUp = 0.0
+        var repUp = 0
+        for rule in rules {
+            let need = rule.atLeast ?? schemeReps?.lowerBound ?? 0
+            let met: Bool
+            switch rule.measure {
+            case .lastSet: met = lastSet.reps >= need
+            case .everySet: met = working.allSatisfy { $0.reps >= need }
+            }
+            guard met else { continue }
+            kgUp = max(kgUp, rule.kg)
+            repUp = max(repUp, rule.reps)
+        }
+
+        let done = entry.sets.map(\.token).joined(separator: " ")
+        let named = readable(exercise.name)
+        let sets: [WorkSet]
+        let sentence: String
+        if let top {
+            let kg = top + kgUp
+            let reps = schemeReps?.upperBound ?? working.first?.reps ?? lastSet.reps
+            sets = Array(repeating: WorkSet(weight: kg, reps: reps), count: count)
+            sentence = kgUp > 0
+                ? "\(named) up to \(WorkSet.formatWeight(kg)) kg: \(done) on \(day) met its rule."
+                : "\(named) at \(WorkSet.formatWeight(kg)) kg again: \(done) on \(day) is short of its rule."
+        } else {
+            // Bodyweight: last time's reps, set by set, plus what the rule adds.
+            var reps = entry.sets.map(\.reps)
+            while reps.count < count { reps.append(reps.last ?? 1) }
+            reps = Array(reps.prefix(count)).map { $0 + repUp }
+            sets = reps.map { WorkSet(weight: nil, reps: $0) }
+            sentence = repUp > 0
+                ? "\(named): a rep more a set than \(done) on \(day)."
+                : "\(named) as on \(day): \(done)."
+        }
+        return Step(entry: ExerciseEntry(name: entry.name, sets: sets), sentence: sentence)
+    }
+
+    private static func readable(_ name: String) -> String {
+        let s = MuscleMap.key(name).replacingOccurrences(of: "-", with: " ")
+        return s.prefix(1).uppercased() + s.dropFirst()
     }
 }

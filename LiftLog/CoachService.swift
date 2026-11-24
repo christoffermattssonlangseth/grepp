@@ -580,6 +580,11 @@ final class CoachService: ObservableObject {
         turn = thisTurn
         beginBackgroundTime()
 
+        let defaults = UserDefaults.standard
+        let barWeight = defaults.object(forKey: Prefs.barWeight) as? Double ?? 20
+        let overrides = defaults.string(forKey: Prefs.barOverrides).flatMap { BarOverrides(rawValue: $0) } ?? BarOverrides()
+        let inventory = defaults.string(forKey: Prefs.plateInventory).flatMap { PlateInventory(rawValue: $0) } ?? .standard
+        let programme = Programme.parse(brief.program)
         task = Task { [weak self] in
             var budget = engine == .qwen ? CoachContext.qwenBudget : CoachContext.onDeviceBudget
             var attempt = 0
@@ -591,7 +596,9 @@ final class CoachService: ObservableObject {
                 do {
                     for try await whole in AppleCoach.respond(question: question, prompt: prompt,
                                                               sessions: sessions, muscleMap: muscleMap,
-                                                              engine: engine) {
+                                                              engine: engine, programme: programme,
+                                                              bar: { overrides.bar(for: $0) ?? barWeight },
+                                                              inventory: inventory) {
                         guard let self, !Task.isCancelled else { return }
                         self.replace(whole, on: reply.id)
                         self.persistWhileStreaming()

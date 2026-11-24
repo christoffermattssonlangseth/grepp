@@ -102,6 +102,7 @@ struct LogView: View {
     @State private var stravaError: String?
     /// When non-nil, the rest clock is running from this instant.
     @State private var restStart: Date?
+    @State private var isSpinning = false
     @FocusState private var focus: Field?
     private enum Field { case weight, reps }
 
@@ -161,6 +162,7 @@ struct LogView: View {
         NavigationStack {
             ScrollView {
                 VStack(spacing: 16) {
+                    logHeader
                     dayRow
                     if !todayExercises.isEmpty { todaySessionCard }
                     if store.sessions.isEmpty && !store.isBusy { emptyLogCard }
@@ -175,7 +177,9 @@ struct LogView: View {
                         Text(store.status).font(.footnote).foregroundStyle(.secondary)
                     }
                 }
-                .padding()
+                .padding(.horizontal, 18)
+                .padding(.top, 10)
+                .padding(.bottom, 32)
             }
             .dismissesKeyboardOnTap()
             // The rest clock is pinned, not scrolled: between sets it's the one
@@ -183,14 +187,14 @@ struct LogView: View {
             .safeAreaInset(edge: .bottom) {
                 if restStart != nil {
                     restTimerCard
-                        .padding(.horizontal)
+                        .padding(.horizontal, 18)
                         .padding(.bottom, 6)
                         .transition(.move(edge: .bottom).combined(with: .opacity))
                 }
             }
             .animation(.snappy, value: restStart != nil)
             .background(Theme.backgroundView)
-            .navigationTitle("log")
+            .toolbar(.hidden, for: .navigationBar)
             .sheet(isPresented: $showingPicker, onDismiss: {
                 if let picked = heldPick { heldPick = nil; pendingReplace = .pick(picked) }
             }) {
@@ -617,6 +621,34 @@ struct LogView: View {
         .background(Theme.warning.opacity(0.12), in: RoundedRectangle(cornerRadius: Theme.corner))
     }
 
+    // MARK: - Header & Day row
+
+    private var logHeader: some View {
+        let sessionLive = isToday && store.sessionStart(on: date) != nil && store.sessionEnd(on: date) == nil
+        let statusColor: Color = !store.pending.isEmpty
+            ? Theme.warning
+            : (sessionLive ? Theme.accent : Theme.progressing)
+        let source = store.storage == .icloud ? "iCloud Drive" : (store.repo.isEmpty ? "GitHub" : store.repo)
+        let detail: String = {
+            if store.isBusy { return "\(source) · syncing…" }
+            if !store.pending.isEmpty { return "\(source) · \(store.pending.count) pending" }
+            if sessionLive { return "Session active · \(source)" }
+            return "\(source) · \(store.sessions.count) sessions"
+        }()
+
+        return ScreenHeader("grepp", subtitle: detail, statusColor: statusColor) {
+            HeaderCircleButton(systemName: "arrow.clockwise",
+                               accessibilityLabel: "Reload log",
+                               isSpinning: isSpinning) {
+                withAnimation(.easeInOut(duration: 0.55)) { isSpinning = true }
+                Task {
+                    await store.load()
+                    isSpinning = false
+                }
+            }
+        }
+    }
+
     // MARK: - Day and session clock
 
     /// The day being logged and today's clock, side by side and the same
@@ -721,59 +753,58 @@ struct LogView: View {
 
     private func sectionLabel(_ text: String) -> some View {
         HStack {
-            Text(text)
-                .font(.caption.weight(.heavy))
-                .tracking(1.5)
-                .foregroundStyle(.secondary)
+            Eyebrow(text)
             Spacer()
         }
-        .padding(.top, 4)
+        .padding(.horizontal, 2)
+        .padding(.top, 2)
     }
 
     // MARK: - Today's session
 
     private var todaySessionCard: some View {
-        Panel {
+        Panel(glow: Theme.accent) {
             VStack(alignment: .leading, spacing: 12) {
-                HStack {
-                    Text("today's session")
-                        .font(.caption.weight(.heavy)).tracking(1.5)
-                        .foregroundStyle(.secondary)
+                HStack(alignment: .center) {
+                    Eyebrow("today's session")
                     Spacer()
                     Text("\(todayExercises.count == 1 ? "1 lift" : "\(todayExercises.count) lifts") · \(todaySetCount) sets")
-                        .font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+                        .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                        .foregroundStyle(Theme.dim)
                 }
                 let records = Analytics.records(in: store.sessions)[Session.dateFormatter.string(from: date)] ?? [:]
-                ForEach(todayExercises) { ex in
-                    HStack(spacing: 8) {
-                        VStack(alignment: .leading, spacing: 3) {
-                            HStack(spacing: 8) {
-                                Text(Theme.readableName(ex.name))
-                                    .font(.subheadline.weight(.heavy)).tracking(0.5)
-                                if let record = records[MuscleMap.canonical(ex.name)] { RecordBadge(record: record) }
+                VStack(spacing: 8) {
+                    ForEach(todayExercises) { ex in
+                        Button {
+                            edit(ex, on: date, line: lineRef(ex))
+                        } label: {
+                            HStack(spacing: 10) {
+                                RoundedRectangle(cornerRadius: 2, style: .continuous)
+                                    .fill(Theme.accent)
+                                    .frame(width: 3, height: 30)
+                                VStack(alignment: .leading, spacing: 3) {
+                                    HStack(spacing: 8) {
+                                        Text(Theme.readableName(ex.name))
+                                            .font(.system(size: 15, weight: .semibold))
+                                            .foregroundStyle(.primary)
+                                        if let record = records[MuscleMap.canonical(ex.name)] { RecordBadge(record: record) }
+                                    }
+                                    Text(ex.sets.map(\.token).joined(separator: "  "))
+                                        .font(.system(size: 12, weight: .medium, design: .monospaced))
+                                        .foregroundStyle(Theme.dim)
+                                }
+                                Spacer(minLength: 0)
+                                Image(systemName: "pencil")
+                                    .font(.system(size: 12, weight: .semibold))
+                                    .foregroundStyle(.tertiary)
                             }
-                            Text(ex.sets.map(\.token).joined(separator: "  "))
-                                .font(.system(.footnote, design: .monospaced).weight(.medium))
-                                .foregroundStyle(.secondary)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(.vertical, 10)
+                            .padding(.horizontal, 12)
+                            .insetTile()
                         }
-                        Spacer(minLength: 0)
-                        // A tap loads the lift back into the fields to change it.
-                        Image(systemName: "pencil")
-                            .font(.footnote.weight(.semibold))
-                            .foregroundStyle(.tertiary)
+                        .buttonStyle(.cardPress)
                     }
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.vertical, 10)
-                    .padding(.horizontal, 12)
-                    .background(Theme.surface, in: RoundedRectangle(cornerRadius: Theme.corner))
-                    .tileEdge()
-                    .overlay(alignment: .leading) {
-                        RoundedRectangle(cornerRadius: 2)
-                            .fill(Theme.accent)
-                            .frame(width: 4)
-                            .padding(.vertical, 8)
-                    }
-                    .onTapGesture { edit(ex, on: date, line: lineRef(ex)) }
                 }
                 if stravaEnabled, strava.isConnected { stravaRow }
             }
@@ -835,18 +866,31 @@ struct LogView: View {
                     focus = nil
                     showingPicker = true
                 } label: {
-                    HStack(spacing: 10) {
-                        Text(name.isEmpty ? "choose lift" : Theme.readableName(name))
-                            .font(.system(size: liftNameSize, weight: .bold))
-                            .foregroundStyle(name.isEmpty ? .secondary : .primary)
-                            .lineLimit(1)
-                            .minimumScaleFactor(0.6)
+                    HStack(spacing: 12) {
+                        IconBadge(systemName: "dumbbell.fill",
+                                  color: name.isEmpty ? Theme.dim : Theme.accent,
+                                  size: 36)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(name.isEmpty ? "Choose lift" : Theme.readableName(name))
+                                .font(Theme.display(min(liftNameSize, 24), weight: .bold))
+                                .foregroundStyle(name.isEmpty ? .secondary : .primary)
+                                .lineLimit(1)
+                                .minimumScaleFactor(0.65)
+                            if name.isEmpty {
+                                Text("Tap to pick from history or library")
+                                    .font(.system(size: 12))
+                                    .foregroundStyle(Theme.dim)
+                            }
+                        }
                         Spacer()
                         Image(systemName: "chevron.down")
-                            .font(.title3.weight(.bold))
+                            .font(.system(size: 14, weight: .bold))
                             .foregroundStyle(Theme.accent)
+                            .frame(width: 30, height: 30)
+                            .background(Theme.accent.opacity(0.12), in: Circle())
                     }
                 }
+                .buttonStyle(.plain)
                 .matchedTransitionSource(id: "lift", in: pickerZoom)
                 if let plan {
                     Label {
@@ -889,7 +933,7 @@ struct LogView: View {
     // MARK: - Add set
 
     private var addSetCard: some View {
-        Card {
+        Card(glow: Theme.accent) {
             VStack(spacing: 16) {
                 HStack(spacing: 12) {
                     if isBodyweight {
@@ -961,25 +1005,22 @@ struct LogView: View {
         TimelineView(.periodic(from: restStart ?? Date(), by: 1)) { context in
             let elapsed = restSeconds(at: context.date)
             let due = elapsed >= restTarget
-            let label: String = due ? "ready" : "rest"
-            VStack(spacing: 8) {
+            let label: String = due ? "READY" : "REST"
+            let progress = Double(min(elapsed, restTarget)) / Double(max(restTarget, 1))
+            VStack(spacing: 10) {
                 HStack(spacing: 10) {
-                    // Label and clock on one line: the card is pinned over the
-                    // number pad, so every point of height comes out of that.
                     HStack(alignment: .firstTextBaseline, spacing: 8) {
                         Text(label)
-                            .font(.caption.weight(.heavy)).tracking(2)
-                            .foregroundStyle(due ? Theme.onAccent : Color.secondary)
+                            .font(.system(size: 11, weight: .bold))
+                            .tracking(1.4)
+                            .foregroundStyle(due ? Theme.onAccent.opacity(0.9) : Theme.dim)
                         Text(clock(elapsed))
-                            .font(.system(size: restClockSize, weight: .heavy))
-                            .fontWidth(.condensed)
+                            .font(Theme.display(min(restClockSize, 36), weight: .bold))
                             .monospacedDigit()
                             .lineLimit(1)
                             .minimumScaleFactor(0.6)
                             .layoutPriority(1)
                             .foregroundStyle(due ? Theme.onAccent : Theme.accent)
-                            // Digits roll over rather than snap — 0:59 to 1:00
-                            // reads like a stopwatch, not a re-render.
                             .contentTransition(.numericText())
                             .animation(.snappy, value: elapsed)
                     }
@@ -987,42 +1028,56 @@ struct LogView: View {
                     restTargetMenu
                     Button { restStart = Date() } label: {
                         Image(systemName: "arrow.counterclockwise")
-                            .font(.subheadline.weight(.bold))
+                            .font(.system(size: 13, weight: .bold))
+                            .foregroundStyle(due ? Theme.onAccent : .primary)
                             .frame(width: 34, height: 34)
-                            .background(Theme.raised, in: RoundedRectangle(cornerRadius: Theme.corner, style: .continuous))
+                            .background(due ? Theme.onAccent.opacity(0.18) : Theme.raised, in: Circle())
                     }
                     .buttonStyle(.plain)
                     .accessibilityLabel("Restart rest")
                     Button { restStart = nil } label: {
                         Image(systemName: "xmark")
-                            .font(.caption.weight(.bold))
-                            .foregroundStyle(.secondary)
+                            .font(.system(size: 12, weight: .bold))
+                            .foregroundStyle(due ? Theme.onAccent.opacity(0.85) : Theme.dim)
                             .frame(width: 34, height: 34)
-                            .background(Theme.raised, in: RoundedRectangle(cornerRadius: Theme.corner, style: .continuous))
+                            .background(due ? Theme.onAccent.opacity(0.18) : Theme.raised, in: Circle())
                     }
                     .buttonStyle(.plain)
                     .accessibilityLabel("End rest")
                 }
-                // A thin bar filling toward the target — readable at a glance,
-                // mid-set, from across the rack.
-                ProgressView(value: Double(min(elapsed, restTarget)), total: Double(restTarget))
-                    .tint(due ? Theme.onAccent : Theme.accent)
-                    .animation(.linear(duration: 1), value: elapsed)
+                PrecisionMeterBar(
+                    progress: progress,
+                    accent: due ? Theme.onAccent : Theme.accent,
+                    secondaryAccent: due ? Theme.onAccent.opacity(0.85) : Theme.accentSoft,
+                    height: 6,
+                    trackColor: due ? Theme.onAccent.opacity(0.24) : Theme.raised
+                )
             }
-            .padding(.horizontal, 14).padding(.vertical, 10)
+            .padding(.horizontal, 16).padding(.vertical, 12)
             .frame(maxWidth: .infinity, alignment: .leading)
-            // Due, the whole card goes solid accent. That's the "in your face":
-            // not a label changing colour but the biggest thing on screen changing.
-            .background(due ? AnyShapeStyle(Theme.accent) : AnyShapeStyle(Theme.surface),
-                        in: RoundedRectangle(cornerRadius: Theme.corner, style: .continuous))
-            .tileEdge()
-            // A heartbeat while due, driven by the clock's own ticks — nothing
-            // repeating forever that has to be babysat.
+            .background(
+                ZStack(alignment: .topLeading) {
+                    RoundedRectangle(cornerRadius: Theme.corner, style: .continuous)
+                        .fill(due ? Theme.accent : Theme.surface)
+                    if !due {
+                        RadialGradient(
+                            colors: [Theme.accent.opacity(0.14), .clear],
+                            center: .topLeading,
+                            startRadius: 4,
+                            endRadius: 180
+                        )
+                        .clipShape(RoundedRectangle(cornerRadius: Theme.corner, style: .continuous))
+                    }
+                }
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: Theme.corner, style: .continuous)
+                    .strokeBorder(due ? Theme.onAccent.opacity(0.28) : Theme.accent.opacity(0.30), lineWidth: 1)
+            )
+            .shadow(color: (due ? Theme.accent : .black).opacity(due ? 0.35 : 0.14), radius: 12, x: 0, y: 4)
             .scaleEffect(due && elapsed % 2 == 0 ? 1.015 : 1)
             .animation(.easeInOut(duration: 0.5), value: elapsed)
             .animation(.snappy, value: due)
-            // One buzz when rest is up. Only on the way *to* due — a reset
-            // flipping it back must not fire a second success.
             .sensoryFeedback(.success, trigger: due) { wasDue, isDue in !wasDue && isDue }
         }
     }
@@ -1081,65 +1136,82 @@ struct LogView: View {
 
     private var setsCard: some View {
         Panel {
-            VStack(alignment: .leading, spacing: 10) {
-                Text("current sets")
-                    .font(.caption.weight(.heavy)).tracking(1.5)
-                    .foregroundStyle(.secondary)
-                ForEach(Array(sets.enumerated()), id: \.element.id) { idx, set in
-                    HStack(spacing: 12) {
-                        Text("\(idx + 1)")
-                            .font(.subheadline.weight(.heavy))
-                            .foregroundStyle(Theme.onAccent)
-                            .frame(width: 28, height: 28)
-                            .background(Theme.accent, in: RoundedRectangle(cornerRadius: Theme.corner, style: .continuous))
-                        Text(set.loadLabel)
-                            .font(.body.weight(.semibold))
-                        if let m = measurements[set.id] {
-                            // Reps left can still be answered here, until Finish.
-                            Menu {
-                                Text(m.summary)
-                                Picker("reps left?", selection: Binding(
-                                    get: { VelocitySet.RepsLeftChoice(m.left) },
-                                    // An unchanged pick keeps BarVelo's own count (5 shows as 3+).
-                                    set: { c in
-                                        if c != VelocitySet.RepsLeftChoice(measurements[set.id]?.left) {
-                                            measurements[set.id]?.left = c.left
-                                        }
-                                    })) {
-                                    ForEach(VelocitySet.RepsLeftChoice.allCases, id: \.self) { Text($0.label).tag($0) }
-                                }
-                            } label: {
-                                HStack(spacing: 3) {
-                                    Image(systemName: "gauge.with.dots.needle.67percent")
-                                    if let left = m.left { Text(VelocitySet.RepsLeftChoice(left).short) }
-                                }
-                                .font(.caption.weight(.semibold))
+            VStack(alignment: .leading, spacing: 12) {
+                HStack {
+                    Eyebrow("current sets")
+                    Spacer()
+                    Text("\(sets.count) \(sets.count == 1 ? "set" : "sets")")
+                        .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                        .foregroundStyle(Theme.dim)
+                }
+                VStack(spacing: 8) {
+                    ForEach(Array(sets.enumerated()), id: \.element.id) { idx, set in
+                        HStack(spacing: 12) {
+                            Text("\(idx + 1)")
+                                .font(.system(size: 13, weight: .bold, design: .monospaced))
                                 .foregroundStyle(Theme.accent)
+                                .frame(width: 28, height: 28)
+                                .background(Theme.accent.opacity(0.14), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                                        .strokeBorder(Theme.accent.opacity(0.30), lineWidth: 1)
+                                )
+                            Text(set.loadLabel)
+                                .font(.system(size: 16, weight: .semibold, design: .rounded))
+                                .monospacedDigit()
+                            if let m = measurements[set.id] {
+                                // Reps left can still be answered here, until Finish.
+                                Menu {
+                                    Text(m.summary)
+                                    Picker("reps left?", selection: Binding(
+                                        get: { VelocitySet.RepsLeftChoice(m.left) },
+                                        // An unchanged pick keeps BarVelo's own count (5 shows as 3+).
+                                        set: { c in
+                                            if c != VelocitySet.RepsLeftChoice(measurements[set.id]?.left) {
+                                                measurements[set.id]?.left = c.left
+                                            }
+                                        })) {
+                                        ForEach(VelocitySet.RepsLeftChoice.allCases, id: \.self) { Text($0.label).tag($0) }
+                                    }
+                                } label: {
+                                    HStack(spacing: 3) {
+                                        Image(systemName: "gauge.with.dots.needle.67percent")
+                                        if let left = m.left { Text(VelocitySet.RepsLeftChoice(left).short) }
+                                    }
+                                    .font(.caption.weight(.semibold))
+                                    .foregroundStyle(Theme.accent)
+                                }
+                                .accessibilityLabel("Bar velocity measured")
+                                .accessibilityValue(m.left.map { VelocitySet.RepsLeftChoice($0).label } ?? "reps left not answered")
                             }
-                            .accessibilityLabel("Bar velocity measured")
-                            .accessibilityValue(m.left.map { VelocitySet.RepsLeftChoice($0).label } ?? "reps left not answered")
+                            if let record = record(at: idx) { RecordBadge(record: record) }
+                            Spacer()
+                            Text("× \(set.reps)")
+                                .font(Theme.display(18, weight: .bold))
+                                .monospacedDigit()
+                            Button {
+                                withAnimation(.snappy) { sets.removeAll { $0.id == set.id } }
+                            } label: {
+                                Image(systemName: "minus.circle.fill")
+                                    .font(.title3)
+                                    .foregroundStyle(.red.opacity(0.85))
+                            }
+                            .buttonStyle(.plain)
                         }
-                        if let record = record(at: idx) { RecordBadge(record: record) }
-                        Spacer()
-                        Text("× \(set.reps)").font(.title3.weight(.heavy))
-                        Button {
-                            withAnimation(.snappy) { sets.removeAll { $0.id == set.id } }
-                        } label: {
-                            Image(systemName: "minus.circle.fill")
-                                .font(.title3)
-                                .foregroundStyle(.red)
-                        }
+                        .padding(.vertical, 10)
+                        .padding(.horizontal, 12)
+                        .insetTile()
+                        .overlay(
+                            RoundedRectangle(cornerRadius: Theme.tileCorner, style: .continuous)
+                                .fill(Theme.accent.opacity(flashedSet == set.id ? 0.22 : 0))
+                                .allowsHitTesting(false)
+                        )
+                        // Drops in from the readout above and settles with a bounce.
+                        .transition(.asymmetric(
+                            insertion: .scale(scale: 0.6, anchor: .top).combined(with: .opacity)
+                                .combined(with: .offset(y: -24)),
+                            removal: .opacity.combined(with: .scale(scale: 0.9))))
                     }
-                    .padding(.vertical, 4)
-                    .padding(.horizontal, 6)
-                    .background(Theme.accent.opacity(flashedSet == set.id ? 0.28 : 0),
-                                in: RoundedRectangle(cornerRadius: Theme.corner, style: .continuous))
-                    .padding(.horizontal, -6)
-                    // Drops in from the readout above and settles with a bounce.
-                    .transition(.asymmetric(
-                        insertion: .scale(scale: 0.6, anchor: .top).combined(with: .opacity)
-                            .combined(with: .offset(y: -24)),
-                        removal: .opacity.combined(with: .scale(scale: 0.9))))
                 }
                 Button {
                     if let last = sets.last {
@@ -1221,9 +1293,10 @@ struct LogView: View {
     private func bigField(title: String, unit: String, text: Binding<String>, hint: String?,
                           keyboard: UIKeyboardType, focusValue: Field) -> some View {
         let focused = focus == focusValue
-        return VStack(alignment: .leading, spacing: 2) {
-            Text(title)
-                .font(.caption.weight(.medium))
+        return VStack(alignment: .leading, spacing: 3) {
+            Text(title.uppercased())
+                .font(.system(size: 10, weight: .semibold))
+                .tracking(1.0)
                 .foregroundStyle(focused ? Theme.accent : Theme.dim)
             HStack(alignment: .firstTextBaseline, spacing: 6) {
                 // While typing, the field; otherwise a Text over it, so a number
@@ -1248,7 +1321,7 @@ struct LogView: View {
                             .accessibilityHidden(true)
                     }
                 }
-                .font(.system(size: min(fieldNumberSize, 58), weight: .medium, design: .serif))
+                .font(Theme.display(min(fieldNumberSize, 52), weight: .semibold))
                 .monospacedDigit()
                 .minimumScaleFactor(0.5)
                 .lineLimit(1)
@@ -1260,21 +1333,20 @@ struct LogView: View {
                 // a tap anywhere in the window still focuses it.
                 .fixedSize(horizontal: true, vertical: false)
                 Text(unit)
-                    .font(.caption)
+                    .font(.system(size: 12, weight: .medium, design: .monospaced))
                     .foregroundStyle(Theme.dim)
                     .fixedSize()
                 Spacer(minLength: 0)
             }
         }
-        .padding(.horizontal, 12)
+        .padding(.horizontal, 14)
         .frame(maxWidth: .infinity, alignment: .leading)
         .frame(height: min(fieldHeight, Theme.bigFieldHeight * 1.6) + 20)
-        // A soft well in the card; only the live one gets a ring.
-        .background(Theme.raised, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        // A soft well in the card; subtle hairline normally, terracotta ring when focused.
+        .background(Theme.raised, in: RoundedRectangle(cornerRadius: Theme.tileCorner, style: .continuous))
         .overlay(
-            RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .strokeBorder(Theme.accent, lineWidth: 1.5)
-                .opacity(focused ? 1 : 0)
+            RoundedRectangle(cornerRadius: Theme.tileCorner, style: .continuous)
+                .strokeBorder(focused ? Theme.accent : Theme.rule.opacity(0.75), lineWidth: focused ? 1.5 : 1)
         )
         .animation(.smooth(duration: 0.3), value: focused)
         .contentShape(Rectangle())
@@ -1584,11 +1656,12 @@ private extension View {
     /// row, so the date and the clock are always the same size.
     func rowPill() -> some View {
         self
-            .font(.title3.weight(.semibold))
+            .font(.system(size: 16, weight: .semibold, design: .rounded))
             .lineLimit(1)
-            .minimumScaleFactor(0.7)
+            .minimumScaleFactor(0.75)
             .frame(maxWidth: .infinity)
-            .padding(.vertical, 12)
-            .background(Theme.raised, in: Capsule())
+            .padding(.vertical, 11)
+            .background(Theme.surface, in: Capsule())
+            .overlay(Capsule().strokeBorder(Theme.rule, lineWidth: 1))
     }
 }

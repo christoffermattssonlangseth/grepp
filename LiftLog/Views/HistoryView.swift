@@ -140,38 +140,118 @@ struct HistoryView: View {
     private var listBody: some View {
         // Once per body pass, not once per row.
         let records = Analytics.records(in: store.sessions)
-        return List {
-            ForEach(months) { month in
-                if months.count > 1 || !isOpen(month) { monthRow(month) }
-                if isOpen(month) {
-                    ForEach(month.sessions, id: \.dateString) { session in daySection(session, records: records) }
+        return ScrollView {
+            LazyVStack(spacing: 16) {
+                ScreenHeader(
+                    "History",
+                    subtitle: store.sessions.isEmpty
+                        ? "No sessions yet"
+                        : "\(store.sessions.count) \(store.sessions.count == 1 ? "session" : "sessions") logged"
+                )
+
+                if !store.sessions.isEmpty {
+                    searchBar
+                }
+
+                if store.sessions.isEmpty {
+                    emptyStateCard
+                } else if months.isEmpty {
+                    Panel {
+                        VStack(spacing: 6) {
+                            Text("No matching lifts")
+                                .font(.system(size: 16, weight: .semibold))
+                            Text("Try another lift name or clear the search filter.")
+                                .font(.system(size: 13))
+                                .foregroundStyle(Theme.dim)
+                        }
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 16)
+                    }
+                } else {
+                    ForEach(months) { month in
+                        if months.count > 1 || !isOpen(month) { monthRow(month) }
+                        if isOpen(month) {
+                            ForEach(month.sessions, id: \.dateString) { session in
+                                daySection(session, records: records)
+                            }
+                        }
+                    }
                 }
             }
+            .padding(.horizontal, 18)
+            .padding(.top, 10)
+            .padding(.bottom, 32)
         }
-        .searchable(text: $query, prompt: "lift")
+        .dismissesKeyboardOnTap()
+    }
+
+    private var searchBar: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "magnifyingglass")
+                .font(.system(size: 14, weight: .semibold))
+                .foregroundStyle(Theme.dim)
+            TextField("Filter by lift…", text: $query)
+                .font(.system(size: 15))
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled()
+            if !query.isEmpty {
+                Button { query = "" } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .font(.system(size: 15))
+                        .foregroundStyle(Theme.dim)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Clear search")
+            }
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 11)
+        .background(Theme.surface, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .strokeBorder(Theme.rule, lineWidth: 1)
+        )
+    }
+
+    private var emptyStateCard: some View {
+        Panel {
+            VStack(spacing: 10) {
+                Barbell(height: 34)
+                Text("No sessions yet")
+                    .font(Theme.display(18, weight: .semibold))
+                Text("Your first lift appears here, under its date.")
+                    .font(.system(size: 13))
+                    .foregroundStyle(Theme.dim)
+                    .multilineTextAlignment(.center)
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 24)
+        }
     }
 
     /// One month's row: its name, how many days, and whether it's open.
     private func monthRow(_ month: Month) -> some View {
-        Section {
-            Button {
+        Button {
+            withAnimation(.snappy(duration: 0.25)) {
                 if toggledMonths.contains(month.key) { toggledMonths.remove(month.key) } else { toggledMonths.insert(month.key) }
-            } label: {
-                HStack {
-                    Text(month.title.lowercased()).font(.headline)
-                    Spacer()
-                    Text("\(month.sessions.count) \(month.sessions.count == 1 ? "day" : "days")")
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(.secondary)
-                    Image(systemName: "chevron.right")
-                        .font(.caption.weight(.bold))
-                        .foregroundStyle(.tertiary)
-                        .rotationEffect(.degrees(isOpen(month) ? 90 : 0))
-                }
             }
-            .buttonStyle(.plain)
-            .listRowBackground(Color.clear)
+        } label: {
+            HStack(spacing: 8) {
+                Eyebrow(month.title)
+                Spacer()
+                Text("\(month.sessions.count) \(month.sessions.count == 1 ? "day" : "days")")
+                    .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                    .foregroundStyle(Theme.dim)
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 11, weight: .bold))
+                    .foregroundStyle(Theme.dim)
+                    .rotationEffect(.degrees(isOpen(month) ? 90 : 0))
+            }
+            .padding(.horizontal, 4)
+            .padding(.top, 6)
+            .contentShape(Rectangle())
         }
+        .buttonStyle(.plain)
     }
 
 
@@ -191,141 +271,106 @@ struct HistoryView: View {
         return session.date.formatted(style.locale(Locale(identifier: "en_GB"))).replacingOccurrences(of: ",", with: "").lowercased()
     }
 
-    /// One day: its lifts, under a header with the date and where the sets
-    /// went. `records`: every record day in the log, keyed by day and lift,
-    /// so a search that rebuilds a session's lifts still finds its records.
+    /// One day: its lifts, inside a card with the date and where the sets went.
+    /// PR days get a subtle green ambient glow.
     private func daySection(_ session: Session, records: [String: [String: Analytics.Record]]) -> some View {
-        Section {
-            // Keyed by place, not the entry's id: every reload of
-            // the file mints new ids, and new ids are new rows — each one
-            // sliding in again after every save.
-            ForEach(Array(session.exercises.enumerated()), id: \.offset) { _, ex in
-                // A button, not a tap gesture: tapping a row to close a swipe
-                // you changed your mind about must not open the lift.
-                Button {
-                    store.requestEdit(exercise: ex.name, on: session.date, line: lineRef(ex, session))
-                } label: {
-                    VStack(alignment: .leading, spacing: 2) {
-                        HStack(spacing: 8) {
-                            Text(Theme.readableName(ex.name)).font(.headline)
-                            if let record = records[session.dateString]?[MuscleMap.canonical(ex.name)] {
-                                RecordBadge(record: record)
+        let dayRecords = records[session.dateString] ?? [:]
+        let hasRecord = session.exercises.contains { dayRecords[MuscleMap.canonical($0.name)] != nil }
+
+        return Panel(glow: hasRecord ? Theme.progressing : nil) {
+            VStack(alignment: .leading, spacing: 12) {
+                HStack(alignment: .top, spacing: 10) {
+                    VStack(alignment: .leading, spacing: 3) {
+                        Menu {
+                            Button {
+                                pendingMove = MoveTarget(name: nil, date: session.date)
+                            } label: { Label("Move the whole day", systemImage: "calendar") }
+                        } label: {
+                            HStack(spacing: 5) {
+                                Text(dayTitle(session))
+                                    .font(Theme.display(18, weight: .bold))
+                                    .foregroundStyle(.primary)
+                                Image(systemName: "chevron.up.chevron.down")
+                                    .font(.system(size: 10, weight: .bold))
+                                    .foregroundStyle(Theme.dim)
                             }
+                            .fixedSize()
                         }
-                        // Mono, because this *is* the line from the file.
-                        Text(ex.sets.map(\.token).joined(separator: "  "))
-                            .font(.system(.subheadline, design: .monospaced))
-                            .foregroundStyle(.secondary)
+                        .buttonStyle(.plain)
+                        .accessibilityLabel("\(session.dateString), move the day")
+
+                        if let sets = setsLine(session) {
+                            Text(sets)
+                                .font(.system(size: 11, weight: .medium))
+                                .foregroundStyle(Theme.dim)
+                        }
+                        if let postError, postError.day == session.dateString {
+                            Text(postError.text)
+                                .font(.caption2)
+                                .foregroundStyle(Theme.warning)
+                        }
                     }
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .contentShape(Rectangle())
-                    .slidesIn()
+                    Spacer()
+                    if stravaEnabled, strava.isConnected { stravaMark(session) }
                 }
-                .buttonStyle(.plain)
-                // One panel per day: the section rounds the outer corners and
-                // draws the hairlines between lifts, so a row is just a fill.
-                .listRowBackground(Theme.row)
-                .swipeActions(edge: .leading) {
-                    Button {
-                        store.requestEdit(exercise: ex.name, on: session.date, line: lineRef(ex, session))
-                    } label: {
-                        Label("Edit", systemImage: "pencil")
-                    }
-                    .tint(Theme.accent)
-                    Button {
-                        pendingMove = MoveTarget(name: ex.name, date: session.date, line: lineRef(ex, session))
-                    } label: {
-                        Label("Move", systemImage: "calendar")
-                    }
-                    .tint(.indigo)
-                }
-                .contextMenu {
-                    Button {
-                        store.requestEdit(exercise: ex.name, on: session.date, line: lineRef(ex, session))
-                    } label: { Label("Edit sets", systemImage: "pencil") }
-                    Button {
-                        pendingMove = MoveTarget(name: ex.name, date: session.date, line: lineRef(ex, session))
-                    } label: { Label("Move to another day", systemImage: "calendar") }
-                    Button {
-                        pendingMove = MoveTarget(name: nil, date: session.date)
-                    } label: { Label("Move the whole day", systemImage: "calendar.badge.clock") }
-                    Button(role: .destructive) {
-                        pendingDelete = DeleteTarget(name: ex.name, date: session.date, line: lineRef(ex, session))
-                    } label: { Label("Delete", systemImage: "trash") }
-                }
-                .swipeActions(edge: .trailing) {
-                    Button(role: .destructive) {
-                        pendingDelete = DeleteTarget(name: ex.name, date: session.date, line: lineRef(ex, session))
-                    } label: {
-                        Label("Delete", systemImage: "trash")
-                    }
-                }
-            }
-        } header: {
-            // The date, where the day's sets went ("quads 6 · back 4½"),
-            // and whether it's on Strava yet.
-            HStack(alignment: .top) {
-                VStack(alignment: .leading, spacing: 2) {
-                    // The date is a menu: the whole day can move.
-                    Menu {
+
+                VStack(spacing: 8) {
+                    ForEach(Array(session.exercises.enumerated()), id: \.offset) { _, ex in
                         Button {
-                            pendingMove = MoveTarget(name: nil, date: session.date)
-                        } label: { Label("Move the whole day", systemImage: "calendar") }
-                    } label: {
-                        HStack(spacing: 4) {
-                            Text(dayTitle(session))
-                                .font(Theme.serif(.title3, weight: .medium))
-                                .foregroundStyle(.primary)
-                            Image(systemName: "chevron.up.chevron.down")
-                                .font(.caption2.weight(.bold))
-                                .foregroundStyle(.tertiary)
+                            store.requestEdit(exercise: ex.name, on: session.date, line: lineRef(ex, session))
+                        } label: {
+                            HStack(spacing: 10) {
+                                VStack(alignment: .leading, spacing: 3) {
+                                    HStack(spacing: 8) {
+                                        Text(Theme.readableName(ex.name))
+                                            .font(.system(size: 15, weight: .semibold))
+                                            .foregroundStyle(.primary)
+                                        if let record = dayRecords[MuscleMap.canonical(ex.name)] {
+                                            RecordBadge(record: record)
+                                        }
+                                    }
+                                    Text(ex.sets.map(\.token).joined(separator: "  "))
+                                        .font(.system(size: 12, weight: .medium, design: .monospaced))
+                                        .foregroundStyle(Theme.dim)
+                                }
+                                Spacer(minLength: 0)
+                                Image(systemName: "chevron.right")
+                                    .font(.system(size: 11, weight: .semibold))
+                                    .foregroundStyle(.tertiary)
+                            }
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(.vertical, 10)
+                            .padding(.horizontal, 12)
+                            .insetTile()
                         }
-                        .textCase(nil)
-                        .padding(.vertical, 3)
-                        .fixedSize()
-                    }
-                    .buttonStyle(.plain)
-                    .foregroundStyle(.primary)
-                    .accessibilityLabel("\(session.dateString), move the day")
-                    if let sets = setsLine(session) {
-                        Text(sets)
-                            .font(.caption2)
-                            .textCase(nil)
-                            .foregroundStyle(Theme.dim)
-                    }
-                    if let postError, postError.day == session.dateString {
-                        Text(postError.text)
-                            .font(.caption2)
-                            .textCase(nil)
-                            .foregroundStyle(Theme.warning)
+                        .buttonStyle(.cardPress)
+                        .contextMenu {
+                            Button {
+                                store.requestEdit(exercise: ex.name, on: session.date, line: lineRef(ex, session))
+                            } label: { Label("Edit sets", systemImage: "pencil") }
+                            Button {
+                                pendingMove = MoveTarget(name: ex.name, date: session.date, line: lineRef(ex, session))
+                            } label: { Label("Move to another day", systemImage: "calendar") }
+                            Button {
+                                pendingMove = MoveTarget(name: nil, date: session.date)
+                            } label: { Label("Move the whole day", systemImage: "calendar.badge.clock") }
+                            Button(role: .destructive) {
+                                pendingDelete = DeleteTarget(name: ex.name, date: session.date, line: lineRef(ex, session))
+                            } label: { Label("Delete", systemImage: "trash") }
+                        }
                     }
                 }
-                Spacer()
-                if stravaEnabled, strava.isConnected { stravaMark(session) }
             }
-            .slidesIn()
         }
+        .slidesIn()
     }
 
     var body: some View {
         NavigationStack {
             listBody
-            .overlay {
-                if store.sessions.isEmpty {
-                    ContentUnavailableView {
-                        VStack(spacing: 12) {
-                            Barbell(height: 38)
-                            Text("no sessions yet")
-                        }
-                    } description: {
-                        Text("Your first lift appears here, under its date.")
-                    }
-                }
-            }
-            .scrollContentBackground(.hidden)
             .background(Theme.backgroundView)
             .refreshable { await store.load() }
-            .navigationTitle("history")
+            .toolbar(.hidden, for: .navigationBar)
             .confirmationDialog(
                 pendingDelete.map { "Delete \(Theme.readableName($0.name)) on \(Session.dateFormatter.string(from: $0.date))?" } ?? "",
                 isPresented: Binding(get: { pendingDelete != nil },

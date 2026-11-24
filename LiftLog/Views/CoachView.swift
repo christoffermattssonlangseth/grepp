@@ -48,11 +48,14 @@ struct CoachView: View {
 
     var body: some View {
         NavigationStack {
-            Group {
-                if hasKey || model.isOnDevice { chat } else { needsKey }
+            VStack(spacing: 0) {
+                coachHeader
+                Group {
+                    if hasKey || model.isOnDevice { chat } else { needsKey }
+                }
             }
             .background(Theme.backgroundView)
-            .navigationTitle("coach")
+            .toolbar(.hidden, for: .navigationBar)
             // Both, deliberately: onChange catches a request while Coach is already
             // on screen, onAppear catches one that arrives before the tab has ever
             // been built — TabView makes its pages lazily.
@@ -104,45 +107,56 @@ struct CoachView: View {
                     beginGoalsInterview()
                 }
             }
-            .toolbar {
-                // One menu for the three files, not three targets in a bar
-                // above a text field.
-                ToolbarItem(placement: .topBarLeading) {
-                    Menu {
-                        Button { showingBrief = true } label: {
-                            Label("your brief", systemImage: "person.text.rectangle")
-                        }
-                        Button { evidenceTag = nil; showingEvidence = true } label: {
-                            Label("evidence", systemImage: "books.vertical")
-                        }
-                        Button { showingProgramme = true } label: {
-                            Label("programme", systemImage: "calendar")
-                        }
-                    } label: {
-                        Label("Brief", systemImage: "person.text.rectangle")
+        }
+    }
+
+    private var coachHeader: some View {
+        ScreenHeader(
+            "Coach",
+            subtitle: coach.isResponding ? "\(model.label) · thinking…" : "\(model.label) · \(store.sessions.count) sessions in context",
+            statusColor: coach.isResponding ? Theme.accent : Theme.progressing
+        ) {
+            HStack(spacing: 8) {
+                Menu {
+                    Button { showingBrief = true } label: {
+                        Label("your brief", systemImage: "person.text.rectangle")
                     }
-                }
-                .sharedBackgroundVisibility(.hidden)
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button {
-                        coach.reset()
-                        draft = ""
-                        savedGoalsText = nil
-                        saveError = nil
-                        savedMemoryText = nil
-                        memoryError = nil
-                        savedResearchText = nil
-                        researchError = nil
-                        savedProgramText = nil
-                        programError = nil
-                    } label: {
-                        Label("New chat", systemImage: "square.and.pencil")
+                    Button { evidenceTag = nil; showingEvidence = true } label: {
+                        Label("evidence", systemImage: "books.vertical")
                     }
-                    .disabled(coach.isEmpty)
+                    Button { showingProgramme = true } label: {
+                        Label("programme", systemImage: "calendar")
+                    }
+                } label: {
+                    Image(systemName: "person.text.rectangle")
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundStyle(.primary)
+                        .frame(width: 36, height: 36)
+                        .background(Theme.raised, in: Circle())
+                        .overlay(Circle().strokeBorder(Theme.rule, lineWidth: 1))
                 }
-                .sharedBackgroundVisibility(.hidden)
+                .accessibilityLabel("Brief, evidence and programme")
+
+                HeaderCircleButton(systemName: "square.and.pencil",
+                                   accessibilityLabel: "New chat",
+                                   tint: coach.isEmpty ? Theme.dim : .primary) {
+                    coach.reset()
+                    draft = ""
+                    savedGoalsText = nil
+                    saveError = nil
+                    savedMemoryText = nil
+                    memoryError = nil
+                    savedResearchText = nil
+                    researchError = nil
+                    savedProgramText = nil
+                    programError = nil
+                }
+                .disabled(coach.isEmpty)
             }
         }
+        .padding(.horizontal, 18)
+        .padding(.top, 10)
+        .padding(.bottom, 6)
     }
 
     // MARK: - Chat
@@ -203,50 +217,72 @@ struct CoachView: View {
 
     private var intro: some View {
         VStack(alignment: .leading, spacing: 14) {
-            VStack(alignment: .leading, spacing: 6) {
-                Text("ask about your training")
-                    .font(.title3.weight(.bold))
-                Text("Your \(store.path) goes with every question, so answers cite your own dates and loads.")
+            VStack(alignment: .leading, spacing: 10) {
+                HStack(spacing: 12) {
+                    IconBadge(systemName: "sparkles", color: Theme.accent, size: 38)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Ask about your training")
+                            .font(Theme.display(18, weight: .bold))
+                        Text("Reads \(store.path) on every question")
+                            .font(.system(size: 12, weight: .medium))
+                            .foregroundStyle(Theme.dim)
+                    }
+                }
+                Text("Answers cite your own dates, loads, and velocity — never generic templates.")
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
-                Label(coachingHint, systemImage: hasBrief ? "checkmark.seal" : "doc.badge.plus")
+                Label(coachingHint, systemImage: hasBrief ? "checkmark.seal.fill" : "doc.badge.plus")
                     .font(.caption)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(hasBrief ? Theme.progressing : Theme.dim)
             }
-            .glassCard()
+            .glassCard(glow: Theme.accent)
 
             Button(action: beginGoalsInterview) {
-                HStack {
+                HStack(spacing: 12) {
+                    IconBadge(systemName: hasGoals ? "target" : "plus",
+                              color: hasGoals ? Theme.progressing : Theme.accent,
+                              size: 34)
                     VStack(alignment: .leading, spacing: 2) {
                         Text(goalsActionTitle)
-                            .font(.subheadline.weight(.bold))
+                            .font(.system(size: 15, weight: .semibold))
                         Text(goalsActionSubtitle)
-                            .font(.caption).foregroundStyle(.secondary)
+                            .font(.system(size: 12))
+                            .foregroundStyle(Theme.dim)
                     }
                     Spacer()
-                    Image(systemName: hasGoals ? "target" : "plus.circle.fill")
-                        .font(.headline)
-                        .foregroundStyle(hasGoals ? Color.secondary : Theme.accent)
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(.tertiary)
                 }
                 .foregroundStyle(.primary)
-                .glassCard()
+                .panel()
             }
-            .buttonStyle(.plain)
+            .buttonStyle(.cardPress)
+
+            Eyebrow("suggested prompts")
+                .padding(.horizontal, 4)
+                .padding(.top, 2)
 
             // An empty log gets its own questions: bring history in, or start.
             ForEach(store.sessions.isEmpty ? CoachContext.firstQuestions : CoachContext.suggestedQuestions, id: \.self) { question in
                 Button {
                     ask(question)
                 } label: {
-                    HStack {
-                        Text(question).font(.subheadline.weight(.semibold))
+                    HStack(spacing: 10) {
+                        Text(question)
+                            .font(.system(size: 14, weight: .semibold))
+                            .multilineTextAlignment(.leading)
                         Spacer()
-                        Image(systemName: "arrow.up.right").font(.footnote)
+                        Image(systemName: "arrow.up.right")
+                            .font(.system(size: 12, weight: .bold))
+                            .foregroundStyle(Theme.accent)
+                            .frame(width: 28, height: 28)
+                            .background(Theme.accent.opacity(0.12), in: Circle())
                     }
                     .foregroundStyle(.primary)
-                    .glassCard()
+                    .panel()
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.cardPress)
             }
         }
     }

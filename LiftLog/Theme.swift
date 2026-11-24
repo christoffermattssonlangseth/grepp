@@ -8,6 +8,9 @@ enum Theme {
     /// Terracotta, defined once in Shared/Brand.swift so the widgets match.
     static let accent = Brand.accent   // #C6613F
 
+    /// Lighter warm terracotta for gradient endpoints and subtle highlights.
+    static let accentSoft = Color(red: 0.875, green: 0.490, blue: 0.345)
+
     /// Anything drawn *on* the accent — button labels, the send glyph.
     static let onAccent = Brand.onAccent
 
@@ -73,8 +76,30 @@ enum Theme {
     }
 
     /// Soft and generous, continuous like iOS's own.
-    static let corner: CGFloat = 16
+    static let corner: CGFloat = 20
+    /// Corner radius for nested tiles sitting inside a card.
+    static let tileCorner: CGFloat = 14
     static let bigFieldHeight: CGFloat = 76
+
+    /// Subtle top-edge highlight for directional card borders.
+    static let hairlineTop = Color(UIColor { traits in
+        if traits.userInterfaceStyle == .dark {
+            return traits[TrueBlackTrait.self]
+                ? UIColor.white.withAlphaComponent(0.20)
+                : UIColor.white.withAlphaComponent(0.12)
+        }
+        return UIColor(red: 0.84, green: 0.83, blue: 0.80, alpha: 1)
+    })
+
+    /// Subtle bottom-edge fade for directional card borders.
+    static let hairlineBottom = Color(UIColor { traits in
+        if traits.userInterfaceStyle == .dark {
+            return traits[TrueBlackTrait.self]
+                ? UIColor.white.withAlphaComponent(0.08)
+                : UIColor.white.withAlphaComponent(0.04)
+        }
+        return UIColor(red: 0.91, green: 0.90, blue: 0.88, alpha: 1)
+    })
 
     /// The ground every screen sits on.
     static var backgroundView: some View {
@@ -87,6 +112,11 @@ enum Theme {
     /// The serif for titles and big moments: Apple's New York.
     static func serif(_ style: Font.TextStyle, weight: Font.Weight = .regular) -> Font {
         .system(style, design: .serif, weight: weight)
+    }
+
+    /// Rounded display font for hero numbers and headers.
+    static func display(_ size: CGFloat, weight: Font.Weight = .bold) -> Font {
+        .system(size: size, weight: weight, design: .rounded)
     }
 
     /// Turn a stored kebab-case name into a readable label, keeping its casing —
@@ -118,31 +148,184 @@ extension EnvironmentValues {
     }
 }
 
-/// "PR" or "REP PR": the same capsule wherever a record is shown — on a set as
-/// it lands, on a lift in today's session, on a day in History.
+/// "PR" or "REP PR": soft tinted capsule wherever a record is shown — on a set
+/// as it lands, on a lift in today's session, on a day in History.
 struct RecordBadge: View {
     let record: Analytics.Record
     var body: some View {
         Text(record == .load ? "PR" : "REP PR")
-            .font(.caption2.weight(.heavy))
-            .tracking(0.5)
-            .padding(.horizontal, 6).padding(.vertical, 2)
-            .background(Theme.progressing, in: Capsule())
-            .foregroundStyle(Theme.onProgressing)
+            .font(.system(size: 10, weight: .bold, design: .monospaced))
+            .tracking(0.6)
+            .padding(.horizontal, 7).padding(.vertical, 3)
+            .foregroundStyle(Theme.progressing)
+            .background(Theme.progressing.opacity(0.14), in: Capsule())
+            .overlay(Capsule().strokeBorder(Theme.progressing.opacity(0.32), lineWidth: 1))
             .accessibilityLabel(record == .load ? "personal record" : "rep record")
     }
 }
 
 /// The raised surface — the number pad, the chart, the things you act on.
 struct Card<Content: View>: View {
+    var glow: Color? = nil
     @ViewBuilder var content: Content
-    var body: some View { content.glassCard() }
+    var body: some View { content.glassCard(glow: glow) }
 }
 
 /// The flat surface — lists and chrome that should sit in the page, not float.
 struct Panel<Content: View>: View {
+    var glow: Color? = nil
     @ViewBuilder var content: Content
-    var body: some View { content.panel() }
+    var body: some View { content.panel(glow: glow) }
+}
+
+/// Uppercase tracked micro-label for card and section eyebrows.
+struct Eyebrow: View {
+    let text: String
+    init(_ text: String) { self.text = text }
+    var body: some View {
+        Text(text.uppercased())
+            .font(.system(size: 11, weight: .semibold))
+            .tracking(1.1)
+            .foregroundStyle(Theme.dim)
+    }
+}
+
+/// Tinted rounded-square icon badge: a symbol on a faint wash of its colour.
+struct IconBadge: View {
+    let systemName: String
+    var color: Color = Theme.accent
+    var size: CGFloat = 34
+
+    var body: some View {
+        ZStack {
+            RoundedRectangle(cornerRadius: size * 0.28, style: .continuous)
+                .fill(color.opacity(0.14))
+                .overlay(
+                    RoundedRectangle(cornerRadius: size * 0.28, style: .continuous)
+                        .strokeBorder(color.opacity(0.30), lineWidth: 1)
+                )
+            Image(systemName: systemName)
+                .font(.system(size: size * 0.44, weight: .semibold))
+                .foregroundStyle(color)
+        }
+        .frame(width: size, height: size)
+        .accessibilityHidden(true)
+    }
+}
+
+/// Precision capsule progress bar with gradient fill and subtle glow.
+struct PrecisionMeterBar: View {
+    let progress: Double
+    var accent: Color = Theme.accent
+    var secondaryAccent: Color = Theme.accentSoft
+    var height: CGFloat = 6
+    var trackColor: Color? = nil
+
+    var body: some View {
+        GeometryReader { proxy in
+            let clamped = min(max(progress, 0), 1)
+            let fillWidth = clamped <= 0 ? 0 : max(height, proxy.size.width * clamped)
+            ZStack(alignment: .leading) {
+                Capsule(style: .continuous)
+                    .fill(trackColor ?? Theme.raised)
+                if fillWidth > 0 {
+                    Capsule(style: .continuous)
+                        .fill(
+                            LinearGradient(
+                                colors: [accent, secondaryAccent],
+                                startPoint: .leading,
+                                endPoint: .trailing
+                            )
+                        )
+                        .frame(width: fillWidth)
+                        .shadow(color: accent.opacity(0.32), radius: 5, x: 0, y: 0)
+                }
+            }
+        }
+        .frame(height: height)
+        .animation(.spring(response: 0.45, dampingFraction: 0.82), value: progress)
+    }
+}
+
+/// Bespoke inline screen header bar with optional live indicator dot and trailing control.
+struct ScreenHeader<Trailing: View>: View {
+    let title: String
+    var subtitle: String? = nil
+    var statusColor: Color? = nil
+    @ViewBuilder var trailing: Trailing
+
+    init(_ title: String, subtitle: String? = nil, statusColor: Color? = nil,
+         @ViewBuilder trailing: () -> Trailing = { EmptyView() }) {
+        self.title = title
+        self.subtitle = subtitle
+        self.statusColor = statusColor
+        self.trailing = trailing()
+    }
+
+    var body: some View {
+        HStack(alignment: .center, spacing: 12) {
+            VStack(alignment: .leading, spacing: 3) {
+                Text(title)
+                    .font(Theme.display(28, weight: .bold))
+                    .tracking(-0.7)
+                    .foregroundStyle(.primary)
+                if let subtitle, !subtitle.isEmpty {
+                    HStack(spacing: 6) {
+                        if let statusColor {
+                            Circle()
+                                .fill(statusColor)
+                                .frame(width: 6, height: 6)
+                                .shadow(color: statusColor.opacity(0.75), radius: 4)
+                        }
+                        Text(subtitle)
+                            .font(.system(size: 12, weight: .medium))
+                            .foregroundStyle(Theme.dim)
+                            .lineLimit(1)
+                    }
+                }
+            }
+            Spacer(minLength: 8)
+            trailing
+        }
+        .padding(.bottom, 2)
+    }
+}
+
+/// Circular elevated icon button for screen headers.
+struct HeaderCircleButton: View {
+    let systemName: String
+    let accessibilityLabel: String
+    var tint: Color = .primary
+    var isSpinning: Bool = false
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            Image(systemName: systemName)
+                .font(.system(size: 14, weight: .semibold))
+                .foregroundStyle(tint)
+                .rotationEffect(.degrees(isSpinning ? 360 : 0))
+                .frame(width: 36, height: 36)
+                .background(Theme.raised, in: Circle())
+                .overlay(Circle().strokeBorder(Theme.rule, lineWidth: 1))
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(accessibilityLabel)
+    }
+}
+
+/// Tactile press style for interactive cards.
+struct CardPressButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .scaleEffect(configuration.isPressed ? 0.985 : 1.0)
+            .opacity(configuration.isPressed ? 0.94 : 1.0)
+            .animation(.spring(response: 0.24, dampingFraction: 0.78), value: configuration.isPressed)
+    }
+}
+
+extension ButtonStyle where Self == CardPressButtonStyle {
+    static var cardPress: CardPressButtonStyle { CardPressButtonStyle() }
 }
 
 /// Rises and fades in the first time it comes on screen: rows that arrive
@@ -186,36 +369,69 @@ extension View {
     }
 
     /// The small control that names a choice and opens a menu — the bar, the
-    /// lift, the model, the day. A soft capsule: a bare label in a
-    /// Menu drew as nothing on iOS 26, and this gives it a body once, here.
+    /// lift, the model, the day. A soft capsule with a crisp hairline.
     func pill() -> some View {
         self
             .padding(.horizontal, 12).padding(.vertical, 7)
             .background(Theme.raised, in: Capsule())
+            .overlay(Capsule().strokeBorder(Theme.rule, lineWidth: 1))
     }
 
-    /// The quieter surface: a card face with a hairline round it. It sits *in*
-    /// the page; reserve `glassCard` for the one or two things that should read
-    /// as raised.
-    func panel(cornerRadius: CGFloat = Theme.corner) -> some View {
+    /// An inset row or sub-card sitting *inside* a `Panel` or `Card`, creating
+    /// a clear 3-tier surface hierarchy (ground → surface → raised).
+    func insetTile(cornerRadius: CGFloat = Theme.tileCorner) -> some View {
         self
-            .padding(16)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(Theme.surface, in: RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                .strokeBorder(Theme.rule, lineWidth: 0.5))
+            .background(Theme.raised, in: RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                    .strokeBorder(Theme.rule.opacity(0.75), lineWidth: 1)
+            )
     }
 
-    /// The raised surface: a card with a hairline and the faintest shadow, for
-    /// the one or two things on a screen you act on.
-    func glassCard(cornerRadius: CGFloat = Theme.corner) -> some View {
+    /// The quieter surface: a card face with a directional hairline and optional
+    /// ambient accent glow.
+    func panel(glow: Color? = nil, cornerRadius: CGFloat = Theme.corner) -> some View {
         self
-            .padding(16)
+            .padding(18)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(Theme.surface, in: RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                .strokeBorder(Theme.rule, lineWidth: 0.5))
-            .shadow(color: .black.opacity(0.04), radius: 6, x: 0, y: 2)
+            .background(
+                ZStack(alignment: .topLeading) {
+                    RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                        .fill(Theme.surface)
+                    if let glow {
+                        RadialGradient(
+                            colors: [glow.opacity(0.14), glow.opacity(0.03), .clear],
+                            center: .topLeading,
+                            startRadius: 4,
+                            endRadius: 210
+                        )
+                        .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
+                    }
+                }
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                    .strokeBorder(
+                        LinearGradient(
+                            colors: [
+                                glow?.opacity(0.28) ?? Theme.hairlineTop,
+                                Theme.rule,
+                                Theme.hairlineBottom
+                            ],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        ),
+                        lineWidth: 1
+                    )
+            )
+    }
+
+    /// The raised surface: a card with a directional hairline, optional ambient
+    /// glow, and the faintest shadow, for the one or two things on a screen you act on.
+    func glassCard(glow: Color? = nil, cornerRadius: CGFloat = Theme.corner) -> some View {
+        self
+            .panel(glow: glow, cornerRadius: cornerRadius)
+            .shadow(color: .black.opacity(0.045), radius: 10, x: 0, y: 3)
     }
 }
 

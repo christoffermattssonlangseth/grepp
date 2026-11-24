@@ -27,6 +27,8 @@ struct ContentView: View {
                 .tag(4)
         }
         .tint(Theme.accent)
+        .toolbarBackground(Theme.ground, for: .tabBar)
+        .toolbarBackground(.visible, for: .tabBar)
         // The widgets open the app on the Log tab.
         .onOpenURL { url in
             if url == WidgetSnapshot.logURL { store.selectedTab = 0 }

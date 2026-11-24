@@ -107,18 +107,29 @@ struct TrendsView: View {
     var body: some View {
         NavigationStack {
             ScrollView {
-                if store.sessions.isEmpty {
-                    ContentUnavailableView {
-                        VStack(spacing: 12) {
-                            Barbell(height: 38)
-                            Text("no data yet")
+                VStack(spacing: 16) {
+                    ScreenHeader(
+                        "Trends",
+                        subtitle: mode == .lift
+                            ? "Progression, pace & bar velocity"
+                            : "Weekly volume & muscle balance"
+                    )
+
+                    if store.sessions.isEmpty {
+                        Panel {
+                            VStack(spacing: 10) {
+                                Barbell(height: 34)
+                                Text("No data yet")
+                                    .font(Theme.display(18, weight: .semibold))
+                                Text("A chart appears after a lift's second session; sets per muscle after the first week.")
+                                    .font(.system(size: 13))
+                                    .foregroundStyle(Theme.dim)
+                                    .multilineTextAlignment(.center)
+                            }
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 24)
                         }
-                    } description: {
-                        Text("A chart appears after a lift's second session; sets per muscle after the first week.")
-                    }
-                    .padding(.top, 80)
-                } else {
-                    VStack(spacing: 16) {
+                    } else {
                         Picker("view", selection: $mode) {
                             ForEach(Mode.allCases) { Text($0.title).tag($0) }
                         }
@@ -144,13 +155,15 @@ struct TrendsView: View {
                             balanceCard
                         }
                     }
-                    .padding()
-                    .frame(maxWidth: 700)
-                    .frame(maxWidth: .infinity)
                 }
+                .padding(.horizontal, 18)
+                .padding(.top, 10)
+                .padding(.bottom, 32)
+                .frame(maxWidth: 700)
+                .frame(maxWidth: .infinity)
             }
             .background(Theme.backgroundView)
-            .navigationTitle("trends")
+            .toolbar(.hidden, for: .navigationBar)
             .refreshable { await store.load() }
             .onAppear {
                 ensureSelection()
@@ -228,18 +241,17 @@ struct TrendsView: View {
 
     private var chartCard: some View {
         let series = figures.series
-        return Card {
-            VStack(alignment: .leading, spacing: 8) {
+        return Card(glow: Theme.accent) {
+            VStack(alignment: .leading, spacing: 12) {
                 HStack(alignment: .firstTextBaseline) {
-                    Text("\(metric.rawValue.lowercased()) · \(metric.unit)")
-                        .font(.caption).foregroundStyle(.secondary)
+                    Eyebrow("\(metric.rawValue) · \(metric.unit)")
                     Spacer()
                     if let last = series.last?.date {
                         let records = series.filter(\.isRecord).count
-                        let tail = records > 0 ? " · \(records) \(records == 1 ? "record" : "records")" : ""
+                        let tail = records > 0 ? " · \(records) PR" : ""
                         Text("last \(last, format: .dateTime.day().month(.abbreviated)) · \(series.count) sessions\(tail)")
-                            .font(.caption2).foregroundStyle(.tertiary)
-                            .monospacedDigit()
+                            .font(.system(size: 11, weight: .medium, design: .monospaced))
+                            .foregroundStyle(Theme.dim)
                     }
                 }
 
@@ -316,14 +328,20 @@ struct TrendsView: View {
             .chartYScale(domain: yDomain(visible(series)))
             .chartXAxis {
                 AxisMarks(values: .automatic(desiredCount: 4)) {
-                    AxisGridLine()
+                    AxisGridLine(stroke: StrokeStyle(lineWidth: 0.6, dash: [3, 3]))
+                        .foregroundStyle(Theme.rule)
                     AxisValueLabel(format: .dateTime.month(.abbreviated).day())
+                        .font(.system(size: 10, design: .monospaced))
+                        .foregroundStyle(Theme.dim)
                 }
             }
             .chartYAxis {
                 AxisMarks(values: .automatic(desiredCount: 4)) {
-                    AxisGridLine()
+                    AxisGridLine(stroke: StrokeStyle(lineWidth: 0.6, dash: [3, 3]))
+                        .foregroundStyle(Theme.rule)
                     AxisValueLabel()
+                        .font(.system(size: 10, design: .monospaced))
+                        .foregroundStyle(Theme.dim)
                 }
             }
             .accessibilityLabel(chartDescription(series))
@@ -343,17 +361,30 @@ struct TrendsView: View {
 
     @ChartContentBuilder
     private func liftMarks(_ series: [TrendPoint]) -> some ChartContent {
+        let baseline = yDomain(visible(series)).lowerBound
         ForEach(series) { point in
+            AreaMark(x: .value("Date", point.date),
+                     yStart: .value("Base", baseline),
+                     yEnd: .value(metric.rawValue, point.value))
+                .interpolationMethod(.linear)
+                .foregroundStyle(
+                    LinearGradient(
+                        colors: [Theme.accent.opacity(0.22), .clear],
+                        startPoint: .top,
+                        endPoint: .bottom
+                    )
+                )
             LineMark(x: .value("Date", point.date),
                      y: .value(metric.rawValue, point.value))
                 // Straight segments: each point is a session that happened,
                 // and nothing between them is drawn as if it were.
                 .interpolationMethod(.linear)
-                .foregroundStyle(.tint)
+                .lineStyle(StrokeStyle(lineWidth: 2.2, lineCap: .round, lineJoin: .round))
+                .foregroundStyle(Theme.accent)
             PointMark(x: .value("Date", point.date),
                       y: .value(metric.rawValue, point.value))
                 .foregroundStyle(point.isRecord ? Theme.progressing : Theme.accent)
-                .symbolSize(point.isRecord ? 64 : 28)
+                .symbolSize(point.isRecord ? 64 : 26)
         }
         // Drag along the line to read a session off it.
         if let picked = scrubbed(in: series) {
@@ -1092,27 +1123,32 @@ struct TrendsView: View {
 
     private func statTile(title: String, subtitle: String, change: TrendChange?, empty: String) -> some View {
         Panel {
-            VStack(alignment: .leading, spacing: 4) {
-                Text(title).font(.caption).foregroundStyle(.secondary)
+            VStack(alignment: .leading, spacing: 6) {
+                Eyebrow(title)
                 if let c = change {
                     HStack(spacing: 4) {
                         Image(systemName: c.isUp ? "arrow.up.right" : (c.isFlat ? "arrow.right" : "arrow.down.right"))
+                            .font(.system(size: 14, weight: .bold))
                         Text(formatted(c.delta) + " \(metric.unit)")
                             .contentTransition(.numericText())
                     }
-                    .font(.title3.weight(.bold))
+                    .font(Theme.display(20, weight: .bold))
+                    .monospacedDigit()
                     .animation(.snappy, value: c.delta)
                     // Green for up, muted for down: a dip is not an error.
                     .foregroundStyle(c.isUp ? Theme.progressing : Color.secondary)
                     if let percent = c.percent {
                         Text(String(format: "%+.0f%%", percent))
-                            .font(.footnote).foregroundStyle(.secondary)
+                            .font(.system(size: 12, weight: .semibold, design: .monospaced))
+                            .foregroundStyle(Theme.dim)
                     }
                 } else {
-                    Text("—").font(.title3.weight(.bold)).foregroundStyle(.secondary)
-                    Text(empty).font(.footnote).foregroundStyle(.secondary)
+                    Text("—").font(Theme.display(20, weight: .bold)).foregroundStyle(.secondary)
+                    Text(empty).font(.footnote).foregroundStyle(Theme.dim)
                 }
-                Text(subtitle).font(.caption2).foregroundStyle(.tertiary)
+                Text(subtitle)
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(.tertiary)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
         }
@@ -1273,34 +1309,47 @@ struct TrendsView: View {
             return a.exercise < b.exercise
         }
         return Panel {
-            VStack(alignment: .leading, spacing: 10) {
+            VStack(alignment: .leading, spacing: 12) {
                 HStack(alignment: .firstTextBaseline) {
-                    Text("your lifts").font(.caption).foregroundStyle(.secondary)
+                    Eyebrow("your lifts")
                     Spacer()
-                    Text("last 8 weeks").font(.caption2).foregroundStyle(.tertiary)
+                    Text("last 8 weeks")
+                        .font(.system(size: 11, weight: .medium, design: .monospaced))
+                        .foregroundStyle(Theme.dim)
                 }
-                ForEach(rows, id: \.exercise) { dose in
-                    let current = dose.exercise == exercise
-                    Button {
-                        exercise = dose.exercise
-                    } label: {
-                        HStack(spacing: 10) {
-                            Circle()
-                                .fill(stateColor(dose.state) ?? Color.secondary.opacity(0.3))
-                                .frame(width: 8, height: 8)
-                            Text(Theme.readableName(dose.exercise))
-                                .font(.subheadline.weight(current ? .semibold : .regular))
-                                .lineLimit(1)
-                            Spacer()
-                            Text(dose.short)
-                                .font(.subheadline.monospacedDigit())
-                                .foregroundStyle(stateColor(dose.state) ?? Color.secondary)
+                VStack(spacing: 8) {
+                    ForEach(rows, id: \.exercise) { dose in
+                        let current = dose.exercise == exercise
+                        let dotColor = stateColor(dose.state) ?? Color.secondary.opacity(0.35)
+                        Button {
+                            exercise = dose.exercise
+                        } label: {
+                            HStack(spacing: 10) {
+                                Circle()
+                                    .fill(dotColor)
+                                    .frame(width: 8, height: 8)
+                                    .shadow(color: dotColor.opacity(0.6), radius: 3)
+                                Text(Theme.readableName(dose.exercise))
+                                    .font(.system(size: 15, weight: current ? .semibold : .medium))
+                                    .foregroundStyle(.primary)
+                                    .lineLimit(1)
+                                Spacer()
+                                Text(dose.short)
+                                    .font(.system(size: 13, weight: .semibold, design: .monospaced))
+                                    .foregroundStyle(stateColor(dose.state) ?? Theme.dim)
+                            }
+                            .padding(.vertical, 10)
+                            .padding(.horizontal, 12)
+                            .insetTile()
+                            .overlay(
+                                RoundedRectangle(cornerRadius: Theme.tileCorner, style: .continuous)
+                                    .strokeBorder(current ? Theme.accent.opacity(0.55) : .clear, lineWidth: 1)
+                            )
                         }
-                        .contentShape(Rectangle())
+                        .buttonStyle(.cardPress)
+                        .accessibilityLabel("\(Theme.readableName(dose.exercise)), \(stateName(dose.state) ?? "too early"), \(dose.short)")
+                        .accessibilityAddTraits(current ? .isSelected : [])
                     }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel("\(Theme.readableName(dose.exercise)), \(stateName(dose.state) ?? "too early"), \(dose.short)")
-                    .accessibilityAddTraits(current ? .isSelected : [])
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
